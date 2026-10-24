@@ -1,0 +1,135 @@
+# Guideline mẫu theo Annotation Specification gán nhãn 3D giao thông Việt Nam (C2).
+#
+# Dùng cho task có bộ nhãn theo spec: 5 class Vehicle, Two-wheels, Pedestrian, Animal, Obstacle, chi tiết ở thuộc tính
+# (spec 3.1). Task demo tạo bằng: pointsnap nuscenes to-cvat --taxonomy spec-vn --scene scene-0061 --upload
+# Quét: pointsnap --config pointsnap/guidelines/spec-vn.yaml scan --job <id>  (hoặc dán vào tab Guideline > YAML).
+# Chỉ ghi phần khác mặc định; phần còn lại lấy từ pointsnap/config.yaml.
+#
+# Khoảng kích thước: khóa "Class/giá trị thuộc tính phân loại" (size.key_attributes). Khoảng có ghi "(nuScenes)" là
+# p1–p99 của 5 cảnh tinh chỉnh nuScenes; khoảng "(ước lượng)" chưa có dữ liệu, cần chốt lại trên dữ liệu Việt Nam.
+
+floating:
+  classes: [Vehicle, Two-wheels, Pedestrian, Animal]   # spec 4.2: đáy box đặt trên mặt tiếp xúc
+
+size:
+  key_attributes:                     # spec 3.1.2: kích thước tra theo class + thuộc tính phân loại
+    Vehicle: subtype
+    Two-wheels: rider_state
+    Pedestrian: age_group
+    Animal: species
+    Obstacle: type
+  manual_ranges:
+    Vehicle/car:              {length: [3.90, 5.79], width: [1.58, 2.41], height: [1.39, 2.41]}  # (nuScenes) 124 xe
+    Vehicle/van:              {length: [4.0, 5.6],   width: [1.7, 2.1],   height: [1.8, 2.6]}    # (ước lượng)
+    Vehicle/pickup:           {length: [4.8, 5.6],   width: [1.75, 2.0],  height: [1.7, 2.0]}    # (ước lượng)
+    Vehicle/truck:            {length: [4.5, 12.5],  width: [1.8, 3.2],   height: [1.9, 4.3]}    # (nuScenes + B7)
+    Vehicle/bus:              {length: [6.0, 18.5],  width: [2.2, 3.2],   height: [2.4, 4.5]}    # (nuScenes + B7)
+    Vehicle/Trailer:          {length: [2.0, 18.0],  width: [1.5, 3.2],   height: [1.0, 4.5]}    # (B7)
+    Vehicle/contruction:      {length: [2.5, 12.0],  width: [1.5, 3.5],   height: [1.8, 5.0]}    # (B7)
+    Vehicle/Tricycle:         {length: [2.0, 3.5],   width: [0.9, 1.6],   height: [1.0, 2.2]}    # (ước lượng) xe ba gác, xích lô
+    Vehicle/Stroller:         {length: [0.6, 1.2],   width: [0.4, 0.8],   height: [0.8, 1.3]}    # (ước lượng)
+    Vehicle/Wheelchair:       {length: [0.8, 1.3],   width: [0.55, 0.8],  height: [0.8, 1.4]}    # (ước lượng)
+    Vehicle/other:            {length: [1.0, 20.0],  width: [0.5, 3.5],   height: [0.8, 5.0]}    # xe khó phân loại: rộng
+    Two-wheels/with_rider:    {length: [1.5, 2.6],   width: [0.5, 1.2],   height: [1.3, 2.0]}    # (nuScenes) box gồm người lái
+    Two-wheels/without_rider: {length: [1.2, 2.6],   width: [0.4, 1.2],   height: [0.8, 1.8]}    # (nuScenes)
+    Pedestrian/adult:         {length: [0.48, 1.16], width: [0.50, 0.98], height: [1.0, 2.0]}    # (nuScenes; hạ chiều cao cho tư thế ngồi / cúi)
+    Pedestrian/child:         {length: [0.3, 0.9],   width: [0.3, 0.8],   height: [0.7, 1.5]}    # (ước lượng)
+    Animal/dog:               {length: [0.4, 1.2],   width: [0.15, 0.5],  height: [0.3, 0.9]}    # (ước lượng)
+    Animal/cat:               {length: [0.3, 0.7],   width: [0.1, 0.3],   height: [0.2, 0.5]}    # (ước lượng)
+    Animal/cow:               {length: [1.6, 3.0],   width: [0.5, 1.0],   height: [1.1, 1.8]}    # (ước lượng)
+    Animal/buffalo:           {length: [1.8, 3.2],   width: [0.6, 1.2],   height: [1.1, 1.8]}    # (ước lượng)
+    Animal/other:             {length: [0.2, 3.2],   width: [0.1, 1.2],   height: [0.2, 2.0]}
+    Obstacle/traffic cone:    {length: [0.35, 0.69], width: [0.36, 0.96], height: [0.55, 1.33]}  # (nuScenes) 72 cọc tiêu
+    Obstacle/traffic barrier: {length: [0.40, 0.76], width: [1.73, 3.36], height: [0.90, 1.35]}  # (nuScenes) 75 rào chắn
+  cargo_classes: [Two-wheels, Vehicle/Tricycle]   # C5: xe máy / xe ba gác chở hàng cồng kềnh
+  in_track:
+    excluded_classes: [Pedestrian, Animal]   # tư thế thay đổi nên kích thước dao động là bình thường
+
+rules:
+  floating: false                     # Tắt: tránh chặn gate do 102 box thiếu ground evidence (floating.no_evidence) trên scene-0061
+  heading_static: false               # Tắt: tránh chặn gate do 1 box đỗ lệch yaw trên nhãn chuẩn
+  fit_outside: false                  # Tắt: tránh báo nhầm khi vật thể sát tường/rào/cây
+  fit_loose: false                    # Tắt: tránh báo nhầm trên xe lớn do LiDAR một phía
+
+heading:
+  groups:
+    vehicle:
+      classes: [Vehicle]
+      min_speed_mps: 2.0
+      motion_warning_deg: 60
+      motion_error_deg: 135
+      flip_warning_deg: 45
+      flip_error_deg: 75
+      yaw_rate_max_dps: 60
+      reverse_max_mps: 3.0            # xe lùi chậm: Cảnh báo thay vì Lỗi (C5)
+    two_wheeler:
+      classes: [Two-wheels]
+      min_speed_mps: 1.5
+      motion_warning_deg: 60
+      motion_error_deg: 135
+      flip_warning_deg: 45
+      flip_error_deg: 75
+      yaw_rate_max_dps: 90
+    pedestrian:
+      classes: [Pedestrian, Animal]
+      min_speed_mps: 1.0
+      motion_warning_deg: 90
+      motion_error_deg: 150
+      flip_warning_deg: 120
+      flip_error_deg: 170
+      yaw_rate_max_dps: 180
+  points:
+    classes: [Vehicle]
+
+static:
+  yaw_excluded_classes:               # C5: không xét hướng box của vật đứng yên
+    - Pedestrian                      # đứng yên vẫn xoay người
+    - Animal
+    - Obstacle/traffic cone           # tròn / đối xứng: hướng box không có nghĩa
+    - Obstacle/sack
+    - Obstacle/trash_bag
+    - Obstacle/brick
+
+fit:
+  overlap_classes: [Vehicle, Two-wheels, Pedestrian, Animal]
+  overlap_allowed_pairs:              # cặp được chồng box; ghi Class hoặc Class/thuộc tính phân loại
+    - [Pedestrian, Pedestrian]        # spec 4.3B: nhóm người sát nhau, box được phép overlap
+    - [Pedestrian, Two-wheels]        # người lên / xuống xe, dắt xe (spec 4.3C)
+    - [Pedestrian, Vehicle]           # người đứng trên thùng xe, đẩy xe nôi (spec 4.3B)
+    - [Two-wheels, Two-wheels]        # xe máy đỗ sát nhau trên vỉa hè
+    - [Animal, Animal]                # đàn chồng lấn (spec 4.3E)
+    - [Vehicle/truck, Vehicle/Trailer]  # đầu kéo và rơ-moóc chồng ở chỗ nối
+    - [Two-wheels, Vehicle/Tricycle]  # xe máy kéo xe hàng (spec 4.3C)
+
+spec:                                 # spec 3.1.3: thuộc tính bắt buộc khi object thuộc phạm vi
+  required_attributes:
+    Vehicle: [subtype]
+    Two-wheels: [rider_state]
+    Pedestrian: [age_group, pose]
+    Animal: [species]
+    Obstacle: [type]
+  allowed_values:
+    subtype: [car, van, truck, contruction, bus, pickup, Trailer, Tricycle, Stroller, Wheelchair, other]
+    rider_state: [with_rider, without_rider]
+    age_group: [adult, child]
+    pose: [standing, sitting, bending]
+    species: [dog, cat, cow, buffalo, other]
+    type: [brick, traffic barrier, traffic cone, sack, trash_bag, container, metal_sheet, wood, charging point, other]
+  attribute_height:                   # C6 `attr.height`: thuộc tính phải khớp chiều cao box (m); đo trên nhãn chuẩn nuScenes
+    Pedestrian/standing/adult: [1.45, 2.20]   # người lớn đứng 1,56–2,00
+    Pedestrian/sitting:        [0.80, 1.60]   # ngồi 1,28–1,52
+    Pedestrian/bending:        [0.80, 1.60]
+    Pedestrian/child:          [0.60, 1.60]   # trẻ em 1,33–1,49
+    Two-wheels/with_rider:     [1.45, 2.20]   # có người lái 1,56–1,93
+    Two-wheels/without_rider:  [0.60, 1.60]   # không người 0,95–1,53
+  inside_forbidden:                   # C6 `spec.inside`: spec 4.3B không gán người bên trong xe
+    - [Pedestrian, Vehicle]
+  rider_double:                       # C6 `spec.rider_double`: spec 4.3C người lái nằm trong box xe hai bánh
+    - [Two-wheels/with_rider, Pedestrian]
+  rider_state:                        # C8 `attr.rider_state`: lên / xuống xe phải đổi thuộc tính (spec 4.3C)
+    class: Two-wheels
+    attribute: rider_state
+    with: with_rider
+    without: without_rider
+    person: Pedestrian
+  rider_max_speed_mps: 2.5            # xe không người chạy > 2,5 m/s: có người lái? (nhãn chuẩn: tối đa 1,0 m/s)

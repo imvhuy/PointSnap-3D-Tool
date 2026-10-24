@@ -1,0 +1,37 @@
+# Guideline mẫu: bắt box lệch vật / box xoay lệch trục vật, đo bằng mét / độ (luật fit.offset, fit.yaw) — chỉ dùng LiDAR.
+#
+# Chạy được trên mọi task có point cloud: không cần ảnh camera, calibration hay GPU (dùng được cho dữ liệu BTC).
+# Có ảnh camera + calibration và GPU thì dùng box-fit-sam.yaml: mặt nạ SAM tách vật dính nhau (rơ-moóc / xe kéo, xe đỗ sát)
+# nên báo nhầm thấp hơn ở cùng ngưỡng.
+#
+# Cách đo (pointsnap/detectors/box_fit.py):
+#   1. Lấy điểm LiDAR quanh box (nới 1,2 m mỗi phía: box lệch tới ~1 m vẫn còn vật), bỏ mặt đất và điểm của box khác,
+#      giữ điểm nối liền với các điểm trong box: đó là điểm của vật.
+#   2. Fit lại box, giữ kích thước: canh mặt box gần cảm biến (mặt thấy được) vào điểm của vật; xe đủ dài thì tìm trục vật
+#      bằng phép khớp hình chữ L.
+#   3. Báo độ lệch tâm theo từng trục (cm) và góc (°), nói rõ trục nào chưa đủ bằng chứng; kèm khung tham chiếu (ghost)
+#      để kéo box theo rồi Save trong CVAT. Luật không kết luận kích thước: box dư (phóng to) bị báo như lệch mặt nhìn
+#      thấy, người sửa nhìn mặt xa của vật trước khi kéo.
+# Mỗi frame đo độc lập, không cần track (hợp với guideline đã tắt luật track.*).
+#
+# Dùng:  pointsnap --config pointsnap/guidelines/box-fit.yaml scan --job <id>
+#        hoặc dán nội dung file vào tab Guideline > YAML của dự án.
+# Chỉ ghi phần khác mặc định; gộp với guideline khác (vd spec-vn.yaml) thì chép mục `rules` và `box_fit` sang file đó.
+#
+# Ngưỡng: chọn trên 5 cảnh tinh chỉnh nuScenes mini, kiểm trên 5 cảnh kiểm tra (scripts/eval_box_fit.py,
+# docs/ket-qua/ket-qua-box-fit.md). LiDAR khác số tia / dữ liệu khác thì đo lại bằng script đó trước khi hạ ngưỡng.
+
+rules:
+  fit_offset: true                    # box lệch vật: tâm vật lệch tâm box quá ngưỡng mét
+  fit_yaw: true                       # box xoay lệch trục vật (xe đủ dài, cụm điểm phủ ≥ ½ chiều dài box)
+
+box_fit:
+  source: lidar
+  min_points: 30                      # cần ≥ 30 điểm LiDAR của vật; ít hơn thì không kết luận (vật xa, thưa)
+  offset_warning_m: 1.0               # tâm vật lệch > 1.0 m: Cảnh báo
+  offset_error_m: 2.5                 # > 2.5 m: Lỗi (chỉ LiDAR thì rơ-moóc dính xe kéo bị đo gộp: cần ngưỡng cao)
+  yaw_warning_deg: 15                 # trục vật lệch hướng box > 15°: Cảnh báo
+  yaw_error_deg: 25                   # > 25°: Lỗi
+  reference: absolute                 # absolute: so tuyệt đối (box lẻ, task không có track)
+                                      # track: trừ độ lệch ổn định của các frame khác cùng track (vật hình dạng lạ:
+                                      # máy xúc có cần, rào chắn nhiều đoạn); task có track đủ dài thì nên dùng

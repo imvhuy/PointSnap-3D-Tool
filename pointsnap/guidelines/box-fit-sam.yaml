@@ -1,0 +1,36 @@
+# Guideline mẫu: bắt box lệch vật / box xoay lệch trục vật bằng ảnh camera + LiDAR (luật fit.offset, fit.yaw, source: sam).
+#
+# Như box-fit.yaml nhưng điểm của vật chọn bằng mặt nạ SAM 2.1 trên ảnh camera:
+#   - Mỗi box tự tạo prompt: khung chiếu box, điểm LiDAR của vật làm điểm dương (bỏ điểm bị vật khác che trên ảnh), box
+#     lân cận làm điểm âm; chọn trong 3 mặt nạ của SAM mặt nạ chứa nhiều điểm của vật nhất. Không cần Grounding DINO /
+#     Mask R-CNN thấy vật.
+#   - Điểm LiDAR rơi vào mặt nạ là điểm của vật: tách được vật dính nhau (rơ-moóc / xe kéo, xe đỗ sát, cột sát xe).
+#   - Mặt vật bị che trên ảnh hoặc nằm ngoài ảnh không dùng để canh (không báo nhầm khi xe tải khuất sau máy xúc).
+#
+# Cần: ảnh camera + calibration của từng frame (task tạo bằng `pointsnap nuscenes to-cvat`), PyTorch + transformers
+# (pip install -e ".[vision]"), GPU (~3–5 s / frame trên RTX 3050 4 GB; CPU ~25 s / frame). Trọng số SAM 2.1 small tải từ
+# Hugging Face ở lần đầu, dùng chung với camera.model gdino-sam2. Thiếu camera / GPU / transformers thì luật tự đo bằng
+# LiDAR và ghi một mục Thông tin "camera.no_evidence"; khi đó nên dùng box-fit.yaml (ngưỡng của chế độ LiDAR).
+# Frame ban đêm (trung vị độ sáng 6 ảnh < camera.min_brightness) bị bỏ qua.
+#
+# Dùng:  pointsnap --config pointsnap/guidelines/box-fit-sam.yaml scan --job <id>
+#        hoặc dán nội dung file vào tab Guideline > YAML của dự án.
+#
+# Ngưỡng: chọn trên 5 cảnh tinh chỉnh nuScenes mini, kiểm trên 5 cảnh kiểm tra (scripts/eval_box_fit.py,
+# docs/ket-qua/ket-qua-box-fit.md).
+
+rules:
+  fit_offset: true
+  fit_yaw: true
+
+camera:
+  enabled: auto                       # auto: chạy khi có PyTorch + GPU; true: bắt buộc (thiếu runtime thì gate báo thiếu bằng chứng)
+
+box_fit:
+  source: sam
+  min_points: 15                      # cần ≥ 15 điểm LiDAR thuộc mặt nạ SAM
+  offset_warning_m: 0.8               # tâm vật lệch > 0.8 m: Cảnh báo
+  offset_error_m: 1.5                 # > 1.5 m: Lỗi
+  yaw_warning_deg: 12                 # trục vật lệch hướng box > 12°: Cảnh báo
+  yaw_error_deg: 25                   # > 25°: Lỗi
+  reference: absolute                 # absolute | track (xem box-fit.yaml)

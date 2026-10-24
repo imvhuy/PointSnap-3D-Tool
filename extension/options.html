@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PointSnap cho CVAT — Tùy chọn</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="options">
+  <header class="app-head">
+    <svg width="22" height="22" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+      <path d="M24 6 L38 14 L24 22 L10 14 Z M10 14 V30 L24 38 L38 30 V14 M24 22 V38" stroke="#fff" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="24" cy="38" r="5" fill="#4C9AFF"/>
+    </svg>
+    <b>PointSnap cho CVAT · Tùy chọn</b>
+  </header>
+  <main>
+    <section class="card">
+      <h2>Kết nối</h2>
+      <p class="hint">Mặc định extension chạy trên CVAT ở <code>http://localhost:8080</code> và gọi PointSnap ở <code>http://127.0.0.1:8765</code>. Chỉ cần đổi khi bạn dùng địa chỉ khác.</p>
+      <div id="conn" class="status" role="status"><span class="dot"></span><div><span id="conn-text">Đang kiểm tra PointSnap…</span></div></div>
+      <label class="field" for="pointsnap-url">Địa chỉ PointSnap</label>
+      <input id="pointsnap-url" type="url" placeholder="http://127.0.0.1:8765">
+      <label class="field" for="cvat-urls">CVAT khác (mỗi dòng một địa chỉ, không bắt buộc)</label>
+      <textarea id="cvat-urls" placeholder="http://192.168.1.20:8080"></textarea>
+    </section>
+    <section class="card">
+      <h2>Khi mở một job</h2>
+      <label class="check"><input id="auto-filter" type="checkbox"><span>Tự bật bộ lọc chỉ hiện box có cờ lỗi<small>Dùng bộ lọc sẵn có của CVAT; tắt bằng nút “Hiện tất cả” trong bảng.</small></span></label>
+      <label class="check"><input id="auto-expand" type="checkbox"><span>Tự mở DETAILS của box có cờ khi đang lọc<small>Để đọc nội dung cờ <code>pointsnap_error</code> ngay trong danh sách của CVAT.</small></span></label>
+      <label class="check"><input id="auto-highlight" type="checkbox"><span>Tự làm sáng box lỗi đầu tiên khi chuyển frame<small>Chỉ khi xác định được duy nhất box của lỗi.</small></span></label>
+    </section>
+    <div class="save-row">
+      <button id="save" class="btn primary">Lưu</button>
+      <button id="test" class="btn">Kiểm tra kết nối PointSnap</button>
+      <span id="status" role="status"></span>
+    </div>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>PointSnap cho CVAT</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="popup">
+  <header class="app-head">
+    <svg width="20" height="20" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+      <path d="M24 6 L38 14 L24 22 L10 14 Z M10 14 V30 L24 38 L38 30 V14 M24 22 V38" stroke="#fff" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="24" cy="38" r="5" fill="#4C9AFF"/>
+    </svg>
+    <b>PointSnap cho CVAT</b>
+    <span class="ver" id="version"></span>
+  </header>
+  <main>
+    <div id="server" class="status" role="status">
+      <span class="dot"></span>
+      <div><span id="server-text">Đang tìm PointSnap…</span><small id="server-sub"></small></div>
+    </div>
+    <div class="actions">
+      <button id="open-web" class="btn primary" type="button">Mở PointSnap</button>
+      <button id="open-cvat" class="btn" type="button">Mở CVAT</button>
+    </div>
+    <p class="section-title">Trong job CVAT</p>
+    <ul class="keys">
+      <li><span class="k"><kbd>.</kbd><kbd>,</kbd></span><span>Frame có lỗi tiếp theo / trước</span></li>
+      <li><span class="k"><kbd>]</kbd><kbd>[</kbd></span><span>Cũng chuyển lỗi (khi không gõ Telex)</span></li>
+      <li><span class="k"><kbd>↗</kbd></span><span>Trên bảng PointSnap: mở kết quả job trên web</span></li>
+    </ul>
+    <div class="foot">
+      <span>Bảng hiện khi mở một job 3D</span>
+      <button id="open-options" type="button">Tùy chọn</button>
+    </div>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

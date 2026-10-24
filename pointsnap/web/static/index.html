@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PointSnap 3D — Kiểm soát chất lượng nhãn 3D</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/fonts/fonts.css">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script>
+    // Áp theme trước khi vẽ để không nháy màu (cùng khóa với trang giới thiệu).
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('pointsnap_theme'); } catch (_) {}
+      if (t !== 'light' && t !== 'dark') t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute;" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 48 48" fill="none">
+      <path d="M24 6 L38 14 L24 22 L10 14 Z M10 14 V30 L24 38 L38 30 V14 M24 22 V38" stroke="currentColor" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></path>
+      <path d="M3 38 H16 M32 38 H45" stroke="currentColor" stroke-width="3" stroke-linecap="round" opacity="0.4"></path>
+      <circle cx="24" cy="38" r="4.5" fill="var(--logo-dot)"></circle>
+    </symbol>
+    <symbol id="i-scan" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5"></circle><path d="M10.5 10.5 L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></symbol>
+    <symbol id="i-list" viewBox="0 0 16 16" fill="none"><path d="M2 4 H14 M2 8 H14 M2 12 H10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></symbol>
+    <symbol id="i-clock" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"></circle><path d="M8 5 V8 L10 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></symbol>
+    <symbol id="i-sliders" viewBox="0 0 16 16" fill="none"><path d="M2 5 H14 M2 11 H14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path><circle cx="6" cy="5" r="1.8" fill="var(--surface)" stroke="currentColor" stroke-width="1.5"></circle><circle cx="10" cy="11" r="1.8" fill="var(--surface)" stroke="currentColor" stroke-width="1.5"></circle></symbol>
+    <symbol id="i-link" viewBox="0 0 16 16" fill="none"><path d="M6.5 9.5 L9.5 6.5 M7 4.5 L8.5 3 A2.5 2.5 0 0 1 13 6.5 L11.5 8 M9 11.5 L7.5 13 A2.5 2.5 0 0 1 3 9.5 L4.5 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></symbol>
+    <symbol id="i-chev-l" viewBox="0 0 12 12" fill="none"><path d="M7.5 2.5 L4 6 L7.5 9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></symbol>
+    <symbol id="i-chev-r" viewBox="0 0 12 12" fill="none"><path d="M4.5 2.5 L8 6 L4.5 9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></symbol>
+    <symbol id="i-check" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5 L6.5 11.5 L12.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></symbol>
+    <symbol id="i-x" viewBox="0 0 14 14" fill="none"><path d="M3 3 L11 11 M11 3 L3 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></symbol>
+    <symbol id="i-ext" viewBox="0 0 16 16" fill="none"><path d="M9 3 H13 V7 M13 3 L7.5 8.5 M11 9.5 V13 H3 V5 H6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></symbol>
+    <symbol id="i-home" viewBox="0 0 16 16" fill="none"><path d="M2.5 7.5 L8 3 L13.5 7.5 M4 6.5 V13 H12 V6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></symbol>
+    <symbol id="i-sun" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.8" stroke="currentColor" stroke-width="1.5"></circle><path d="M8 1.5 V3 M8 13 V14.5 M1.5 8 H3 M13 8 H14.5 M3.4 3.4 L4.4 4.4 M11.6 11.6 L12.6 12.6 M3.4 12.6 L4.4 11.6 M11.6 4.4 L12.6 3.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></symbol>
+    <symbol id="i-moon" viewBox="0 0 16 16" fill="none"><path d="M13.5 9.6 A5.6 5.6 0 0 1 6.4 2.5 A5.6 5.6 0 1 0 13.5 9.6 Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></symbol>
+    <symbol id="i-plus" viewBox="0 0 14 14" fill="none"><path d="M7 2 V12 M2 7 H12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></symbol>
+    <symbol id="i-trash" viewBox="0 0 14 14" fill="none"><path d="M2.5 4 H11.5 M5 4 V2.5 H9 V4 M4 4 V11.5 H10 V4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></symbol>
+    <symbol id="i-flag" viewBox="0 0 16 16" fill="none"><path d="M3.5 14 V2.5 M3.5 3 H12 L10 6 L12 9 H3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></symbol>
+    <symbol id="i-download" viewBox="0 0 16 16" fill="none"><path d="M8 2.5 V10 M4.8 7 L8 10.2 L11.2 7 M3 13.5 H13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></symbol>
+    <symbol id="i-puzzle" viewBox="0 0 16 16" fill="none"><path d="M3 5.5 H6 A1.5 1.5 0 1 1 9 5.5 H11 V8 A1.5 1.5 0 1 1 11 11 V13 H3 Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"></path></symbol>
+  </svg>
+
+  <div id="app-container">
+    <!-- ==================== THANH TRÊN ==================== -->
+    <header class="topbar">
+      <a href="/" class="topbar-brand" title="Về trang giới thiệu PointSnap 3D">
+        <svg width="24" height="24" aria-hidden="true"><use href="#i-logo"></use></svg>
+        <span>PointSnap <b>3D</b></span>
+      </a>
+      <span class="topbar-divider" aria-hidden="true"></span>
+
+      <div class="project-selector-wrapper">
+        <button id="btn-project-dropdown" class="project-dropdown-btn" aria-haspopup="true" aria-expanded="false" title="Chọn dự án">
+          <span class="project-dropdown-label">Dự án</span>
+          <span id="current-project-name" class="project-dropdown-name">Đang nạp...</span>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 4.5 L6 7.5 L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </button>
+        <div id="project-dropdown-menu" class="project-dropdown-menu">
+          <div class="project-menu-header">Dự án</div>
+          <ul id="project-dropdown-list" class="project-menu-list"></ul>
+          <div class="project-menu-divider"></div>
+          <button id="btn-open-create-proj" class="project-menu-action">
+            <svg width="14" height="14" aria-hidden="true"><use href="#i-plus"></use></svg>
+            Tạo dự án mới
+          </button>
+          <button id="btn-open-delete-proj" class="project-menu-action danger">
+            <svg width="14" height="14" aria-hidden="true"><use href="#i-trash"></use></svg>
+            Xóa dự án hiện tại
+          </button>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <a href="#connection" id="cvat-status-badge" class="status-chip" title="Trạng thái kết nối CVAT của dự án — bấm để cấu hình">
+          <span id="cvat-status-dot" class="status-dot checking"></span>
+          <span id="cvat-status-text">CVAT · Đang kiểm tra</span>
+        </a>
+        <span id="ext-status-chip" class="status-chip" title="Extension PointSnap trên tab CVAT đang mở job của lần quét này">
+          <span id="ext-status-dot" class="status-dot disconnected"></span>
+          <span id="ext-status-text">Extension · chưa mở job</span>
+        </span>
+        <button id="btn-help" class="topbar-icon-btn" aria-label="Phím tắt và hướng dẫn (?)" title="Phím tắt và hướng dẫn (?)">?</button>
+        <div role="group" aria-label="Chế độ hiển thị" class="theme-switch-group">
+          <button id="theme-btn-light" class="theme-switch-btn" aria-pressed="false" aria-label="Giao diện sáng" title="Sáng"><svg width="15" height="15" aria-hidden="true"><use href="#i-sun"></use></svg></button>
+          <button id="theme-btn-dark" class="theme-switch-btn" aria-pressed="true" aria-label="Giao diện tối" title="Tối"><svg width="15" height="15" aria-hidden="true"><use href="#i-moon"></use></svg></button>
+        </div>
+      </div>
+    </header>
+
+    <div class="app-body">
+      <!-- ==================== THANH BÊN ==================== -->
+      <aside class="app-sidebar" aria-label="Điều hướng">
+        <div class="nav-group-title">Kiểm tra</div>
+        <button class="nav-link" data-tab="tab-system"><svg width="16" height="16" aria-hidden="true"><use href="#i-sliders"></use></svg><span class="nav-text">Hệ thống</span><span id="system-nav-state" class="nav-badge">…</span></button>
+        <button class="nav-link" data-tab="tab-scan">
+          <svg width="16" height="16" aria-hidden="true"><use href="#i-scan"></use></svg>
+          <span class="nav-text">Quét job</span>
+        </button>
+        <button class="nav-link active" data-tab="tab-results">
+          <svg width="16" height="16" aria-hidden="true"><use href="#i-list"></use></svg>
+          <span class="nav-text">Kết quả</span>
+          <span id="nav-badge-findings" class="nav-badge" title="Số mục Lỗi + Cảnh báo của lần quét đang xem"></span>
+        </button>
+        <button class="nav-link" data-tab="tab-history">
+          <svg width="16" height="16" aria-hidden="true"><use href="#i-clock"></use></svg>
+          <span class="nav-text">Lịch sử</span>
+        </button>
+
+        <div class="nav-group-title">Cấu hình</div>
+        <button class="nav-link" data-tab="tab-guideline">
+          <svg width="16" height="16" aria-hidden="true"><use href="#i-sliders"></use></svg>
+          <span class="nav-text">Guideline</span>
+        </button>
+        <button class="nav-link" data-tab="tab-connection">
+          <svg width="16" height="16" aria-hidden="true"><use href="#i-link"></use></svg>
+          <span class="nav-text">Kết nối CVAT</span>
+        </button>
+
+        <div class="sidebar-footer">
+          <a href="/" class="sidebar-home"><svg width="14" height="14" aria-hidden="true"><use href="#i-home"></use></svg><span class="nav-text">Trang giới thiệu</span></a>
+          <span class="nav-text">Phiên bản 0.3.0</span>
+        </div>
+      </aside>
+
+      <main class="app-main">
+        <!-- ==================== KẾT QUẢ ==================== -->
+        <section id="tab-system" class="tab-pane" aria-label="Hệ thống" style="display:none">
+          <div class="page-header"><div><div class="breadcrumb">POINTSNAP · KHÔNG GIAN LÀM VIỆC</div><h1 class="page-title">Kiểm tra hệ thống</h1><p class="page-subtitle">Kiểm tra đúng môi trường trước khi bắt đầu. Model chỉ cần cho các luật bạn bật.</p></div><button id="system-recheck" class="btn btn-secondary">Kiểm tra lại</button></div>
+          <div id="system-checks" aria-live="polite"><div class="system-loading">Đang chọn dự án…</div></div>
+          <div class="system-actions"><a class="btn btn-ghost" href="#guideline">Xem Guideline</a><button id="system-continue" class="btn btn-primary" disabled>Tiếp tục công việc →</button></div>
+        </section>
+        <section id="tab-results" class="tab-pane active" aria-label="Kết quả quét">
+          <div class="page-head">
+            <div class="page-head-text">
+              <div class="breadcrumb" id="results-breadcrumb"><span id="breadcrumb-project">Dự án</span> / <span id="breadcrumb-job">Job —</span></div>
+              <h1 class="page-title" id="results-header-title">Kết quả quét</h1>
+              <div class="page-subtitle" id="results-header-subtitle">Chưa có lượt quét nào được chọn.</div>
+            </div>
+            <div class="header-action-group" id="results-actions-group" style="display: none;">
+              <a id="btn-download-csv" href="#" download class="btn btn-ghost btn-sm" title="Tải bảng CSV các mục của lần quét"><svg width="14" height="14" aria-hidden="true"><use href="#i-download"></use></svg>CSV</a>
+              <a id="btn-download-html" href="#" target="_blank" class="btn btn-ghost btn-sm" title="Mở báo cáo HTML trong tab mới"><svg width="14" height="14" aria-hidden="true"><use href="#i-ext"></use></svg>Báo cáo HTML</a>
+              <button id="btn-re-flag-cvat" class="btn btn-primary btn-sm" title="Quét lại job này và ghi cờ lỗi lên CVAT">Gắn cờ lên CVAT</button>
+            </div>
+          </div>
+
+          <!-- Hub trung tâm kiểm tra hệ thống & điều hướng phiên làm việc -->
+          <div id="results-empty-state" class="card-section"></div>
+
+          <details id="scan-diagnostics" class="card-section diagnostics"><summary>Chẩn đoán lần quét <span id="diagnostics-count"></span></summary><div id="diagnostics-content"></div></details>
+          <div id="results-content-box" style="display: none; flex-direction: column; gap: 16px;">
+            <!-- Kết luận cổng + bộ đếm -->
+            <section class="summary-bar" aria-label="Tóm tắt lần quét">
+              <div id="gate-banner-strip" class="gate-banner-strip fail" aria-label="Kết luận cổng kiểm soát">
+                <svg width="20" height="20" viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="7.5" stroke="currentColor" stroke-width="1.5"></circle><path d="M9 5 V10 M9 12.5 V13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+                <div class="gate-text">
+                  <strong id="gate-verdict-title">Không đạt cổng kiểm soát</strong>
+                  <span id="gate-verdict-desc" class="gate-desc">Đang tính toán tiêu chí...</span>
+                </div>
+              </div>
+              <div class="stats-grid-row" aria-label="Tổng số">
+                <div class="stat-cell"><div class="stat-label-text">Lỗi</div><div class="stat-number-text error" id="stat-errors-count">0</div></div>
+                <div class="stat-cell"><div class="stat-label-text">Cảnh báo</div><div class="stat-number-text warn" id="stat-warnings-count">0</div></div>
+                <div class="stat-cell"><div class="stat-label-text">Box đã quét</div><div class="stat-number-text" id="stat-boxes-count">0</div></div>
+              </div>
+            </section>
+
+            <div class="results-split-layout">
+              <!-- Danh sách mục -->
+              <section class="findings-list-panel" aria-label="Danh sách phát hiện">
+                <div class="table-filter-bar">
+                  <div class="search-field">
+                    <svg width="14" height="14" aria-hidden="true"><use href="#i-scan"></use></svg>
+                    <input type="search" id="filter-search-box" class="filter-input" placeholder="Tìm mô tả, class, frame, track…  ( / )" aria-label="Tìm trong kết quả">
+                  </div>
+                  <select id="filter-error-type" class="filter-select" aria-label="Loại lỗi">
+                    <option value="">Mọi loại lỗi</option>
+                    <option value="floating">Lơ lửng / lún</option>
+                    <option value="size">Kích thước</option>
+                    <option value="heading">Sai hướng box</option>
+                    <option value="fit">Box lệch khỏi vật</option>
+                    <option value="attribute">Thuộc tính / spec</option>
+                  </select>
+                  <select id="filter-class" class="filter-select" aria-label="Class">
+                    <option value="">Mọi class</option>
+                  </select>
+                </div>
+                <div role="group" aria-label="Lọc theo mức" class="severity-tab-bar">
+                  <button id="sev-tab-all" class="sev-tab-btn" aria-pressed="true">Tất cả 0</button>
+                  <button id="sev-tab-error" class="sev-tab-btn sev-error" aria-pressed="false">Lỗi 0</button>
+                  <button id="sev-tab-warning" class="sev-tab-btn sev-warning" aria-pressed="false">Cảnh báo 0</button>
+                </div>
+                <div class="table-scroll-container">
+                  <table class="enterprise-table findings-table">
+                    <thead>
+                      <tr>
+                        <th style="width: 104px;">Mức</th>
+                        <th style="width: 72px;">Frame</th>
+                        <th style="width: 130px;">Track · class</th>
+                        <th>Mô tả</th>
+                      </tr>
+                    </thead>
+                    <tbody id="findings-table-body"></tbody>
+                  </table>
+                </div>
+                <div class="table-pagination-footer">
+                  <span id="pagination-summary-text">0–0 trên 0 mục</span>
+                  <div class="pager-buttons">
+                    <button id="btn-pagination-prev" class="btn btn-ghost btn-sm" disabled>Trước</button>
+                    <button id="btn-pagination-next" class="btn btn-ghost btn-sm" disabled>Sau</button>
+                  </div>
+                </div>
+              </section>
+
+              <!-- Chi tiết mục đang chọn -->
+              <aside class="detail-drawer-panel" aria-label="Chi tiết phát hiện">
+                <div class="drawer-head">
+                  <div class="drawer-head-row">
+                    <span id="detail-sev-badge" class="pill-badge error">Lỗi</span>
+                    <span id="detail-rule-code" class="mono rule-code">rule</span>
+                    <div class="quick-nav-buttons">
+                      <button id="btn-quick-prev" class="quick-nav-btn" aria-label="Mục trước (phím K)" title="Mục trước (K)"><svg width="12" height="12" aria-hidden="true"><use href="#i-chev-l"></use></svg></button>
+                      <span id="quick-nav-counter" class="mono quick-nav-counter">0 / 0</span>
+                      <button id="btn-quick-next" class="quick-nav-btn" aria-label="Mục sau (phím J)" title="Mục sau (J)"><svg width="12" height="12" aria-hidden="true"><use href="#i-chev-r"></use></svg></button>
+                    </div>
+                  </div>
+                  <h2 id="detail-title-text" class="drawer-title">Tiêu đề lỗi</h2>
+                  <div class="drawer-actions">
+                    <div class="review-buttons" role="group" aria-label="Kết luận của người xem">
+                      <button id="btn-review-ok" class="btn review-btn" aria-pressed="false" title="Đúng là lỗi (phím 1)"><svg width="14" height="14" aria-hidden="true"><use href="#i-check"></use></svg>Đúng là lỗi <kbd>1</kbd></button>
+                      <button id="btn-review-fp" class="btn review-btn" aria-pressed="false" title="Báo nhầm (phím 2)"><svg width="12" height="12" aria-hidden="true"><use href="#i-x"></use></svg>Báo nhầm <kbd>2</kbd></button>
+                    </div>
+                    <a id="detail-btn-cvat-link" href="#" target="pointsnap-cvat" rel="noopener" class="btn btn-secondary cvat-open-btn" title="Mở box này trong CVAT để sửa (phím O)">Mở trong CVAT</a>
+                  </div>
+                  <div id="cvat-link-status" class="cvat-link-status"></div><div id="detail-manual-status" class="manual-state" role="status"></div>
+                </div>
+
+                <div class="drawer-body">
+                  <div class="quick-preview">
+                    <figure class="quick-preview-fig">
+                      <a id="preview-camera-link" class="preview-camera-link" target="_blank" rel="noopener">
+                        <img id="preview-camera" class="preview-camera" alt="Ảnh camera chụp box của mục đang chọn" hidden>
+                      </a>
+                      <figcaption id="preview-camera-caption">Ảnh camera</figcaption>
+                    </figure>
+                    <figure class="quick-preview-fig">
+                      <canvas id="preview-canvas-top" class="preview-canvas" role="img" aria-label="Point cloud nhìn từ trên quanh box"></canvas>
+                      <figcaption>Từ trên · mũi tên đỏ chỉ đầu box</figcaption>
+                    </figure>
+                    <figure class="quick-preview-fig">
+                      <canvas id="preview-canvas-side" class="preview-canvas" role="img" aria-label="Point cloud nhìn ngang, mặt đất ở dưới"></canvas>
+                      <figcaption>Nhìn ngang · nét đứt là mặt đất đo được</figcaption>
+                    </figure>
+                    <figure class="quick-preview-fig">
+                      <canvas id="preview-canvas-front" class="preview-canvas" role="img" aria-label="Point cloud nhìn từ đầu box"></canvas>
+                      <figcaption>Từ đầu box · nét đứt xanh là đề xuất sửa</figcaption>
+                    </figure>
+                    <div id="preview-status" class="preview-status" aria-live="polite"></div>
+                  </div>
+
+                  <dl class="detail-drawer-meta-dl">
+                    <div><dt>Frame</dt><dd id="detail-frame-val">—</dd></div>
+                    <div><dt>Track · class</dt><dd id="detail-track-class-val">—</dd></div>
+                    <div><dt>Giá trị đo</dt><dd id="detail-measured-val">—</dd></div>
+                    <div><dt>Ngưỡng</dt><dd id="detail-threshold-val">—</dd></div>
+                    <div><dt>Độ tin cậy</dt><dd id="detail-confidence-val" title="Xác suất là lỗi thật, học từ các kết luận Đúng / Báo nhầm đã duyệt">—</dd></div>
+                  </dl>
+
+                  <div class="detail-drawer-body-text">
+                    <div class="detail-field-label">Mô tả</div>
+                    <div id="detail-message-desc" class="detail-message">—</div>
+                    <div class="fix-callout">
+                      <div class="detail-field-label">Cách sửa</div>
+                      <div id="detail-fix-hint">—</div>
+                    </div>
+                  </div>
+
+                  <div id="detail-repair-card" class="detail-repair-card" style="display:none;">
+                    <strong>Sửa tay trong CVAT</strong>
+                    <p id="repair-reason-text" class="repair-reason-text"></p>
+                    <span class="muted small">Kéo box · xem thước, đường gióng và số đo · Save/Undo trong CVAT</span>
+                  </div>
+
+                  <div class="drawer-foot">
+                    <span id="review-progress-text"></span>
+                    <details class="drawer-tips">
+                      <summary>Mẹo dùng nhanh</summary>
+                      <p>Phím <kbd>J</kbd>/<kbd>K</kbd> mục sau / trước · <kbd>1</kbd> đúng là lỗi · <kbd>2</kbd> báo nhầm · <kbd>O</kbd> mở trong CVAT · <kbd>/</kbd> tìm.</p>
+                      <p>Link CVAT chỉ đúng với lần quét mới nhất và luôn mở vào cùng một tab. Sửa nhiều box: bấm <b>Gắn cờ lên CVAT</b>, rồi trong CVAT dùng extension để lọc box có cờ và nhảy lỗi bằng <kbd>.</kbd> / <kbd>,</kbd>.</p>
+                    </details>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== QUÉT JOB ==================== -->
+        <section id="tab-scan" class="tab-pane" aria-label="Quét job" style="display: none;">
+          <div class="page-head">
+            <div class="page-head-text">
+              <div class="breadcrumb"><span id="scan-breadcrumb-project">Dự án</span> / Quét job</div>
+              <h1 class="page-title">Quét job</h1>
+              <div class="page-subtitle">Đối chiếu từng box với point cloud, track, ảnh camera và guideline của dự án.</div>
+            </div>
+          </div>
+
+          <div class="scan-layout-grid">
+            <section class="scan-setup-card card-section" aria-label="Thiết lập lần quét">
+              <div class="card-header-row"><h2 class="card-title-h2"><span class="step-num">1</span>Chọn job</h2></div>
+              <div class="form-grid-row">
+                <div class="form-group-item full-width">
+                  <label for="select-cvat-task">Task trên CVAT</label>
+                  <div class="input-with-btn">
+                    <select id="select-cvat-task" class="form-select">
+                      <option value="">-- Chọn Task --</option>
+                    </select>
+                    <button id="btn-refresh-tasks" class="btn btn-secondary" title="Tải lại danh sách task từ CVAT">Tải lại</button>
+                  </div>
+                </div>
+                <div class="form-group-item">
+                  <label for="select-cvat-job">Job</label>
+                  <select id="select-cvat-job" class="form-select">
+                    <option value="">-- Chọn Job --</option>
+                  </select>
+                </div>
+                <div class="form-group-item">
+                  <label for="input-custom-job-id">Hoặc nhập id job</label>
+                  <input type="number" id="input-custom-job-id" class="form-input" placeholder="Ví dụ 2" min="1">
+                </div>
+              </div>
+
+              <div class="card-header-row bordered"><h2 class="card-title-h2"><span class="step-num">2</span>Tùy chọn</h2></div>
+              <label class="option-row">
+                <input type="checkbox" id="check-scan-flag">
+                <span>
+                  <span class="option-title">Gắn cờ lên CVAT sau khi quét</span>
+                  <span class="option-desc">Ghi mục Lỗi và Cảnh báo vào thuộc tính <code>pointsnap_error</code> để extension lọc box trong CVAT. Bấm <b>Save</b> trên CVAT trước khi gắn cờ.</span>
+                </span>
+              </label>
+
+              <div class="scan-start-row">
+                <a href="#guideline" id="scan-guideline-summary" class="muted-link" title="Mở Guideline của dự án">Guideline của dự án</a>
+                <button id="btn-start-scan" class="btn btn-primary btn-lg">Bắt đầu quét</button>
+              </div>
+            </section>
+
+            <section class="scan-progress-card card-section" aria-label="Tiến độ">
+              <div class="card-header-row">
+                <h2 class="card-title-h2">Tiến độ</h2>
+                <span id="scan-progress-percent" class="mono muted">0%</span>
+              </div>
+              <div class="scan-progress-body">
+                <div id="scan-progress-region" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Tiến độ quét" class="progress-bar-track">
+                  <div id="scan-progress-bar" class="progress-bar-fill"></div>
+                </div>
+                <div id="scan-loader" class="scan-loader" hidden></div>
+                <div id="scan-status-message" class="scan-status">Chưa chạy. Chọn job rồi bấm Bắt đầu quét.</div>
+                <ol class="scan-step-list">
+                  <li class="scan-step-item"><span id="step-dot-1" class="step-indicator-dot"></span><span id="step-label-1" class="step-label">Tải nhãn từ CVAT</span><span id="step-state-1" class="step-state">Chờ</span></li>
+                  <li class="scan-step-item"><span id="step-dot-2" class="step-indicator-dot"></span><span id="step-label-2" class="step-label">Đọc point cloud theo manifest</span><span id="step-state-2" class="step-state">Chờ</span></li>
+                  <li class="scan-step-item"><span id="step-dot-3" class="step-indicator-dot"></span><span id="step-label-3" class="step-label">Chạy các luật đang bật</span><span id="step-state-3" class="step-state">Chờ</span></li>
+                  <li class="scan-step-item"><span id="step-dot-4" class="step-indicator-dot"></span><span id="step-label-4" class="step-label">Tạo báo cáo HTML / CSV</span><span id="step-state-4" class="step-state">Chờ</span></li>
+                  <li class="scan-step-item"><span id="step-dot-5" class="step-indicator-dot"></span><span id="step-label-5" class="step-label">Kết luận cổng kiểm soát</span><span id="step-state-5" class="step-state">Chờ</span></li>
+                </ol>
+              </div>
+            </section>
+          </div>
+
+          <section class="card-section recent-card" aria-label="Lần quét gần đây">
+            <div class="card-header-row">
+              <h2 class="card-title-h2">Lần quét gần nhất</h2>
+              <a href="#history" class="btn btn-ghost btn-sm">Xem lịch sử</a>
+            </div>
+            <div id="recent-scan-box" class="recent-scan-box">
+              <span id="recent-scan-time" class="mono">Chưa có lượt quét nào</span>
+            </div>
+          </section>
+        </section>
+
+        <!-- ==================== GUIDELINE ==================== -->
+        <section id="tab-guideline" class="tab-pane" aria-label="Guideline của dự án" style="display: none;">
+          <div class="page-head">
+            <div class="page-head-text">
+              <div class="breadcrumb"><span id="guideline-breadcrumb-project">Dự án</span> / Guideline</div>
+              <h1 class="page-title">Guideline của dự án</h1>
+              <div class="page-subtitle">Luật, ngưỡng và tiêu chí đạt áp dụng cho mọi lần quét của dự án. Lưu xong có hiệu lực từ lần quét sau.</div>
+            </div>
+            <div role="group" aria-label="Cách chỉnh sửa" class="seg-control">
+              <button id="btn-mode-form" class="seg-btn" aria-pressed="true">Biểu mẫu</button>
+              <button id="btn-mode-yaml" class="seg-btn" aria-pressed="false">YAML</button>
+            </div>
+          </div>
+
+          <div id="guideline-form-view" class="guideline-form">
+            <!-- Cổng kiểm soát -->
+            <section class="card-section" aria-label="Cổng kiểm soát">
+              <div class="card-header-row">
+                <div>
+                  <h2 class="card-title-h2">Cổng kiểm soát</h2>
+                  <div class="card-desc">Job <b>ĐẠT</b> khi số mục không vượt các mức này. Dùng trên web, extension và <code>pointsnap gate</code>.</div>
+                </div>
+              </div>
+              <div class="field-grid">
+                <label class="field">
+                  <span class="field-label">Lỗi tối đa</span>
+                  <span class="field-input"><input type="number" id="gate-max-errors" class="form-input mono" min="0" step="1" value="0"><span class="unit">mục</span></span>
+                  <span class="field-help">Khuyến nghị 0: còn Lỗi là chưa nộp.</span>
+                </label>
+                <label class="field">
+                  <span class="field-label">Cảnh báo tối đa</span>
+                  <span class="field-input"><input type="number" id="gate-max-warnings" class="form-input mono" min="0" step="1" value="10"><span class="unit">mục</span></span>
+                  <span class="field-help">Cảnh báo cần người xem lại.</span>
+                </label>
+              </div>
+            </section>
+
+            <!-- Luật kiểm tra -->
+            <section class="card-section" aria-label="Luật kiểm tra">
+              <div class="card-header-row">
+                <div>
+                  <h2 class="card-title-h2">Luật kiểm tra <span id="rules-enabled-count" class="count-chip">—</span></h2>
+                  <div class="card-desc">Luật tắt sẽ không chạy khi quét. Rê chuột lên tên luật để xem mã luật.</div>
+                </div>
+                <div class="search-field compact">
+                  <svg width="14" height="14" aria-hidden="true"><use href="#i-scan"></use></svg>
+                  <input type="search" id="rules-search" class="filter-input" placeholder="Tìm luật…" aria-label="Tìm luật">
+                </div>
+              </div>
+              <div id="rules-toggles-container" class="rules-groups"></div>
+            </section>
+
+            <!-- Ngưỡng lơ lửng / lún -->
+            <section class="card-section" aria-label="Ngưỡng lơ lửng / lún">
+              <div class="card-header-row">
+                <div>
+                  <h2 class="card-title-h2">Ngưỡng lơ lửng / lún</h2>
+                  <div class="card-desc">So đáy box với các frame khác của cùng track; box lẻ so trực tiếp với mặt đất. Ngưỡng Lỗi phải lớn hơn ngưỡng Cảnh báo.</div>
+                </div>
+              </div>
+              <div class="field-grid four">
+                <label class="field"><span class="field-label">Cảnh báo</span><span class="field-input"><input type="number" step="0.01" min="0" id="fl-warning-m" class="form-input mono" value="0.15"><span class="unit">m</span></span></label>
+                <label class="field"><span class="field-label">Lỗi</span><span class="field-input"><input type="number" step="0.01" min="0" id="fl-error-m" class="form-input mono" value="0.22"><span class="unit">m</span></span></label>
+                <label class="field"><span class="field-label">Cảnh báo · box lẻ</span><span class="field-input"><input type="number" step="0.01" min="0" id="fl-single-warning-m" class="form-input mono" value="0.15"><span class="unit">m</span></span></label>
+                <label class="field"><span class="field-label">Lỗi · box lẻ</span><span class="field-input"><input type="number" step="0.01" min="0" id="fl-single-error-m" class="form-input mono" value="0.30"><span class="unit">m</span></span></label>
+              </div>
+            </section>
+
+            <!-- Khoảng kích thước theo class -->
+            <section class="card-section" aria-label="Khoảng kích thước theo class">
+              <div class="card-header-row">
+                <div>
+                  <h2 class="card-title-h2">Khoảng kích thước theo class</h2>
+                  <div class="card-desc">Dùng cho class ít mẫu (đơn vị mét, min – max); class nhiều mẫu lấy từ thống kê dữ liệu. Sửa trực tiếp trong bảng.</div>
+                </div>
+                <div class="add-class-row">
+                  <input type="text" id="new-size-class-name" class="form-input" placeholder="Tên class, ví dụ trailer" aria-label="Tên class mới" maxlength="40">
+                  <button id="btn-add-size-class" class="btn btn-secondary"><svg width="12" height="12" aria-hidden="true"><use href="#i-plus"></use></svg>Thêm</button>
+                </div>
+              </div>
+              <div class="table-scroll-container">
+                <table class="enterprise-table size-table">
+                  <thead>
+                    <tr>
+                      <th>Class</th>
+                      <th>Dài (min – max)</th>
+                      <th>Rộng (min – max)</th>
+                      <th>Cao (min – max)</th>
+                      <th class="col-actions"><span class="sr-only">Thao tác</span></th>
+                    </tr>
+                  </thead>
+                  <tbody id="size-classes-table-body"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div id="guideline-yaml-view" style="display: none;">
+            <section class="card-section yaml-card" aria-label="YAML">
+              <label for="guideline-yaml-textarea" class="yaml-label">Toàn bộ guideline (YAML)</label>
+              <textarea id="guideline-yaml-textarea" rows="22" class="mono form-input yaml-area" spellcheck="false"></textarea>
+              <div class="card-desc">Khi lưu, hệ thống kiểm tra cú pháp và giá trị; sai sẽ báo vị trí lỗi và không lưu. Ví dụ bộ nhãn giao thông VN: <code>pointsnap/guidelines/spec-vn.yaml</code>.</div>
+            </section>
+          </div>
+
+          <div id="guideline-save-bar" class="guideline-action-bar">
+            <span id="guideline-dirty-note" class="dirty-note">Guideline hợp lệ · đã lưu</span>
+            <button id="btn-reset-guideline" class="btn btn-ghost">Khôi phục mặc định</button>
+            <button id="btn-save-guideline" class="btn btn-primary" disabled>Lưu thay đổi</button>
+          </div>
+        </section>
+
+        <!-- ==================== KẾT NỐI CVAT ==================== -->
+        <section id="tab-connection" class="tab-pane" aria-label="Cài đặt kết nối" style="display: none;">
+          <div class="page-head">
+            <div class="page-head-text">
+              <div class="breadcrumb"><span id="conn-breadcrumb-project">Dự án</span> / Kết nối CVAT</div>
+              <h1 class="page-title">Kết nối CVAT &amp; dữ liệu</h1>
+              <div class="page-subtitle">Máy chủ CVAT, token và nơi chứa point cloud của dự án này.</div>
+            </div>
+          </div>
+
+          <div class="conn-grid">
+            <section class="card-section" aria-label="Thông số kết nối">
+              <div class="card-header-row"><h2 class="card-title-h2">Máy chủ CVAT</h2></div>
+              <div class="form-stack">
+                <div class="form-group-item">
+                  <label for="conn-cvat-url">URL máy chủ CVAT</label>
+                  <div class="input-with-btn">
+                    <input type="text" id="conn-cvat-url" class="form-input" placeholder="http://localhost:8080">
+                    <button id="btn-check-cvat-connection" class="btn btn-secondary">Kiểm tra kết nối</button>
+                  </div>
+                  <div id="cvat-test-result-msg" class="field-help"></div>
+                </div>
+                <div class="form-group-item">
+                  <label for="conn-cvat-token">Token CVAT (Personal Access Token)</label>
+                  <input type="password" id="conn-cvat-token" class="form-input" placeholder="Để trống nếu không đổi" autocomplete="off">
+                  <div class="field-help">Lấy ở CVAT: avatar → <b>Settings</b> → <b>Personal access tokens</b>. Đổi địa chỉ CVAT sẽ xóa token cũ — nhập token của server mới.</div>
+                </div>
+              </div>
+
+              <div class="card-header-row bordered"><h2 class="card-title-h2">Dữ liệu point cloud</h2></div>
+              <div class="form-stack">
+                <div class="form-group-item">
+                  <label for="conn-nuscenes-root">Thư mục nuScenes <span class="muted mono">NUSCENES_ROOT</span></label>
+                  <input type="text" id="conn-nuscenes-root" class="form-input" placeholder="Ví dụ: D:/Vin_uni/data/nuscenes">
+                  <div class="field-help">Nơi chứa point cloud, ảnh camera và metadata nuScenes.</div>
+                </div>
+                <div class="form-group-item">
+                  <label for="conn-export-dirs">Thư mục bản xuất to-cvat <span class="muted mono">POINTSNAP_EXPORT_DIR</span></label>
+                  <input type="text" id="conn-export-dirs" class="form-input" placeholder="Ví dụ: D:/Vin_uni/data/cvat">
+                  <div class="field-help">Chứa <code>manifest.json</code> để khớp frame. Nhiều thư mục: phân cách bằng dấu <code>;</code>.</div>
+                </div>
+              </div>
+              <div class="card-footer-row">
+                <button id="btn-save-connection-settings" class="btn btn-primary">Lưu kết nối</button>
+              </div>
+            </section>
+
+            <section class="card-section ext-card" aria-label="Extension trong CVAT">
+              <div class="card-header-row">
+                <h2 class="card-title-h2"><svg width="16" height="16" aria-hidden="true"><use href="#i-puzzle"></use></svg>Extension trong CVAT</h2>
+              </div>
+              <div class="form-stack">
+                <div id="ext-conn-status" class="ext-conn-status"><span class="status-dot disconnected"></span>Chưa thấy tab CVAT nào mở job của lần quét đang xem.</div>
+                <ol class="install-steps">
+                  <li>Chrome / Edge mở <code>chrome://extensions</code> (Edge: <code>edge://extensions</code>).</li>
+                  <li>Bật <b>Developer mode</b> → <b>Load unpacked</b> → chọn thư mục <code>source-tool/pointsnap-3d/extension</code>.</li>
+                  <li>Mở job trên CVAT: bảng PointSnap hiện ở góc trang, tự lọc box có cờ.</li>
+                </ol>
+                <div class="field-help">CVAT không ở <code>localhost:8080</code>? Bấm biểu tượng PointSnap trên thanh trình duyệt → <b>Tùy chọn</b> để thêm địa chỉ.</div>
+                <div class="field-help">Khi extension đang mở đúng job: chọn mục ở trang Kết quả thì CVAT tự chuyển tới box đó; kết luận và sửa box ở hai bên đồng bộ trong vài giây, không cần F5.</div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <!-- ==================== LỊCH SỬ ==================== -->
+        <section id="tab-history" class="tab-pane" aria-label="Lịch sử quét" style="display: none;">
+          <div class="page-head">
+            <div class="page-head-text">
+              <div class="breadcrumb"><span id="history-breadcrumb-project">Dự án</span> / Lịch sử</div>
+              <h1 class="page-title">Lịch sử quét</h1>
+              <div class="page-subtitle">Số Lỗi và Cảnh báo nên giảm dần sau mỗi lần sửa nhãn và quét lại.</div>
+            </div>
+            <button id="btn-learn" class="btn btn-secondary" title="Dùng mọi kết luận Đúng / Báo nhầm của dự án để chấm độ tin cậy cho lần quét sau">Học từ kết luận đã duyệt</button>
+          </div>
+          <pre id="learn-report" class="mono learn-report" style="display: none;"></pre>
+
+          <section class="card-section" aria-label="Biểu đồ lỗi theo thời gian">
+            <div class="card-header-row">
+              <h2 class="card-title-h2" id="history-chart-title">Lỗi và Cảnh báo theo lần quét</h2>
+              <div class="chart-legend">
+                <span><i class="legend-swatch error"></i>Lỗi</span>
+                <span><i class="legend-swatch warn"></i>Cảnh báo</span>
+              </div>
+            </div>
+            <div class="chart-container-box">
+              <div id="history-chart-empty" class="chart-empty" style="display: none;">Chưa có lần quét hoàn tất để vẽ biểu đồ.</div>
+              <div id="history-chart-svg-wrapper">
+                <svg id="history-svg-chart" class="chart-svg" viewBox="0 0 800 200"></svg>
+              </div>
+            </div>
+          </section>
+
+          <section class="card-section" aria-label="Các lần quét">
+            <div class="table-scroll-container">
+              <table class="enterprise-table">
+                <thead>
+                  <tr>
+                    <th>Thời điểm</th>
+                    <th>Job</th>
+                    <th>Loại</th>
+                    <th>Lỗi</th>
+                    <th>Cảnh báo</th>
+                    <th>Kết luận</th>
+                    <th class="col-actions"><span class="sr-only">Thao tác</span></th>
+                  </tr>
+                </thead>
+                <tbody id="history-table-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- ==================== HỘP THOẠI ==================== -->
+  <div id="modal-create-proj" class="modal-overlay">
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-create-title">
+      <div class="modal-header">
+        <h3 id="modal-create-title">Tạo dự án mới</h3>
+        <button class="modal-close-btn" data-close="modal-create-proj" aria-label="Đóng"><svg width="14" height="14" aria-hidden="true"><use href="#i-x"></use></svg></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group-item">
+          <label for="create-proj-name">Tên dự án <span class="req">*</span></label>
+          <input type="text" id="create-proj-name" class="form-input" placeholder="Ví dụ: scene-0061 — CVAT local" required>
+        </div>
+        <div class="form-group-item">
+          <label for="create-proj-desc">Mô tả ngắn</label>
+          <input type="text" id="create-proj-desc" class="form-input" placeholder="Mục tiêu gán nhãn, nhóm phụ trách…">
+        </div>
+        <div class="form-row-2">
+          <div class="form-group-item">
+            <label for="create-proj-url">URL máy chủ CVAT</label>
+            <input type="text" id="create-proj-url" class="form-input" value="http://localhost:8080">
+          </div>
+          <div class="form-group-item">
+            <label for="create-proj-token">Token CVAT</label>
+            <input type="password" id="create-proj-token" class="form-input" placeholder="Personal Access Token" autocomplete="off">
+          </div>
+        </div>
+        <div class="field-help">Token lưu riêng trên máy (secret.json), không trả ra API. Có thể nhập sau ở mục Kết nối CVAT.</div>
+        <div class="form-group-item">
+          <label for="create-proj-preset">Guideline ban đầu</label>
+          <select id="create-proj-preset" class="form-select">
+            <option value="">Guideline mặc định</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" data-close="modal-create-proj">Hủy</button>
+        <button id="btn-submit-create-proj" class="btn btn-primary">Tạo dự án</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-delete-proj" class="modal-overlay">
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-delete-title">
+      <div class="modal-header">
+        <h3 id="modal-delete-title" class="danger-text">Xóa dự án?</h3>
+        <button class="modal-close-btn" data-close="modal-delete-proj" aria-label="Đóng"><svg width="14" height="14" aria-hidden="true"><use href="#i-x"></use></svg></button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-text">
+          Thao tác này <strong>xóa vĩnh viễn</strong> dự án <strong id="delete-proj-target-name"></strong> cùng guideline và lịch sử các lần quét. Nhãn trên CVAT không bị ảnh hưởng.
+        </p>
+        <div class="form-group-item">
+          <label for="delete-proj-confirm-input">Gõ lại tên dự án để xác nhận</label>
+          <input type="text" id="delete-proj-confirm-input" class="form-input" placeholder="Tên dự án">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" data-close="modal-delete-proj">Hủy</button>
+        <button id="btn-confirm-delete-proj" class="btn btn-danger" disabled>Xóa vĩnh viễn</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-help" class="modal-overlay">
+    <div class="modal-dialog modal-wide" role="dialog" aria-modal="true" aria-labelledby="modal-help-title">
+      <div class="modal-header">
+        <h3 id="modal-help-title">Phím tắt &amp; quy trình</h3>
+        <button class="modal-close-btn" data-close="modal-help" aria-label="Đóng"><svg width="14" height="14" aria-hidden="true"><use href="#i-x"></use></svg></button>
+      </div>
+      <div class="modal-body help-grid">
+        <div>
+          <h4>Quy trình hằng ngày</h4>
+          <ol class="help-flow">
+            <li><b>Quét job</b> — bật <i>Gắn cờ</i> để ghi lỗi lên CVAT.</li>
+            <li><b>Duyệt kết quả</b> — xem point cloud, ảnh camera; ghi Đúng / Báo nhầm.</li>
+            <li><b>Sửa trên CVAT</b> — extension lọc box có cờ, <kbd>.</kbd> / <kbd>,</kbd> nhảy lỗi; kéo sửa bằng tay với thước, đường gióng và tọa độ trực tiếp.</li>
+            <li><b>Quét lại</b> — cổng ĐẠT thì nộp.</li>
+          </ol>
+        </div>
+        <div>
+          <h4>Trang Kết quả</h4>
+          <dl class="kbd-list">
+            <div><dt><kbd>J</kbd> <kbd>↓</kbd></dt><dd>Mục sau</dd></div>
+            <div><dt><kbd>K</kbd> <kbd>↑</kbd></dt><dd>Mục trước</dd></div>
+            <div><dt><kbd>1</kbd></dt><dd>Đúng là lỗi (bấm lại để bỏ)</dd></div>
+            <div><dt><kbd>2</kbd></dt><dd>Báo nhầm (bấm lại để bỏ)</dd></div>
+            <div><dt><kbd>O</kbd></dt><dd>Mở / chuyển CVAT tới box</dd></div>
+            <div><dt><kbd>/</kbd></dt><dd>Tìm trong kết quả</dd></div>
+            <div><dt><kbd>?</kbd></dt><dd>Mở bảng này</dd></div>
+            <div><dt><kbd>Esc</kbd></dt><dd>Đóng hộp thoại</dd></div>
+          </dl>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <a href="/" class="btn btn-ghost">Trang giới thiệu</a>
+        <button class="btn btn-primary" data-close="modal-help">Đã hiểu</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container" role="status" aria-live="polite"></div>
+
+  <script src="/static/workspace.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,71 @@
+/* Trang của extension (popup, Tùy chọn): cùng bộ màu với web PointSnap và landing. */
+:root {
+  --bg: #F4F6F9; --surface: #FFFFFF; --surface-2: #F7F9FB; --border: #DDE2E8; --border-strong: #C3CBD5;
+  --text: #161B22; --text-2: #4A5563; --text-3: #68717D; --head: #0F2A47;
+  --primary: #0B63CE; --primary-hover: #0A57B5; --on-primary: #FFFFFF; --primary-soft: #E8F1FC; --primary-text: #0A57B5;
+  --success: #157A4A; --success-soft: #EBF8F1; --error: #B42318; --error-soft: #FDEEEE; --off: #B4BCC6;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0D1117; --surface: #151B23; --surface-2: #1A212B; --border: #2A333F; --border-strong: #3A4552;
+    --text: #E6EAF0; --text-2: #A9B4C2; --text-3: #8792A2; --head: #0A0F15;
+    --primary: #4C9AFF; --primary-hover: #6AACFF; --on-primary: #04162E; --primary-soft: #14284A; --primary-text: #7DB4FF;
+    --success: #4CC38A; --success-soft: #10291D; --error: #F38B85; --error-soft: #2E1718; --off: #46505B;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+a { color: var(--primary-text); }
+code, kbd, .mono { font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace; }
+code { font-size: 12px; padding: 1px 5px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--border); }
+kbd { display: inline-block; min-width: 18px; padding: 0 5px; font-size: 11px; line-height: 17px; text-align: center; border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 4px; background: var(--surface); color: var(--text-2); }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.app-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: var(--head); color: #FFFFFF; }
+.app-head b { font-size: 15px; }
+.app-head .ver { margin-left: auto; font-size: 12px; color: #B7C6D8; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+.card h2 { margin: 0 0 4px; font-size: 15px; }
+.hint { margin: 0 0 12px; color: var(--text-2); font-size: 13px; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font: inherit; font-weight: 500; cursor: pointer; text-decoration: none; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.btn.primary:hover { background: var(--primary-hover); }
+.btn.block { width: 100%; }
+
+.status { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); font-size: 13px; }
+.status .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--off); }
+.status.ok { background: var(--success-soft); border-color: color-mix(in srgb, var(--success) 35%, transparent); }
+.status.ok .dot { background: var(--success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 22%, transparent); }
+.status.err { background: var(--error-soft); border-color: color-mix(in srgb, var(--error) 35%, transparent); }
+.status.err .dot { background: var(--error); }
+.status small { display: block; color: var(--text-2); }
+
+/* ---- Popup ---- */
+.popup { width: 340px; }
+.popup main { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px; }
+.popup .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.popup .keys { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-2); }
+.popup .keys li { display: flex; align-items: center; gap: 10px; }
+.popup .keys .k { flex: none; display: inline-flex; gap: 3px; width: 46px; }
+.popup .foot { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--text-3); }
+.popup .foot button { border: 0; background: none; padding: 0; color: var(--primary-text); font: inherit; cursor: pointer; }
+.section-title { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+
+/* ---- Tùy chọn ---- */
+.options main { max-width: 680px; margin: 24px auto; padding: 0 16px; display: flex; flex-direction: column; gap: 16px; }
+label.field { display: block; font-weight: 600; font-size: 13px; margin: 12px 0 4px; }
+input[type=url], textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+input[type=url]:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+textarea { min-height: 72px; resize: vertical; }
+.check { display: flex; gap: 10px; align-items: flex-start; margin: 10px 0; }
+.check input { width: 16px; height: 16px; margin-top: 3px; accent-color: var(--primary); }
+.check small { display: block; color: var(--text-3); font-size: 12.5px; }
+.save-row { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 0; background: var(--bg); }
+#status { font-size: 13px; }
+#status.ok { color: var(--success); }
+#status.err { color: var(--error); }

@@ -1,0 +1,258 @@
+# Cấu hình mặc định của PointSnap 3D.
+#
+# Đơn vị: mét, giây, radian. Tỉ lệ ghi dạng thập phân (0.05 = 5%).
+# Ngưỡng là mặc định đề xuất ở mục 4.1 của docs/thiet-ke/de-xuat-de-tai.md, sẽ chốt ở việc B7.
+# Muốn đổi cho riêng mình: tạo file YAML chỉ chứa phần cần đổi, chạy `pointsnap --config <file> ...`.
+# Token CVAT KHÔNG ghi ở đây: đặt qua biến môi trường CVAT_TOKEN.
+
+cvat:
+  url: http://localhost:8080          # CVAT_URL ghi đè giá trị này; url trong file --config lại ưu tiên hơn CVAT_URL
+  flag_attribute: pointsnap_error     # thuộc tính văn bản dùng để gắn cờ lỗi lên box
+
+rules:                                # bật / tắt từng luật theo guideline của dự án
+  floating: true
+  size_class_range: true
+  size_in_track: true
+  heading_flip: true                  # C1: hướng box đổi đột ngột giữa hai keyframe (lật 180°, xoay nhầm)
+  heading_motion: true                # C1: hướng box ngược / lệch hướng chuyển động của track
+  heading_points: true                # C1: trục box lệch trục của cụm điểm LiDAR
+  fit_empty: true                     # C1: box không có điểm LiDAR nào
+  fit_outside: true                   # C1: nhiều điểm của vật nằm ngoài box (box nhỏ / lệch)
+  fit_loose: false                    # chờ chấm tay; có thể bật riêng theo guideline dự án (13/10)
+  fit_overlap: true                   # C1: hai box chồng lên nhau (vẽ trùng)
+  attr_height: true                   # C6: thuộc tính không khớp chiều cao box (spec.attribute_height)
+  spec_inside: true                   # C6: người bên trong xe (spec 4.3B; spec.inside_forbidden)
+  spec_rider_double: true             # C6: người lái bị gán thêm box riêng (spec 4.3C; spec.rider_double)
+  attr_rider_state: true              # C8: lên / xuống xe quên đổi rider_state (spec 4.3C; spec.rider_state)
+  cam_sparse: true                    # C8: box quá ít điểm LiDAR mà ảnh camera cũng không thấy vật (Thông tin, spec 4.2)
+  lidar_missing: true                 # C7: cụm điểm LiDAR di chuyển mà không có box (sót đối tượng, spec 4.2)
+  attr_missing: true                  # C2: thiếu thuộc tính bắt buộc (spec.required_attributes), spec 3.1.3
+  attr_invalid: true                  # C2: giá trị thuộc tính ngoài danh sách cho phép (spec.allowed_values)
+  heading_static: true                # C3: vật đứng yên mà box ở một keyframe xoay lệch
+  cam_mismatch: true                  # C3: box chiếu lên ảnh camera lệch vật trên ảnh (so với các frame khác của track)
+  cam_class: true                     # C3: ảnh camera nhận vật thuộc nhóm khác với nhãn
+  cam_missing: true                   # C3: ảnh thấy vật, có điểm LiDAR, nhưng không có box 3D (Thông tin)
+  critic_box: true                    # C3: Box Critic (model tự huấn luyện) nghi box sai; chỉ chạy khi có critic.model
+  fit_offset: false                   # box lệch vật đo bằng mét: fit lại box vào điểm của vật (box_fit); bật qua guideline box-fit.yaml
+  fit_yaw: false                      # box xoay lệch trục vật: cùng phép đo của fit_offset
+  cam_face: false                     # box ngược đầu cả track (kể cả xe đứng yên): ảnh camera thấy đầu / đuôi xe (CLIP, cần GPU)
+
+floating:                             # lơ lửng / lún đất (B3); kiểm chứng trên 10 cảnh mini: docs/ket-qua/kiem-chung-ground.md
+  classes: [car, truck, bus, trailer, construction_vehicle, pedestrian, motorcycle, bicycle]
+  warning_m: 0.15                     # |d − trung vị d của peer| > 15 cm; chỉ gộp box đang xét khi có < 3 peer
+  error_m: 0.22                       # > 22 cm: Lỗi, nếu |d| tuyệt đối cũng > error_min_abs_m
+  error_min_abs_m: 0.15
+  ground_tolerance_m: 0.05            # phải < warning_m và single_warning_m; sàn dung sai cho lệch track / |d| box lẻ
+                                      # box chạm đất vẫn báo chênh track để xem các frame khác; không tự kéo về trung vị
+  single_warning_m: 0.15              # box lẻ / track ít box có bằng chứng: so |d| tuyệt đối
+  single_error_m: 0.30
+  min_track_boxes: 2                  # cần >= 2 peer trong nhóm địa hình đã chọn; có < 3 peer mới gộp box đang xét
+  ring_inner_m: 0.1                   # vành đai lấy điểm ground: từ mép footprint + 0.1 m
+  ring_outer_m: 0.8                   # ... tới mép footprint + 0.8 m
+  min_ground_points: 15               # ít hơn: ghi "thiếu bằng chứng" ở mức Thông tin
+  sweeps: 4                           # mặt đất v2 (C1): gộp thêm N lượt quét LiDAR trước keyframe để đo mặt đất
+  single_box: false                   # không báo box lẻ / track ít box (so tuyệt đối): người duyệt tự xem khi label (13/10)
+
+size:
+  class_range:                        # kiểu 1: bất thường so với class
+    percentile_low: 1
+    percentile_high: 99
+    warning_margin: 0.10              # Cảnh báo nếu ngoài [p_low − 10%, p_high + 10%] (B7: thống kê từ 5 cảnh còn hẹp)
+    error_margin: 0.25                # Lỗi nếu ngoài [p_low − 25%, p_high + 25%]
+    min_instances: 20                 # class ít instance hơn thì dùng manual_ranges
+    # [p_low, p_high] theo class, tính trên trung vị kích thước của từng đối tượng. Sinh bằng scripts/build_size_stats.py
+    # từ 5 cảnh tinh chỉnh (scene-0061, 0553, 0757, 0916, 1094); chỉ class có >= min_instances đối tượng.
+    stats:
+      barrier:      {length: [0.40, 0.76], width: [1.73, 3.36], height: [0.90, 1.35]}  # 75 đối tượng, 1637 box
+      car:          {length: [3.90, 5.79], width: [1.58, 2.41], height: [1.39, 2.41]}  # 124 đối tượng, 2490 box
+      pedestrian:   {length: [0.48, 1.10], width: [0.50, 0.98], height: [1.28, 2.00]}  # 151 đối tượng, 2824 box
+      traffic_cone: {length: [0.35, 0.69], width: [0.36, 0.96], height: [0.55, 1.33]}  # 72 đối tượng, 578 box
+  manual_ranges:                      # class ít mẫu (< min_instances): bus, trailer, construction_vehicle chốt ở B7
+                                      # (Khánh & Huy); truck, motorcycle, bicycle thêm ở A10
+    bus:                  {length: [6.0, 18.5], width: [2.2, 3.2], height: [2.4, 4.5]}
+    trailer:              {length: [2.0, 18.0], width: [1.5, 3.2], height: [1.0, 4.5]}
+    construction_vehicle: {length: [2.5, 12.0], width: [1.5, 3.5], height: [1.8, 5.0]}
+    truck:                {length: [4.5, 12.5], width: [1.8, 3.2], height: [1.9, 4.3]}
+    motorcycle:           {length: [1.5, 2.6],  width: [0.55, 1.2], height: [1.0, 2.0]}
+    bicycle:              {length: [1.2, 2.1],  width: [0.4, 0.95], height: [0.8, 2.0]}
+  cargo_classes: [motorcycle, bicycle] # C5: xe chở hàng cồng kềnh — "lớn bất thường" mà điểm LiDAR phủ kín chiều đó: Cảnh báo thay vì Lỗi
+  in_track:                           # kiểu 2: kích thước dao động trong cùng một track
+    min_keyframes: 3
+    excluded_classes: [pedestrian]    # tư thế thay đổi nên kích thước dao động là bình thường
+    warning_abs_m: 0.10               # Cảnh báo nếu lệch so với trung vị track > max(0.10 m, 5%)
+    warning_rel: 0.05
+    error_abs_m: 0.30                 # Lỗi nếu lệch > max(0.30 m, 15%)
+    error_rel: 0.15
+    suspect_id_rel: 0.30              # lệch hơn 30%: ghi chú "nghi nhầm ID"
+
+track:
+  keyframe_interval_s: 0.5
+
+heading:                              # sai hướng box (C1), spec 4.2: hướng box trùng hướng chuyển động chính
+  min_motion_m: 1.0                   # quãng đường tối thiểu giữa 2 keyframe lân cận để tin hướng chuyển động
+  groups:
+    vehicle:
+      classes: [car, truck, bus, trailer, construction_vehicle]
+      min_speed_mps: 2.0              # chạy chậm hơn (đỗ, lùi xe) thì không so với hướng chuyển động
+      motion_warning_deg: 60          # hướng box lệch hướng chuyển động > 60°: Cảnh báo
+      motion_error_deg: 135           # > 135° (box ngược chiều xe chạy): Lỗi
+      flip_warning_deg: 45            # hướng đổi đột ngột giữa 2 keyframe > 45° (vượt tốc độ quay hợp lý): Cảnh báo
+      flip_error_deg: 75              # > 75° (xoay ngang, lật đầu box): Lỗi
+      yaw_rate_max_dps: 60            # xe quay tối đa ~60°/s: khoảng cách keyframe dài thì nới ngưỡng lật
+      reverse_max_mps: 3.0            # box ngược chiều cả đoạn mà xe chạy ≤ 3 m/s: có thể đang lùi → Cảnh báo (C5)
+    two_wheeler:
+      classes: [motorcycle, bicycle]
+      min_speed_mps: 1.5
+      motion_warning_deg: 60
+      motion_error_deg: 135
+      flip_warning_deg: 45
+      flip_error_deg: 75
+      yaw_rate_max_dps: 90
+    pedestrian:                       # người xoay người nhanh và hay đứng yên: ngưỡng rộng
+      classes: [pedestrian]
+      min_speed_mps: 1.0
+      motion_warning_deg: 90
+      motion_error_deg: 150
+      flip_warning_deg: 120
+      flip_error_deg: 170
+      yaw_rate_max_dps: 180
+  points:                             # so trục box với trục cụm điểm (khớp hình chữ L), so với các frame khác của track
+    classes: [car, truck, bus, trailer]  # xe công trình có cần, gầu làm cụm điểm không vuông: không xét
+    min_points: 60                    # cần đủ điểm của vật
+    min_aspect: 1.6                   # box đủ dài so với bề ngang thì trục mới rõ
+    warning_deg: 12                   # 15 → 12 (12/10): box xoay 15° bắt 38% → 86% trên cảnh kiểm tra, báo nhầm +0,12 / 100 box
+    error_deg: 30
+    max_range_m: 40.0
+
+fit:                                  # box vẽ lệch khỏi vật (C1), spec 4.2: bao trọn vật thể, không dư thừa
+  empty_max_points: 0                 # box có <= 0 điểm LiDAR cao hơn đáy box (không đánh occluded): Cảnh báo "box rỗng"
+  sparse_warning_points: 0            # > 0: Cảnh báo box có ít điểm hơn mức này ("không nên gán", chờ chốt P-009)
+  outside_margin_m: 0.5               # xét điểm trong box nới mỗi phía max(0.5 m, 25% cạnh box), bỏ điểm mặt đất,
+  outside_margin_rel: 0.25            # điểm của box khác, và điểm không nối liền với điểm trong box
+  outside_min_object_points: 30       # chỉ xét vật có ≥ 30 điểm
+  outside_min_points: 15              # cần ít nhất 15 điểm của vật nằm ngoài box
+  outside_warning_ratio: 0.4          # tỉ lệ điểm của vật nằm ngoài box cao hơn trung vị track > 40 điểm %: Cảnh báo
+  outside_error_ratio: 0.7            # > 70%: Lỗi (box nhỏ hoặc lệch hẳn khỏi vật)
+  ground_clearance_m: 0.25            # điểm thấp hơn đáy box + 0.25 m coi là mặt đất
+  loose_min_points: 40                # box dư: chỉ xét box gần, nhiều điểm
+  loose_max_range_m: 30.0
+  loose_warning_m: 0.4                # mặt box quay về phía LiDAR cách điểm gần nhất của vật > 0.4 m
+  loose_rise_m: 0.3                   # ... và dư hơn trung vị các frame khác của track > 0.3 m: Cảnh báo
+  loose_error_m: 1.0
+  overlap_warning: 0.2                # phần chồng / diện tích box nhỏ hơn (nhìn từ trên) > 20%: Cảnh báo
+  overlap_error: 0.5                  # > 50% (gần như vẽ trùng một vật hai lần): Lỗi
+  overlap_classes: [car, truck, bus, trailer, construction_vehicle, motorcycle, bicycle, pedestrian]
+  overlap_allowed_pairs:              # spec 4.3B: người đứng sát nhau / cạnh xe được phép chồng box
+    - [pedestrian, pedestrian]
+    - [pedestrian, bicycle]
+    - [pedestrian, motorcycle]
+    - [pedestrian, car]               # người lên / xuống xe
+    - [pedestrian, truck]             # người đứng trên thùng xe (spec 4.3B)
+    - [pedestrian, construction_vehicle]
+    - [bicycle, bicycle]              # xe đạp / xe máy đỗ sát nhau (bãi xe, vỉa hè) hay chồng box
+    - [motorcycle, motorcycle]
+    - [bicycle, motorcycle]
+    - [truck, trailer]                # đầu kéo và rơ-moóc chồng ở chỗ nối
+    - [car, trailer]
+    - [construction_vehicle, trailer]
+
+static:                               # vật đứng yên (C3): box đúng ở mọi keyframe gần như trùng nhau trong hệ toàn cục
+  max_spread_m: 0.10                  # các keyframe khác của track tụ trong 10 cm (p90) thì coi là đứng yên
+  min_keyframes: 4
+  yaw_warning_deg: 4                  # nhãn chuẩn: p99 lệch < 1°; xoay 10° bắt ~100%
+  yaw_error_deg: 10
+  yaw_excluded_classes: [pedestrian, Pedestrian, Animal, traffic_cone]   # đứng yên vẫn xoay người; cọc tiêu tròn: hướng không có nghĩa (C5)
+
+camera:                               # đối chiếu ảnh camera (C3); cần PyTorch: pip install -e ".[vision]"
+  enabled: auto                       # auto: chạy khi có PyTorch + GPU; true / false: bật / tắt hẳn
+  model: maskrcnn                     # maskrcnn (Mask R-CNN COCO) | hybrid (Mask R-CNN + Grounding DINO cho cọc tiêu; nên dùng khi có
+                                      # GPU, cần transformers, thiếu thì tự lùi về maskrcnn) | gdino-sam2 (chỉ Grounding DINO + SAM 2.1:
+                                      # đặt min_score 0.3, mask_rise_warning 0.25, class_min_score 0.6, missing_min_score 0.6).
+                                      # Số liệu: docs/ket-qua/ket-qua-box-verifier.md mục 3.1
+  min_score: 0.5                      # độ tin cậy tối thiểu của vật trên ảnh (Mask R-CNN COCO)
+  min_inside: 0.85                    # chỉ xét box chiếu nằm gần trọn trong ảnh
+  max_depth_m: 50
+  min_box_px: 25                      # khung chiếu cao ít nhất 25 pixel
+  max_occlusion: 0.3                  # bỏ box bị box gần hơn che quá 30% khung
+  min_track_observations: 2           # cần ít nhất 2 lần nhìn thấy khác của track để so
+  min_brightness: 90                  # bỏ frame ban đêm: trung vị độ sáng 6 ảnh < 90 / 255
+  min_mask_iou: 0.05                  # vật trên ảnh phải chồng khung chiếu (IoU ≥ 0.05); không thì coi như model 2D sót vật
+  mask_rise_warning: 0.2              # cam.mismatch: phần vật trên ảnh nằm ngoài khung box cao hơn trung vị track > 20 điểm %
+  mismatch_severity: info             # info: bằng chứng phụ, không tính báo nhầm; warning: báo như luật khác
+  class_min_observations: 3           # cam.class: cần ít nhất 3 lần nhìn rõ
+  class_vote: 0.6                     # ≥ 60% số lần ảnh nhận nhóm khác
+  class_min_score: 0.7
+  missing_min_score: 0.85             # cam.missing: vật trên ảnh chắc chắn, cao ≥ 40 px, có ≥ 15 điểm LiDAR
+  missing_min_px: 40
+  missing_min_points: 15
+  sparse_max_points: 5                # cam.sparse: vật ≤ 5 điểm LiDAR ở mọi keyframe, ảnh không thấy (Thông tin; ngưỡng chờ chốt P-009)
+  groups:                             # nhóm vật trên ảnh → class nhãn 3D
+    vehicle: [car, truck, bus, trailer, construction_vehicle, Vehicle]
+    two_wheeler: [motorcycle, bicycle, Two-wheels]
+    person: [pedestrian, Pedestrian]
+    animal: [Animal]
+    traffic_cone: [traffic_cone]      # chỉ gdino-sam2 nhận được cọc tiêu / rào chắn
+    barrier: [barrier]
+
+evidence:                             # box quá ít điểm LiDAR: không kiểm được trên point cloud, hạ xuống Thông tin (13/10)
+  min_points: 20                      # chấm tay held-out 13/10: < 20 điểm thì 26/26 mục là "Không rõ", 0 mục "Đúng lỗi"
+  rules: [floating, size.class_range]
+
+missing:                              # sót đối tượng bằng LiDAR (C7); đo trên nuScenes: docs/ket-qua/ket-qua-sot-doi-tuong.md
+  max_range_m: 40
+  min_points: 15                      # cụm ít điểm hơn bỏ qua
+  min_points_per_cell: 1.2            # mật độ điểm / ô: nhiễu mưa, bụi ~1 (mô phỏng mưa 10 000 điểm / frame không báo)
+  max_elevation_m: 1.5                # chân cụm cao hơn mặt đất chung của frame quá mức này (mái che, tầng nhà): bỏ (13/10)
+  max_persistence: 0.4                # chỗ cụm đứng sau / trước 1 s còn > 40% ô có điểm: vật đứng yên (tường, cây), bỏ
+  min_frames: 3                       # cụm nối được qua ≥ 3 keyframe
+  min_motion_m: 3.0                   # dời ≥ 3 m theo một hướng đều
+  min_motion_person_m: 1.5            # cụm cỡ người: dời ≥ 1,5 m qua ≥ 4 keyframe
+  static_min_views: 2                 # vật đứng yên: chỉ báo khi ảnh camera (lớp 2) thấy vật cùng loại ở ≥ 2 keyframe
+  static_min_iou: 0.5                 # phần khung chiếu cụm nằm trong khung vật trên ảnh
+  static_min_score: 0.7
+
+box_fit:                              # fit.offset / fit.yaw (detectors/box_fit.py); số liệu: docs/ket-qua/ket-qua-box-fit.md
+  source: lidar                       # lidar: điểm nối liền với box (không cần camera) | sam: mặt nạ SAM 2.1 trên ảnh (cần GPU)
+  search_margin_m: 1.2                # tìm điểm của vật trong box nới 1.2 m mỗi phía (box lệch 1 m vẫn còn vật)
+  min_inside: 0.2                     # sam: dùng ảnh chứa ≥ 20% khung chiếu box (xe lớn sát xe thu nằm trên nhiều camera)
+  min_points: 30                      # cần ≥ 30 điểm LiDAR của vật mới đo (vật xa, thưa: không kết luận)
+  offset_warning_m: 1.0               # tâm vật lệch tâm box > 1.0 m: Cảnh báo (ngưỡng cho source lidar)
+  offset_error_m: 2.5                 # > 2.5 m: Lỗi (lidar gộp rơ-moóc với xe kéo nên cần ngưỡng cao)
+  yaw_warning_deg: 15                 # trục vật lệch hướng box > 15°: Cảnh báo (xe đủ dài, đủ điểm)
+  yaw_error_deg: 25
+  reference: absolute                 # absolute | track (trừ độ lệch ổn định của các frame khác trong track)
+
+face:                                 # cam.face (detectors/face.py); số liệu: docs/ket-qua/ket-qua-face.md
+  classes: [car, bus, Vehicle]        # xe tải / xe công trình: CLIP gần như đoán mò, không xét
+  min_inside: 0.7                     # chỉ hỏi ảnh chứa ≥ 70% khung chiếu box (không bị mép ảnh cắt đầu / đuôi)
+  max_depth_m: 40
+  min_box_px: 40                      # khung chiếu cao ≥ 40 pixel
+  max_view_deg: 60                    # camera trong 60° quanh trục đầu / đuôi box; nhìn ngang hơn thì bỏ
+  max_occlusion: 0.3                  # bỏ ảnh mà box gần hơn che > 30% khung
+  front_min: 0.6                      # phiếu "ảnh thấy đầu xe": xác suất đầu xe (CLIP) ≥ 0.6
+  rear_max: 0.15                      # phiếu "ảnh thấy đuôi xe": xác suất đầu xe ≤ 0.15 (CLIP nghiêng về "đuôi xe")
+  min_votes: 2                        # báo khi ≥ 2 phiếu chắc chắn nói ngược ...
+  vote_ratio: 0.75                    # ... và chiếm ≥ 75% phiếu chắc chắn của track
+  error_votes: 4                      # ≥ 4 phiếu ngược: Lỗi
+
+critic:                               # Box Critic do nhóm tự huấn luyện (C3, lớp 3); xem docs/huong-dan/huan-luyen-box-critic.md
+  model: ""                           # đường dẫn TorchScript .pt; để trống thì không chạy
+  min_points: 20
+  min_probability: 0.7                # box không thuộc track: xác suất sai ≥ 0.7: Cảnh báo; ≥ 0.9: Lỗi
+  error_probability: 0.9
+  min_logit_rise: 4.4                 # box thuộc track: logit sai cao hơn trung vị các frame khác của track > 4.4: Cảnh báo
+  error_logit_rise: 6.0               # > 6.0: Lỗi
+
+learning:                             # học từ kết luận Đúng / Báo nhầm của người duyệt (C3); `pointsnap learn`
+  adjust_severity: false              # true: hạ mục Cảnh báo có độ tin cậy thấp xuống Thông tin
+  downgrade_below: 0.15
+  min_rule_reviews: 20                # chỉ hạ mức khi luật đã có ít nhất 20 kết luận
+
+spec:                                 # thuộc tính theo spec của dự án (C2); nhãn nuScenes không có thuộc tính nên để trống
+  required_attributes: {}             # vd {Vehicle: [subtype], Pedestrian: [age_group, pose], Two-wheels: [rider_state]}
+  allowed_values: {}                  # vd {subtype: [car, van, truck, ...], Pedestrian.pose: [standing, sitting, bending]}
+                                      # bản đầy đủ theo spec giao thông VN: pointsnap/guidelines/spec-vn.yaml
+
+gate:
+  max_errors: 0
+  max_warnings: 10
