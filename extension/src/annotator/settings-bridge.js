@@ -1,17 +1,18 @@
 /*
- * ISOLATED world: chuyển cấu hình annotator (trang Tùy chọn, chrome.storage.local) sang MAIN world, nơi annotator chạy.
- * Gửi khi trang tải, khi MAIN world hỏi, và mỗi lần người dùng lưu Tùy chọn.
+ * ISOLATED world: chuyển cấu hình annotator của địa chỉ CVAT đang mở (PointSnapHosts.profileFor) sang MAIN world, nơi
+ * annotator chạy. Gửi khi trang tải, khi MAIN world hỏi, và mỗi lần cấu hình đổi (popup / trang Tùy chọn).
  */
 (function () {
   'use strict';
 
-  const DEFAULTS = { annotatorEnabled: true, annotatorGuideline: '' };
+  const Hosts = globalThis.PointSnapHosts;
   const SETTINGS = 'POINTSNAP_ANNOTATOR_SETTINGS';
   const REQUEST = 'POINTSNAP_ANNOTATOR_SETTINGS_REQUEST';
 
   function send() {
-    chrome.storage.local.get(DEFAULTS, (values) => {
-      window.postMessage({ type: SETTINGS, detail: { enabled: values.annotatorEnabled, guidelineJson: values.annotatorGuideline } }, location.origin);
+    chrome.storage.local.get(Hosts.LOCAL_DEFAULTS, (local) => {
+      const profile = Hosts.profileFor(local, location.origin);
+      window.postMessage({ type: SETTINGS, detail: { enabled: profile.enabled, guidelineJson: profile.guidelineJson } }, location.origin);
     });
   }
 
@@ -19,7 +20,7 @@
     if (event.source === window && event.origin === location.origin && event.data?.type === REQUEST) send();
   });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && (changes.annotatorEnabled || changes.annotatorGuideline)) send();
+    if (area === 'local' && (changes.annotatorProfiles || changes.annotatorEnabled || changes.annotatorGuideline)) send();
   });
   send();
 })();

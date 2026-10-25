@@ -1,14 +1,16 @@
 /*
  * Lớp vẽ SVG chồng lên 4 view của CVAT, chiếu bằng chính camera của CVAT. Chỉ vẽ, không đụng scene hay nhãn.
  * Vẽ: đường mặt đất tại điểm tiếp xúc + số ΔZ, điểm của vật (trong box: xanh, lòi ra ngoài: đỏ), khoảng hở từng mặt
- * nhìn thấy, khung và phần chồng của box đang chồng lấn (đỏ: cần xem, xám: spec cho phép).
+ * nhìn thấy, khung và phần chồng của box đang chồng lấn (đỏ: cần xem, xám: spec cho phép), box sau khi sửa của bản
+ * xem trước (nét đứt xanh dương).
+ * Màu một nghĩa: xanh lá = ổn / điểm trong box, cam = cần xem, đỏ = lỗi / điểm lòi; mặt đất xanh dương để không lẫn với "ổn".
  */
 (function (root) {
   'use strict';
 
   const B = root.PointSnapBox;
   const COLORS = {
-    ok: '#15803d', float: '#c2410c', sink: '#b91c1c', ground: '#15803d',
+    ok: '#15803d', float: '#c2410c', sink: '#b91c1c', ground: '#3b82f6', ghost: '#60a5fa',
     inside: '#22c55e', outside: '#ef4444', overlap: '#dc2626', allowed: '#94a3b8',
   };
   const layers = new Map();
@@ -65,17 +67,17 @@
 
   /**
    * `scene`: { ctx, box, contact, okM, insidePoints, outsidePoints: [[x, y, z]], faces: [{ name, axis, sign, gapM }],
-   * overlaps: [{ box, ratio, allowed }] }. Chỉ vẽ lại khi box, số đo hoặc camera / kích thước view đổi.
+   * overlaps: [{ box, ratio, allowed }], ghost: box | null }. Chỉ vẽ lại khi box, số đo hoặc camera / kích thước view đổi.
    */
   function render(scene) {
-    const { ctx, box, contact, okM, insidePoints, outsidePoints, faces, overlaps } = scene;
+    const { ctx, box, contact, okM, insidePoints, outsidePoints, faces, overlaps, ghost = null } = scene;
     const rects = {};
     for (const view of Object.keys(ctx.views)) {
       const el = ctx.views[view].renderer.domElement;
       rects[view] = el.offsetParent && el.offsetWidth > 25 ? el.getBoundingClientRect() : null;
     }
     const key = JSON.stringify([box, contact && [contact.contactZ, contact.gapM], insidePoints.length, outsidePoints.length,
-      faces.map((f) => f.gapM), overlaps.map((o) => [o.ratio, o.allowed]),
+      faces.map((f) => f.gapM), overlaps.map((o) => [o.ratio, o.allowed]), ghost,
       ...Object.entries(ctx.views).map(([v, view]) => [rects[v] && [rects[v].left, rects[v].top, rects[v].width, rects[v].height],
         ...view.camera.projectionMatrix.elements, ...view.camera.matrixWorldInverse.elements])]);
     if (key === lastKey) return;
@@ -97,6 +99,11 @@
         const x = Math.max(4, Math.min(rect.width - 120, s[0] + 6)), y = Math.max(14, Math.min(rect.height - 6, s[1] - 6));
         parts.push(`<text x="${x}" y="${y}" fill="${color}" stroke="#fff" stroke-width="3" paint-order="stroke">${escapeText(text)}</text>`);
       };
+
+      if (ghost) {
+        const cs = B.corners(ghost);
+        for (const [a, b] of B.EDGES) line(cs[a], cs[b], COLORS.ghost, '5 3', 1.8);
+      }
 
       for (const o of overlaps) {
         const color = o.allowed ? COLORS.allowed : COLORS.overlap, cs = B.corners(o.box);

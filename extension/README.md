@@ -1,4 +1,4 @@
-# PointSnap cho CVAT — extension annotator (0.4.0)
+# PointSnap cho CVAT — extension annotator (0.5.0)
 
 Bảng PointSnap trong trang job 3D của CVAT giúp annotator gán cuboid nhanh và đúng hơn. **Mọi phép tính chạy trong
 trang CVAT; dữ liệu không rời CVAT, không cần chạy backend.** Extension ghi thay đổi vào bộ nhớ của CVAT như khi
@@ -8,22 +8,40 @@ người dùng kéo box: annotator xem trước, hoàn tác được (mục Hoà
 
 1. `chrome://extensions` (Edge: `edge://extensions`) → bật **Developer mode** → **Load unpacked** → chọn thư mục `extension/`.
    Đã cài bản cũ thì bấm ↻ của extension, rồi tải lại tab CVAT (Save công việc trước).
-2. Mở một job 3D trên CVAT (`http://localhost:8080`; địa chỉ khác thì thêm ở **Tùy chọn**). Bảng **PointSnap** (rộng
-   264 px) hiện ở bên phải, kéo thanh tiêu đề để dời. Thanh tiêu đề đã đủ để làm việc: chip ΔZ, số lỗi / cảnh báo, tiến
-   độ `xong/tổng`, ◎ bám camera, ⏭ track chưa xong, ▴ thu gọn chỉ còn thanh này. Mục Track (biểu đồ, nút sửa cả track)
-   và Spec mặc định đóng, bấm để mở; lỗi hiện mỗi lỗi một dòng (rê chuột xem đủ), mục Thông tin gộp một dòng.
+2. **CVAT ở `http://localhost:8080`**: chạy sẵn. **CVAT ở địa chỉ khác** (của công ty, của người khác): mở trang CVAT đó,
+   bấm biểu tượng PointSnap trên thanh trình duyệt → **Bật PointSnap cho trang này** → đồng ý quyền Chrome hỏi. Trang tự
+   tải lại. Popup nhận ra trang có phải CVAT không (đọc `/api/server/about` của chính trang), báo phiên bản, và sau khi bật
+   cho biết đã nhận dữ liệu CVAT chưa, đã mở job 3D chưa, Ctrl+Z của CVAT có hoàn tác được thao tác của PointSnap không.
+3. **Bộ ngưỡng của dự án** (nếu khác mặc định): trưởng nhóm vào **Tùy chọn**, chỉnh / **Xuất** file JSON, gửi cho
+   annotator; annotator bấm **Nhập file** ở đúng địa chỉ CVAT. Mỗi địa chỉ CVAT có bộ ngưỡng riêng, kiểm ngay khi nhập.
+   Phần QC backend cũ nằm trong mục **Nâng cao**, annotator không cần.
+
+Extension chỉ chạy trong trình duyệt của bạn và không gửi dữ liệu đi, nhưng có ghi vào nhãn: dùng trên CVAT của người
+khác thì xin phép chủ hệ thống trước.
+
+## Bảng trong job
+
+- **Thanh tiêu đề** (luôn hiện, kể cả khi thu gọn): chấm trạng thái (xanh ổn / cam cần xem / đỏ lỗi), box đang chọn,
+  khoảng cách, số mục cần xem, tiến độ `xong/tổng`, ◎ camera theo track, ⏭ track chưa xong, ▴ thu gọn.
+- **Checklist**, mỗi khía cạnh một dòng ✓ / ! / ✕ kèm một cụm từ ngắn (rê chuột xem đầy đủ) và **nút sửa nằm ngay trên
+  dòng của vấn đề**: Mặt đất (**Hạ đáy** <kbd>G</kbd>), Kích thước (**Cỡ trung vị**), Ôm vật, Hướng (**Mượt yaw**),
+  Chồng lấn, Thuộc tính.
+- **Dải track**: một ô mỗi keyframe, ô vàng là keyframe lệch (rê chuột xem lý do), ô viền trắng là frame đang đứng;
+  bấm ô để tới frame. **Sửa cả track** mở 4 thao tác.
+- **Xem trước**: trước khi Áp dụng, box sau khi sửa ở frame này được vẽ **nét đứt xanh dương** chồng lên box hiện tại.
+- Nền tối cho hợp canvas 3D; đường mặt đất trên canvas màu xanh dương để không lẫn với màu "ổn".
 
 ## Tính năng
 
 | Tính năng | Cách dùng | Ghi vào CVAT? |
 |---|---|---|
-| Mặt đất tham chiếu + ΔZ | Chọn box: đường mặt đất (xanh, nét đứt) trên 4 view, số ΔZ trên panel. Xanh ≤ 5 cm, cam lơ lửng, đỏ lún | Không |
+| Mặt đất tham chiếu + ΔZ | Chọn box: đường mặt đất (xanh dương, nét đứt) trên 4 view, số ΔZ trên canvas; dòng Mặt đất trên panel | Không |
 | Hạ đáy box | Nút **⤓ Hạ đáy** hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>: đáy box đặt giữa mặt đất thấp nhất và cao nhất dưới 4 góc (dốc / bờ vỉa) | Có, 1 frame |
 | Kiểm tra box đang chọn | Kích thước ngoài ngưỡng, scale không đồng bộ, lơ lửng / lún, Z ngoài ngưỡng, quá xa, chồng lấn, box rỗng, thiếu thuộc tính | Không |
 | Điểm của vật (A4) | Đổi màu chính các điểm của point cloud trên cả 4 view: điểm trong box **xanh lá**, điểm của vật lòi ra ngoài box **đỏ** (chỉ điểm nối liền với vật, không lấy cây / tường bên cạnh). Nhãn khoảng hở từng mặt LiDAR nhìn thấy: "đuôi dư 24 cm", "trái lòi 8 cm" | Không |
 | Chồng lấn | Box đang chồng: khung **đỏ** đậm, phần chồng tô đỏ ở view Top / 3D, nhãn "chồng 67%". Cặp spec cho phép (người trên thùng xe, người lái…) hiện khung **xám** và mục Thông tin | Không |
 | Thẻ spec (A8) | Nút **Spec** cạnh tên box: khoảng kích thước của class (đánh dấu ✓ / ✗ theo box), thuộc tính bắt buộc, class được chồng box, quy tắc spec | Không |
-| Dải tổng quan track | Dài / Rộng / Cao / Yaw theo keyframe; chấm đỏ là keyframe lệch, bấm để tới frame đó | Không |
+| Dải track | Một ô mỗi keyframe, vàng khi lệch kích thước / hướng; bấm ô để tới frame đó | Không |
 | Đồng bộ kích thước cả track | Theo frame hiện tại hoặc theo trung vị; giữ mặt LiDAR nhìn thấy, giữ đáy box. Có xem trước | Có, cả track |
 | Làm mượt yaw | Sửa keyframe lật 180°, lọc trung vị giữ đoạn rẽ thật. Có xem trước | Có, cả track |
 | Tỉa keyframe | Bỏ keyframe mà CVAT nội suy lại được trong dung sai (tâm 5 cm, yaw 1°, kích thước 2 cm). Có xem trước | Có, cả track |
@@ -33,9 +51,10 @@ người dùng kéo box: annotator xem trước, hoàn tác được (mục Hoà
 Thứ tự nên dùng cho một track pre-label: làm chuẩn một frame nhìn rõ → **Đồng bộ kích thước** → **Làm mượt yaw** →
 **Tỉa keyframe** → soát các keyframe còn lại → Save.
 
-Ngưỡng mặc định theo `pointsnap/config.yaml` và `pointsnap/guidelines/spec-vn.yaml`. Dự án khác ngưỡng: **Tùy chọn →
-Guideline ghi đè (JSON)**, chỉ ghi phần khác, ví dụ `{"maxDistanceM": 80}`. Kiểm tra **Quá xa** tắt cho tới khi đặt
-`maxDistanceM`. Dữ liệu xuất ở hệ xe thu thì đặt `sensorOrigin` là vị trí LiDAR.
+Ngưỡng mặc định theo `pointsnap/config.yaml` và `pointsnap/guidelines/spec-vn.yaml` (khoảng kích thước người / xe máy
+đã nới theo dữ liệu thật, xem tài liệu mục 6.3). Dự án khác ngưỡng: file bộ ngưỡng ở **Tùy chọn**, chỉ cần ghi phần khác,
+ví dụ `{"maxDistanceM": 80}`. Kiểm tra **Quá xa** tắt cho tới khi đặt `maxDistanceM`. Dữ liệu ở hệ mặt đất (như KITTI,
+LiDAR cao 1,73 m) hoặc hệ xe thu thì đặt `sensorOrigin` là vị trí LiDAR, riêng cho địa chỉ CVAT đó.
 
 ## Hoàn tác
 
@@ -88,9 +107,12 @@ src/annotator/
   cvat-adapter.js   cầu nối duy nhất tới nội bộ CVAT
   overlay.js        vẽ SVG trên 4 view
   cloud-colors.js   tô màu chính các điểm của point cloud CVAT (A4), trả màu gốc khi bỏ chọn
-  panel.js          giao diện bảng (shadow DOM)
+  panel.js          giao diện bảng: checklist, dải track, xem trước (shadow DOM)
   annotator.js      bộ điều khiển
-  settings-bridge.js  chuyển Tùy chọn sang trang (ISOLATED world)
+  settings-bridge.js  chuyển cấu hình của địa chỉ CVAT đang mở sang trang (ISOLATED world)
+hosts.js            các CVAT đã bật + cấu hình theo từng địa chỉ (popup, Tùy chọn, service worker, bridge dùng chung)
+popup.js            nhận ra CVAT, bật một nút, báo tình trạng
+options.js          danh sách CVAT, nhập / xuất bộ ngưỡng
 tests/*.test.js     node --test tests/*.test.js
 ```
 

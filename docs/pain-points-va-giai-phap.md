@@ -171,6 +171,12 @@ rồi hạ đáy: đặt giữa lệch nhãn chuẩn p50 3–7 cm, p90 9–18 cm
    - Quay về phía LiDAR và **không bị nhìn xiên quá 70°**: góc giữa pháp tuyến mặt và hướng tới LiDAR ≤ 70°.
    - **Không bị che:** trên tia từ LiDAR tới tâm mặt có ít hơn 3 điểm của vật khác cách tia < 0,3 m.
    - Bản đầu chỉ xét "quay về phía LiDAR", nên báo "đuôi dư 72 cm" cho một xe mà LiDAR nằm lệch hẳn sang hông: mặt đuôi bị nhìn xiên khoảng 10° và có vật chắn. Sau khi sửa, frame AV2 đó chỉ còn 9 mặt đủ điều kiện để đo. Tính cho 39 box mất 45 ms.
+5. **Dòng "Ôm vật" trên checklist (0.5.0)** tô vàng khi một mặt nhìn thấy có vật lòi ra > 10 cm, **hoặc** ≥ 20 điểm đỏ chiếm
+   ≥ 15% điểm của vật. Box dư chỉ ghi số, không tô vàng (nhãn chuẩn nuScenes dư p90 tới 33 cm).
+   - Thử trên CVAT thật: xe ngắn đi 40 cm có 272 điểm đỏ (37%) nhưng không mặt nào đủ điều kiện để đo, nên chỉ dùng mặt
+     thì bỏ sót.
+   - Đo trên box chuẩn và box co 15% (nuScenes scene-1077, scene-1100, AV2): báo nhầm 0–5% như khi chỉ dùng mặt; bắt được
+     38% / 78% / 76% box co, so với 32% / 78% / 71%. Dùng riêng tỉ lệ điểm đỏ thì bắt kém hơn (14% / 59% / 65%).
 
 **Kiểm trên CVAT thật:** xe tải 16 m có 479 điểm trong box (xanh lá), 4 điểm lòi ra (đỏ), đo được mặt đuôi và mặt phải.
 
