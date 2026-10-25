@@ -1,6 +1,8 @@
 'use strict';
 
-const DEFAULTS = { pointsnapUrl: 'http://127.0.0.1:8765', cvatUrls: [], autoFilter: false, autoHighlight: true, autoExpand: true };
+const DEFAULTS = { pointsnapUrl: 'http://127.0.0.1:8765', cvatUrls: [], autoFilter: false, autoHighlight: true, autoExpand: true, showScanPanel: false };
+// chrome.storage.local: guideline có thể dài hơn giới hạn 8 KB mỗi mục của storage.sync.
+const ANNOTATOR_DEFAULTS = { annotatorEnabled: true, annotatorGuideline: '' };
 const BUILT_IN = new Set(['http://localhost:8080', 'http://127.0.0.1:8080']);
 const $ = (id) => document.getElementById(id);
 
@@ -37,7 +39,23 @@ function readForm() {
     autoFilter: $('auto-filter').checked,
     autoHighlight: $('auto-highlight').checked,
     autoExpand: $('auto-expand').checked,
+    showScanPanel: $('show-scan-panel').checked,
   };
+}
+
+/** Guideline ghi đè phải là một object JSON; ngưỡng cụ thể được kiểm lại trong trang CVAT. */
+function readAnnotatorForm() {
+  const text = $('annotator-guideline').value.trim();
+  if (text) {
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (error) {
+      return { error: `Guideline không phải JSON hợp lệ: ${error.message}` };
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return { error: 'Guideline phải là một object JSON { … }' };
+  }
+  return { annotatorEnabled: $('annotator-enabled').checked, annotatorGuideline: text };
 }
 
 chrome.storage.sync.get(DEFAULTS, (data) => {
@@ -46,12 +64,19 @@ chrome.storage.sync.get(DEFAULTS, (data) => {
   $('auto-filter').checked = !!data.autoFilter;
   $('auto-highlight').checked = !!data.autoHighlight;
   $('auto-expand').checked = !!data.autoExpand;
+  $('show-scan-panel').checked = !!data.showScanPanel;
+});
+chrome.storage.local.get(ANNOTATOR_DEFAULTS, (data) => {
+  $('annotator-enabled').checked = data.annotatorEnabled !== false;
+  $('annotator-guideline').value = data.annotatorGuideline || '';
 });
 
 $('save').addEventListener('click', () => {
   const values = readForm();
-  if (values.error) {
-    setStatus(values.error, 'err');
+  const annotator = readAnnotatorForm();
+  const error = values.error || annotator.error;
+  if (error) {
+    setStatus(error, 'err');
     return;
   }
   // Xin quyền ngay trong lần bấm (Chrome chỉ cho xin quyền khi người dùng vừa thao tác).
@@ -61,7 +86,8 @@ $('save').addEventListener('click', () => {
       setStatus('Chưa được cấp quyền truy cập các địa chỉ trên, chưa lưu.', 'err');
       return;
     }
-    chrome.storage.sync.set(values, () => setStatus('Đã lưu. Tải lại trang CVAT để áp dụng.', 'ok'));
+    chrome.storage.local.set(annotator, () => chrome.storage.sync.set(values,
+      () => setStatus('Đã lưu. Bảng annotator cập nhật ngay; tải lại trang CVAT cho các tùy chọn khác.', 'ok')));
   });
 });
 

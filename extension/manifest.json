@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "PointSnap cho CVAT",
   "short_name": "PointSnap",
-  "version": "0.3.0",
-  "description": "Sửa tay cuboid trong CVAT: thước 3D, đường gióng, tọa độ trực tiếp và kiểm lại lỗi, không tự sửa.",
+  "version": "0.4.0",
+  "description": "Hỗ trợ annotator gán cuboid 3D trên CVAT: mặt đất tham chiếu, kiểm tra box, sửa cả track có xem trước. Dữ liệu không rời CVAT.",
   "minimum_chrome_version": "116",
   "icons": {
     "16": "icons/icon16.png",
@@ -58,10 +58,19 @@
         "http://127.0.0.1:8080/*"
       ],
       "js": [
-        "src/manual-geometry.js",
-        "src/cvat-compat.js",
-        "src/manual-overlay.js",
-        "src/cvat-3d-hook.js"
+        "src/cvat-dom.js",
+        "src/annotator/box.js",
+        "src/annotator/spatial-grid.js",
+        "src/annotator/terrain.js",
+        "src/annotator/guideline.js",
+        "src/annotator/checks.js",
+        "src/annotator/track-ops.js",
+        "src/annotator/object-points.js",
+        "src/annotator/cvat-adapter.js",
+        "src/annotator/overlay.js",
+        "src/annotator/cloud-colors.js",
+        "src/annotator/panel.js",
+        "src/annotator/annotator.js"
       ],
       "run_at": "document_idle",
       "world": "MAIN"
@@ -72,25 +81,11 @@
         "http://127.0.0.1:8080/*"
       ],
       "js": [
+        "src/annotator/settings-bridge.js",
         "src/panel-css.js",
-        "src/manual-controller.js",
         "src/content.js"
       ],
       "run_at": "document_idle"
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "src/manual-geometry.js",
-        "src/cvat-compat.js",
-        "src/manual-overlay.js",
-        "src/cvat-3d-hook.js"
-      ],
-      "matches": [
-        "http://localhost:8080/*",
-        "http://127.0.0.1:8080/*"
-      ]
     }
   ]
 }

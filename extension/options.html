@@ -25,7 +25,15 @@
       <textarea id="cvat-urls" placeholder="http://192.168.1.20:8080"></textarea>
     </section>
     <section class="card">
-      <h2>Khi mở một job</h2>
+      <h2>Annotator</h2>
+      <label class="check"><input id="annotator-enabled" type="checkbox"><span>Bật bảng PointSnap cho annotator<small>Mặt đất tham chiếu, kiểm tra box, sửa cả track có xem trước. Chạy hoàn toàn trong trang CVAT, không gửi dữ liệu ra ngoài.</small></span></label>
+      <label class="field" for="annotator-guideline">Guideline ghi đè (JSON, không bắt buộc)</label>
+      <p class="hint">Chỉ ghi phần khác mặc định, ví dụ <code>{"maxDistanceM": 80, "zRange": {"minM": -0.4, "maxM": 0.4}}</code>. Để trống để dùng mặc định theo spec-vn.</p>
+      <textarea id="annotator-guideline" spellcheck="false" placeholder='{"maxDistanceM": 80}'></textarea>
+    </section>
+    <section class="card">
+      <h2>Khi mở một job (bảng kết quả quét)</h2>
+      <label class="check"><input id="show-scan-panel" type="checkbox"><span>Hiện bảng kết quả quét của PointSnap backend<small>Luồng QC cũ: cần chạy <code>pointsnap ui</code>. Tắt thì chỉ hiện bảng annotator.</small></span></label>
       <label class="check"><input id="auto-filter" type="checkbox"><span>Tự bật bộ lọc chỉ hiện box có cờ lỗi<small>Dùng bộ lọc sẵn có của CVAT; tắt bằng nút “Hiện tất cả” trong bảng.</small></span></label>
       <label class="check"><input id="auto-expand" type="checkbox"><span>Tự mở DETAILS của box có cờ khi đang lọc<small>Để đọc nội dung cờ <code>pointsnap_error</code> ngay trong danh sách của CVAT.</small></span></label>
       <label class="check"><input id="auto-highlight" type="checkbox"><span>Tự làm sáng box lỗi đầu tiên khi chuyển frame<small>Chỉ khi xác định được duy nhất box của lỗi.</small></span></label>

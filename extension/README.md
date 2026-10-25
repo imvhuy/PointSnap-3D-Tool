@@ -1,8 +1,103 @@
-# PointSnap v2 — Sửa tay trong CVAT
+# PointSnap cho CVAT — extension annotator (0.4.0)
 
-**Bản 0.3.0 giữ phát hiện lỗi, bỏ tự sửa (từ 0.2.0).** Xem [hướng dẫn sửa tay](../docs/manual-repair.md) cho cách cài, thước 3D, kiểm lại và giới hạn tương thích.
+Bảng PointSnap trong trang job 3D của CVAT giúp annotator gán cuboid nhanh và đúng hơn. **Mọi phép tính chạy trong
+trang CVAT; dữ liệu không rời CVAT, không cần chạy backend.** Extension ghi thay đổi vào bộ nhớ của CVAT như khi
+người dùng kéo box: annotator xem trước, hoàn tác được (mục Hoàn tác bên dưới), và tự bấm **Save** của CVAT.
 
-# Ghi chú cài đặt và nền tảng A15 (lịch sử v1)
+## Cài và mở
+
+1. `chrome://extensions` (Edge: `edge://extensions`) → bật **Developer mode** → **Load unpacked** → chọn thư mục `extension/`.
+   Đã cài bản cũ thì bấm ↻ của extension, rồi tải lại tab CVAT (Save công việc trước).
+2. Mở một job 3D trên CVAT (`http://localhost:8080`; địa chỉ khác thì thêm ở **Tùy chọn**). Bảng **PointSnap** (rộng
+   264 px) hiện ở bên phải, kéo thanh tiêu đề để dời. Thanh tiêu đề đã đủ để làm việc: chip ΔZ, số lỗi / cảnh báo, tiến
+   độ `xong/tổng`, ◎ bám camera, ⏭ track chưa xong, ▴ thu gọn chỉ còn thanh này. Mục Track (biểu đồ, nút sửa cả track)
+   và Spec mặc định đóng, bấm để mở; lỗi hiện mỗi lỗi một dòng (rê chuột xem đủ), mục Thông tin gộp một dòng.
+
+## Tính năng
+
+| Tính năng | Cách dùng | Ghi vào CVAT? |
+|---|---|---|
+| Mặt đất tham chiếu + ΔZ | Chọn box: đường mặt đất (xanh, nét đứt) trên 4 view, số ΔZ trên panel. Xanh ≤ 5 cm, cam lơ lửng, đỏ lún | Không |
+| Hạ đáy box | Nút **⤓ Hạ đáy** hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>: đáy box đặt giữa mặt đất thấp nhất và cao nhất dưới 4 góc (dốc / bờ vỉa) | Có, 1 frame |
+| Kiểm tra box đang chọn | Kích thước ngoài ngưỡng, scale không đồng bộ, lơ lửng / lún, Z ngoài ngưỡng, quá xa, chồng lấn, box rỗng, thiếu thuộc tính | Không |
+| Điểm của vật (A4) | Đổi màu chính các điểm của point cloud trên cả 4 view: điểm trong box **xanh lá**, điểm của vật lòi ra ngoài box **đỏ** (chỉ điểm nối liền với vật, không lấy cây / tường bên cạnh). Nhãn khoảng hở từng mặt LiDAR nhìn thấy: "đuôi dư 24 cm", "trái lòi 8 cm" | Không |
+| Chồng lấn | Box đang chồng: khung **đỏ** đậm, phần chồng tô đỏ ở view Top / 3D, nhãn "chồng 67%". Cặp spec cho phép (người trên thùng xe, người lái…) hiện khung **xám** và mục Thông tin | Không |
+| Thẻ spec (A8) | Nút **Spec** cạnh tên box: khoảng kích thước của class (đánh dấu ✓ / ✗ theo box), thuộc tính bắt buộc, class được chồng box, quy tắc spec | Không |
+| Dải tổng quan track | Dài / Rộng / Cao / Yaw theo keyframe; chấm đỏ là keyframe lệch, bấm để tới frame đó | Không |
+| Đồng bộ kích thước cả track | Theo frame hiện tại hoặc theo trung vị; giữ mặt LiDAR nhìn thấy, giữ đáy box. Có xem trước | Có, cả track |
+| Làm mượt yaw | Sửa keyframe lật 180°, lọc trung vị giữ đoạn rẽ thật. Có xem trước | Có, cả track |
+| Tỉa keyframe | Bỏ keyframe mà CVAT nội suy lại được trong dung sai (tâm 5 cm, yaw 1°, kích thước 2 cm). Có xem trước | Có, cả track |
+| Camera theo track | **Camera theo track** hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>: đổi frame vẫn chọn và focus đúng track | Không |
+| Track đã xong | **Đánh dấu xong** hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd>; **Track chưa xong ›** chọn track kế tiếp. Chỉ lưu ID track trong trình duyệt | Không |
+
+Thứ tự nên dùng cho một track pre-label: làm chuẩn một frame nhìn rõ → **Đồng bộ kích thước** → **Làm mượt yaw** →
+**Tỉa keyframe** → soát các keyframe còn lại → Save.
+
+Ngưỡng mặc định theo `pointsnap/config.yaml` và `pointsnap/guidelines/spec-vn.yaml`. Dự án khác ngưỡng: **Tùy chọn →
+Guideline ghi đè (JSON)**, chỉ ghi phần khác, ví dụ `{"maxDistanceM": 80}`. Kiểm tra **Quá xa** tắt cho tới khi đặt
+`maxDistanceM`. Dữ liệu xuất ở hệ xe thu thì đặt `sensorOrigin` là vị trí LiDAR.
+
+## Hoàn tác
+
+- CVAT có `job.annotations.saveStates` (bản mới): mỗi thao tác của PointSnap là **một** bước Ctrl+Z của CVAT.
+- CVAT chưa có hàm đó (đã đo trên **2.75.1**): lịch sử Undo của CVAT chỉ giữ 32 bước, nên ghi 38 keyframe từng bước sẽ
+  vừa không Undo hết vừa đẩy mất lịch sử của annotator. PointSnap tạm dừng ghi lịch sử CVAT trong lúc lưu và hiện nút
+  **↶ Hoàn tác** cho thao tác vừa làm. Ctrl+Z của CVAT không hoàn tác thao tác này. Keyframe đã bị sửa tiếp thì nút
+  Hoàn tác giữ nguyên, không ghi đè.
+
+## Đã kiểm trên CVAT thật (2.75.1, task nuScenes scene-0061, 39 frame, 219 track)
+
+| Hạng mục | Kết quả |
+|---|---|
+| Ghi box / đồng bộ 38 keyframe / tỉa / hạ đáy | Canvas 4 view vẽ lại ngay; lịch sử CVAT không bị ghi đè; nút Hoàn tác phục hồi đúng |
+| Đường mặt đất, khung footprint | Nằm đúng trên box và point cloud ở cả 4 view |
+| Dựng bản đồ địa hình | 5–16 ms mỗi frame (~35k điểm) |
+| Báo nhầm trên 840 box nhãn chuẩn (10 frame) | 14 Cảnh báo / Lỗi (1,7 / 100 box), chủ yếu lơ lửng ở người đi bộ xa 20–45 m; Z ngoài ngưỡng 0, chồng lấn 0 |
+| Đo được mặt đất (độ tin cậy ≥ 0,3) | ~54% box trong 30 m; LiDAR 32 tia thưa nên box xa thường chỉ báo "không đủ điểm mặt đất" |
+| Dải track trên 1395 keyframe chuẩn | Kích thước: 0 keyframe bị đánh dấu nhầm; ngưỡng yaw chỉnh theo dữ liệu (xe 15°, người 45°) |
+| Làm mượt yaw trên nhãn chuẩn | Xe / rào chắn: đổi 1 keyframe (2°); người đi bộ bị đổi nhiều nên đã tắt cho người / động vật |
+| Tỉa keyframe trên nhãn nuScenes | Không bỏ được keyframe nào: nhãn ở hệ LiDAR của từng frame, xe thu đang chạy nên vị trí không tuyến tính; hiệu quả thật phụ thuộc pre-label của dự án |
+
+**Dữ liệu thứ hai: Argoverse 2** (log val `02678d04`, LiDAR 64 tia, 10 Hz, 40 frame, 48 track, task 51 trên CVAT local):
+trong 50 m sai số mặt đất so với bản đồ thật p90 ≤ 10 cm, đo được mặt đất 88% box trong 30 m, 2 cảnh báo / 83 box
+(đều là xe 0 điểm LiDAR); tỉa keyframe bỏ 32% keyframe chuẩn với sai lệch ≤ 5 cm; trên pre-label giả, dải track bắt
+97% keyframe sai cỡ và 26/26 keyframe lật. Từ dữ liệu này: luật lơ lửng / lún chỉ áp trong 50 m. Chi tiết:
+[docs/pain-points-va-giai-phap.md mục 6.2](../docs/pain-points-va-giai-phap.md).
+
+**Dùng thật trên dữ liệu bốc ngẫu nhiên** (25/10/2026; nuScenes scene-1077, scene-1100 và 13 hộp pre-label thật của
+PointPillars trên KITTI 000008): báo nhầm trên nhãn chuẩn 0,7–1,6 box / 100 sau khi nới khoảng kích thước người / xe máy
+(trước đó 18 / 100 ở scene-1100); đồng bộ kích thước + tỉa 40 → 14 keyframe, **Ctrl+S rồi tải lại trang** khớp 40/40
+frame; phím <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> / <kbd>G</kbd> và phím chuyển frame của CVAT bấm thật đều chạy.
+Chi tiết: [mục 6.3](../docs/pain-points-va-giai-phap.md).
+
+Box bị khóa (🔒) trong CVAT: panel ghi "đang khóa", các nút sửa và phím tắt sửa không chạy.
+
+Chưa kiểm: độ mượt khi kéo chuột ở frame đông điểm (khung trình duyệt thử quá hẹp).
+
+Toàn bộ phần chạm nội bộ CVAT nằm trong [`src/annotator/cvat-adapter.js`](src/annotator/cvat-adapter.js).
+
+```
+src/annotator/
+  box.js            hình học cuboid, chồng lấn (thuần, có test)
+  spatial-grid.js   chỉ mục điểm theo ô nhìn từ trên
+  terrain.js        bản đồ địa hình của frame, đo tiếp đất (thuần, có test)
+  guideline.js      ngưỡng mặc định + ghi đè từ Tùy chọn (thuần, có test)
+  checks.js         luật kiểm tra một box (thuần, có test)
+  track-ops.js      kế hoạch sửa cả track (thuần, có test)
+  object-points.js  điểm của vật quanh box, khoảng hở từng mặt (thuần, có test)
+  cvat-adapter.js   cầu nối duy nhất tới nội bộ CVAT
+  overlay.js        vẽ SVG trên 4 view
+  cloud-colors.js   tô màu chính các điểm của point cloud CVAT (A4), trả màu gốc khi bỏ chọn
+  panel.js          giao diện bảng (shadow DOM)
+  annotator.js      bộ điều khiển
+  settings-bridge.js  chuyển Tùy chọn sang trang (ISOLATED world)
+tests/*.test.js     node --test tests/*.test.js
+```
+
+# Bảng kết quả quét (luồng QC cũ, cần PointSnap backend)
+
+Tắt mặc định từ 0.4.0; bật ở **Tùy chọn → Hiện bảng kết quả quét của PointSnap backend**. Phần sửa tay v2 (thước,
+khung tham chiếu theo lần quét) đã được thay bằng bảng annotator ở trên.
 
 > Đối chiếu 12/10/2026: logic có 36 Node tests trên nhánh review, gồm identity/scope và từ chối ambiguity. Chưa nghiệm thu lại Load unpacked/service worker/DOM trong Chrome hoặc Edge thật. CVAT API 2.78.1 đã kiểm riêng; không suy ra toàn luồng MV3 đã đạt. Xem [phần 05](../../../review/2026-10-10/05-report.md) và [bàn giao tổng](../../../review/2026-10-10/08-handoff.md).
 
