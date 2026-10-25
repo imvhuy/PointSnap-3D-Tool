@@ -49,7 +49,8 @@
       applied: false, rollingBack: false, historyId: null, verdict: null,
     },
   };
-  const settings = { autoFilter: false, autoHighlight: true, autoExpand: true, pointsnapUrl: 'http://127.0.0.1:8765' };
+  // showScanPanel: bảng kết quả quét của PointSnap backend (luồng QC cũ); tắt mặc định để annotator chỉ thấy bảng annotator.
+  const settings = { autoFilter: false, autoHighlight: true, autoExpand: true, showScanPanel: false, pointsnapUrl: 'http://127.0.0.1:8765' };
   // Sửa / hoàn tác box từ web (history_rev): nhớ theo `track:frame` để thẻ lỗi hiện đúng trạng thái và nút Hoàn tác.
   const remoteHistory = new Map();
   const expanded = new Set();
@@ -81,7 +82,7 @@
   function loadSettings() {
     if (!hasChrome || !chrome.storage) return Promise.resolve();
     return new Promise((resolve) => {
-      chrome.storage.sync.get({ autoFilter: false, autoHighlight: true, autoExpand: true, pointsnapUrl: settings.pointsnapUrl }, (data) => {
+      chrome.storage.sync.get({ autoFilter: false, autoHighlight: true, autoExpand: true, showScanPanel: false, pointsnapUrl: settings.pointsnapUrl }, (data) => {
         Object.assign(settings, data || {});
         chrome.storage.local.get({ panelPos: null, panelCollapsed: false }, (local) => {
           S.pos = (local && local.panelPos) || null;
@@ -149,7 +150,6 @@
   }
 
   function stopJob() {
-    root.PointSnapManualController?.clear();
     S.sid += 1;
     S.job = null;
     clearInterval(tickTimer);
@@ -425,7 +425,6 @@
     S.tab = 'now';
     if (command.bring && hasChrome) chrome.runtime.sendMessage({ type: 'focusTab' }, () => void chrome.runtime.lastError);
     await goTo(command.frame, command);
-    if (Number.isInteger(command.index)) root.PointSnapManualController?.select(command.index);
   }
 
   /**
@@ -717,7 +716,7 @@
     const body = panel.querySelector('.body');
     const scroll = body ? body.scrollTop : 0;
     panel.classList.toggle('collapsed', S.collapsed);
-    panel.innerHTML = renderHead() + (S.collapsed ? '' : renderTabs() + `<div class="body">${root.PointSnapManualController?.controls() || ''}${renderBody()}</div>`);
+    panel.innerHTML = renderHead() + (S.collapsed ? '' : renderTabs() + `<div class="body">${renderBody()}</div>`);
     const newBody = panel.querySelector('.body');
     if (newBody) newBody.scrollTop = scroll;
   }
@@ -784,30 +783,13 @@
       + '</div>';
   }
 
-  function clearGhostTarget() { root.PointSnapManualController?.clear(); }
-
-  function renderManualSection(flag) {
-    const matched = reviewState(flag);
-    if (!S.ps.online || !matched || !S.ps.project || !S.job) {
-      root.PointSnapManualController?.clear();
-      return '<div class="repair-box small muted">Kéo sửa bằng CVAT · thước/tọa độ dùng trực tiếp trên canvas.</div>';
-    }
-    const target=S.ps.run.findings[matched.indices[0]];
-    const indices=S.ps.run.findings.flatMap((f,i)=>['error','warning'].includes(f.severity) && !f.rule?.startsWith('track.') && f.frame===target.frame &&
-      (target.track_id!=null ? f.track_id===target.track_id : target.source_id!=null && f.track_id==null && f.source_id===target.source_id) ? [i]:[]);
-    root.PointSnapManualController?.activate({jobId:S.job.jobId,frame:flag.frame,slug:S.ps.project.slug,
-      run:S.ps.run,indices:indices.length?indices:matched.indices,request:pointsnap});
-    return root.PointSnapManualController?.card() || '';
-  }
-
   function renderCard() {
     const { flag, index, here, clientId } = currentFlag();
     if (!flag) {
       return '<div class="empty">Frame này không có box mang cờ.<br>Bấm <b>›</b> hoặc phím <span class="kbd">.</span> để tới lỗi tiếp theo.</div>';
     }
-    const repairHtml = renderManualSection(flag);
     const first = flag.items[0];
-    const displayedRule=root.PointSnapManualController?.getRule() || first.rule;
+    const displayedRule = first.rule;
     const title = RULE_LABEL[displayedRule] || 'Lỗi nhãn';
     const pager = here.length > 1
       ? `<span class="pager"><button class="icon-btn small" data-action="pick" data-d="-1" aria-label="Lỗi trước trong frame">${ICON.prev}</button>`
@@ -837,7 +819,6 @@
     return `<article class="card sev-${esc(flag.severity)}">`
       + `<div class="card-top">${sevBadge(flag.severity)}${displayedRule ? `<code>${esc(displayedRule)}</code>` : ''}<span class="grow"></span>${pager}</div>`
       + `<h3 class="card-title">${esc(title)}</h3><div class="card-meta">${meta}</div>`
-      + repairHtml
       + `<details class="small" style="margin-top:10px"><summary>Chi tiết cảnh báo</summary>${messages}<div class="fix"><div class="fix-label">Cách sửa</div>${tips}</div></details>`
       + (actions ? `<div class="card-actions">${actions}</div>` : '')
       + photo
@@ -990,9 +971,6 @@
         S.notice = null;
         render();
         break;
-      case 'manual-rule': root.PointSnapManualController?.select(Number(button.dataset.n)); break;
-      case 'manual-toggle': root.PointSnapManualController?.toggle(button.dataset.k); break;
-      case 'manual-action': root.PointSnapManualController?.action(button.dataset.act, button.dataset.param); break;
       default:
         break;
     }
@@ -1029,21 +1007,6 @@
     step(dir);
   }, true);
 
-  // Lắng nghe dữ liệu đo đạc thời gian thực từ 3D Hook
-  if (typeof window !== 'undefined') {
-    window.addEventListener('POINTSNAP_3D_TELEMETRY', (e) => {
-      if (e.detail) {
-        S.telemetry = e.detail;
-      }
-    });
-
-    window.addEventListener('message', (e) => {
-      if (e.data && e.data.type === 'POINTSNAP_3D_TELEMETRY' && e.data.detail) {
-        S.telemetry = e.data.detail;
-      }
-    });
-  }
-
   root.PointSnapPanel = {
     state: S,
     onRoute,
@@ -1051,10 +1014,10 @@
     goTo,
     turnFilterOn,
     render,
-    clearGhostTarget,
   };
 
   loadSettings().then(() => {
+    if (!settings.showScanPanel) return;
     onRoute();
     setInterval(onRoute, 500);
   });

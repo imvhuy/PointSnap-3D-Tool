@@ -7,9 +7,6 @@
 
 const DEFAULTS = { pointsnapUrl: 'http://127.0.0.1:8765', cvatUrls: [] };
 const METHODS = new Set(['GET', 'POST', 'PUT']);
-const EARLY_JS = ['src/core.js', 'src/cvat-dom.js', 'src/cvat-api.js', 'src/seed.js'];
-const MAIN_JS = ['src/manual-geometry.js','src/cvat-compat.js','src/manual-overlay.js','src/cvat-3d-hook.js'];
-const PANEL_JS = ['src/panel-css.js','src/manual-controller.js','src/content.js'];
 
 function originPattern(url) {
   return `${httpOrigin(url)}/*`;
@@ -236,11 +233,11 @@ async function syncContentScripts() {
   const ids = registered.map((s) => s.id).filter((id) => id.startsWith('pointsnap-'));
   if (ids.length) await chrome.scripting.unregisterContentScripts({ ids });
   if (!matches.length) return;
-  await chrome.scripting.registerContentScripts([
-    { id: 'pointsnap-early', matches, js: EARLY_JS, runAt: 'document_start', persistAcrossSessions: true },
-    { id:'pointsnap-main',matches,js:MAIN_JS,world:'MAIN',runAt:'document_idle',persistAcrossSessions:true },
-    { id: 'pointsnap-panel', matches, js: PANEL_JS, runAt: 'document_idle', persistAcrossSessions: true },
-  ]);
+  // Cùng danh sách script với manifest cho các địa chỉ CVAT thêm ở Tùy chọn, không chép tay hai nơi.
+  await chrome.scripting.registerContentScripts(chrome.runtime.getManifest().content_scripts.map((script, index) => ({
+    id: `pointsnap-${index}`, matches, js: script.js, runAt: script.run_at, world: script.world || 'ISOLATED',
+    persistAcrossSessions: true,
+  })));
 }
 
 chrome.runtime.onInstalled.addListener(() => { syncContentScripts(); });
