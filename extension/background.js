@@ -275,8 +275,8 @@ async function finishEnable() {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type !== 'enableHost' || !(sender.url || '').startsWith(chrome.runtime.getURL(''))) return false;
-  finishEnable().then(sendResponse);
+  if (!['enableHost', 'syncScripts'].includes(message?.type) || !(sender.url || '').startsWith(chrome.runtime.getURL(''))) return false;
+  (message.type === 'enableHost' ? finishEnable() : syncContentScripts().then(() => ({ ok: true }))).then(sendResponse);
   return true;
 });
 

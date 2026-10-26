@@ -31,7 +31,8 @@
       // Chỉ lưu bộ ngưỡng (không bật / tắt extension); giá trị được kiểm lại ở MAIN world khi áp dụng.
       Hosts.saveProfile(key, { guidelineName: String(detail.guidelineName || '').slice(0, 80), guidelineJson: detail.guidelineJson })
         .then(() => window.postMessage({ type: SAVED, detail: { ok: true, projectKey: key } }, location.origin))
-        .catch((error) => window.postMessage({ type: SAVED, detail: { ok: false, error: error.message } }, location.origin));
+        // Extension vừa được tải lại / cập nhật mà tab chưa tải lại: script này mất kết nối với chrome.storage.
+        .catch((error) => window.postMessage({ type: SAVED, detail: { ok: false, error: error.message, stale: !chrome.runtime?.id } }, location.origin));
     }
   });
   chrome.storage.onChanged.addListener((changes, area) => {

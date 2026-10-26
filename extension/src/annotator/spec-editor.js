@@ -68,7 +68,7 @@
   /**
    * `opts`: { labels: [{ name, attributes: [{ name, inputType, values }] }], guideline (đang dùng), projectName,
    *   selectedLabel, boxes(): Promise<[{ label, attributes: {tên: giá trị}, dims }]>, preview(draft) → { ok, text } | null,
-   *   onSave(overrideJson, name) → Promise }.
+   *   onSave(overrideJson, name) → Promise, restored: `guideline` là bản chưa Save được lần trước }.
    */
   function open(opts) {
     document.getElementById('pointsnap-spec-editor')?.remove();
@@ -82,7 +82,8 @@
     const labels = opts.labels.filter((l) => l.name).map((l) => ({ ...l, attributes: l.attributes.filter((a) => !INTERNAL.has(a.name)) }));
     let draft = clone(opts.guideline), name = opts.guidelineName || '';
     let selected = labels.some((l) => l.name === opts.selectedLabel) ? opts.selectedLabel : labels[0]?.name || '@limits';
-    let dirty = false, status = '', statusKind = '', closeArmed = false, jobBoxes = null;
+    let dirty = !!opts.restored, closeArmed = false, jobBoxes = null;
+    let status = opts.restored ? 'Đã mở lại bản chưa Save lần trước; xem lại rồi Save' : '', statusKind = opts.restored ? 'warn' : '';
     const invalid = new Set();
 
     const labelOf = (n) => labels.find((l) => l.name === n);

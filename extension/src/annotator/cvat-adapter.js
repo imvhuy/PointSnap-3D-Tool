@@ -2,8 +2,8 @@
  * Cầu nối duy nhất tới nội bộ CVAT (MAIN world). Đối chiếu mã nguồn CVAT (cvat-ui annotation-actions.ts,
  * cvat-core annotations-collection.ts / track.ts, cvat-canvas3d canvas3dView.ts):
  * - store lấy qua `cvatUI.registerComponent` (API plugin chính thức);
- * - ghi bằng ObjectState của cvat-core: gán `points` / `keyframe` rồi `job.annotations.saveStates(states)` (một bước
- *   Undo cho cả thao tác); bản CVAT chưa có `saveStates` thì `state.save()` từng box (mỗi box một bước Undo);
+ * - ghi bằng ObjectState của cvat-core: gán `points` / `keyframe` rồi lưu (`saveGroup`): thao tác một frame là một bước
+ *   Undo của CVAT; thao tác nhiều keyframe tạm dừng lịch sử CVAT và PointSnap tự giữ bản ghi để hoàn tác;
  * - vẽ lại bằng action FETCH_ANNOTATIONS_SUCCESS, giống `fetchAnnotationsAsync` của CVAT.
  * Không gọi REST, không tự Save: thay đổi nằm trong bộ nhớ trang cho tới khi người dùng bấm Save của CVAT.
  * Khi CVAT khác cấu trúc mong đợi thì trả null / báo lỗi, không đoán.
@@ -132,13 +132,15 @@
   const samePoints = (a, b) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
 
   /**
-   * Lưu một nhóm ObjectState. CVAT có `saveStates` (bản mới): một giao dịch, Ctrl+Z hoàn tác cả nhóm.
-   * CVAT cũ (đã đo trên 2.75.1): mỗi `save()` là một bước Undo và lịch sử chỉ giữ 32 bước, nên một thao tác 38 keyframe
-   * vừa không Undo hết được vừa đẩy mất lịch sử của annotator. Khi đó tạm dừng ghi lịch sử CVAT trong lúc lưu, và
-   * PointSnap giữ bản ghi để tự hoàn tác (`undoEdits`).
+   * Lưu một nhóm ObjectState. Cả nhóm ở một frame và CVAT có `saveStates`: một giao dịch, Ctrl+Z hoàn tác cả nhóm.
+   * Còn lại (nhiều keyframe, hoặc CVAT 2.75 chưa có `saveStates`): mỗi `save()` là một bước Undo và lịch sử chỉ giữ 32
+   * bước, nên một thao tác 38 keyframe vừa không Undo hết được vừa đẩy mất lịch sử của annotator. Khi đó tạm dừng ghi
+   * lịch sử CVAT trong lúc lưu, và PointSnap giữ bản ghi để tự hoàn tác (`undoEdits`).
    */
   async function saveGroup(job, states) {
-    if (typeof job.annotations.saveStates === 'function') {
+    // CVAT 2.77 có `saveStates` nhưng một giao dịch lịch sử chỉ được chứa thay đổi của một frame ("All history actions
+    // in a transaction must target the same frame"): thao tác nhiều keyframe đi đường tạm dừng lịch sử bên dưới.
+    if (typeof job.annotations.saveStates === 'function' && new Set(states.map((s) => s.frame)).size <= 1) {
       await job.annotations.saveStates(states);
       return 'cvat';
     }

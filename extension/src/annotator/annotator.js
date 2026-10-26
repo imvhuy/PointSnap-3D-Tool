@@ -9,8 +9,8 @@
   const Checks = root.PointSnapChecks, Ops = root.PointSnapTrackOps, G = root.PointSnapGuideline;
   const ObjectPoints = root.PointSnapObjectPoints, Colors = root.PointSnapCloudColors;
   const Overlay = root.PointSnapAnnotatorOverlay, Panel = root.PointSnapAnnotatorPanel, Dom = root.PointSnapCvat;
-  const SpecEditor = root.PointSnapSpecEditor;
-  if (root.PointSnapAnnotator || !A || !Panel) return;
+  const SpecEditor = root.PointSnapSpecEditor, Measure = root.PointSnapMeasure;
+  if (root.PointSnapAnnotator || !A || !Panel || !Measure) return;
 
   const SETTINGS_MESSAGE = 'POINTSNAP_ANNOTATOR_SETTINGS';
   const DONE_KEY = 'pointsnap.annotator.done.';
@@ -90,10 +90,8 @@
     const key = `${ctx.job.id}:${ctx.frame}:${S.settingsVersion}`;
     if (S.frameCache?.key === key && S.frameCache.positions === positions) return S.frameCache;
     const boxes = A.frameStates().filter((s) => !s.outside).map((s) => B.fromCvatPoints(s.points)).filter(Boolean);
-    const grid = Grid.build(positions, 1);
-    const terrain = Terrain.build(grid, boxes, { origin: S.guideline.sensorOrigin });
     const frameChanged = S.frameCache?.frame !== ctx.frame;
-    S.frameCache = { key, positions, grid, terrain, frame: ctx.frame };
+    S.frameCache = { key, frame: ctx.frame, ...Measure.buildFrame(positions, boxes, S.guideline) };
     if (frameChanged) onFrameChanged(ctx);
     return S.frameCache;
   }
@@ -145,33 +143,6 @@
     return A.frameStates().find((s) => s.clientID === id && !s.outside) || null;
   }
 
-  /** Điểm của vật quanh box (A4): điểm trong box, điểm lòi ra, khoảng hở từng mặt nhìn thấy. */
-  function objectPoints(cache, box, others, fallbackGroundZ) {
-    const p = cache.positions;
-    // Phần tử thứ 4 là chỉ số điểm trong point cloud của CVAT, để tô màu đúng điểm đó.
-    const near = Grid.pointsNearBox(cache.grid, box, ObjectPoints.DEFAULTS.marginM).map((i) => [p[3 * i], p[3 * i + 1], p[3 * i + 2], i]);
-    const sensor = S.guideline.sensorOrigin, half = box.dims.map((d) => d / 2 + 0.3);
-    // Mặt bị vật khác che (điểm chắn trên tia LiDAR → tâm mặt, trừ điểm của chính vật quanh box) thì không đo khoảng hở.
-    const ownPoint = (i) => B.toLocal(box, [p[3 * i], p[3 * i + 1], p[3 * i + 2]]).every((v, k) => Math.abs(v) <= half[k]);
-    return ObjectPoints.measure(near, box, others.map((o) => o.box), localGround(cache, box, fallbackGroundZ), sensor, {
-      faceOccluded: (faceCenter) => Grid.segmentBlocked(cache.grid, sensor, faceCenter, { ignore: ownPoint }),
-    });
-  }
-
-  /**
-   * Mặt đất ngay dưới (x, y) trên bản đồ địa hình, nhớ theo ô để không tra lại cho từng điểm. Chỉ dùng ô đất trong ±1 m
-   * quanh đáy box (như đo tiếp đất) để mái hiên / nóc vật bên cạnh không thành "mặt đất"; không đo được thì dùng `fallback`.
-   */
-  function localGround(cache, box, fallback) {
-    const bottom = B.bottomZ(box), band = { minZ: bottom - 1, maxZ: bottom + 1 }, cell = cache.terrain.cellM || 0.4;
-    const memo = new Map();
-    return (x, y) => {
-      const key = `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
-      if (!memo.has(key)) memo.set(key, cache.terrain.heightAt(x, y, band)?.z ?? fallback);
-      return memo.get(key);
-    };
-  }
-
   /** Lấy đều tối đa `limit` điểm để vẽ, giữ lúc kéo box vẫn mượt. */
   function sample(points, limit) {
     if (points.length <= limit) return points;
@@ -185,27 +156,19 @@
     if (!box) return null;
     const others = A.frameStates()
       .filter((s) => s.clientID !== objectState.clientID && !s.outside)
-      .map((s) => ({ box: B.fromCvatPoints(s.points), label: s.label?.name || '', clientId: s.clientID, state: s }))
+      .map((s) => ({ box: B.fromCvatPoints(s.points), label: s.label?.name || '', attributes: A.attributesOf(s), clientId: s.clientID, state: s }))
       .filter((o) => o.box);
     const trackReady = S.track?.clientID === objectState.clientID && !S.track.loading;
     const key = JSON.stringify([cache.key, objectState.clientID, box, others.map((o) => o.box),
       trackReady && S.track.keyframes.length, JSON.stringify(objectState.attributes)]);
     if (key === S.measureKey) return S.measure;
 
-    const g = S.guideline, label = objectState.label?.name || '';
-    const attributes = A.attributesOf(objectState);
-    const classKey = G.classKey(g, label, attributes);
-    const contact = Terrain.measureContact(cache.terrain, cache.grid, box);
-    const points = objectPoints(cache, box, others, contact ? contact.topContactZ : B.bottomZ(box));
+    const label = objectState.label?.name || '';
     const trackDims = trackReady
       ? S.track.keyframes.filter((k) => !k.outside && k.frame !== ctx.frame).map((k) => k.box.dims) : null;
-    const input = {
-      box, label, classKey, attributes, occluded: !!objectState.occluded, trackDims, contact, clientId: objectState.clientID,
-      coarseGroundZ: cache.terrain.coarseHeightAt(box.center[0], box.center[1]),
-      others: others.map((o) => ({ ...o, classKey: G.classKey(g, o.label, A.attributesOf(o.state)) })),
-      pointsInside: points.insideAboveFloor,
-    };
-    const issues = Checks.checkBox(input, g);
+    const { input, issues, contact, classKey, points } = Measure.measureBox(cache,
+      { box, label, attributes: A.attributesOf(objectState), occluded: objectState.occluded, clientId: objectState.clientID },
+      others, trackDims, S.guideline);
     const byId = new Map(others.map((o) => [o.clientId, o]));
     S.measureKey = key;
     S.measure = {
@@ -685,14 +648,19 @@
   }
 
   /** Lưu qua settings-bridge (ISOLATED world có chrome.storage); chờ xác nhận. */
+  /** Lỗi lưu do phần extension trong tab đã cũ (extension vừa tải lại / cập nhật): chỉ tải lại trang mới lưu được. */
+  const staleError = (message) => Object.assign(new Error(message), { stale: true });
+
   function saveSpec(guidelineJson, guidelineName) {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { window.removeEventListener('message', onSaved); reject(new Error('extension không trả lời')); }, 4000);
+      const timer = setTimeout(() => { window.removeEventListener('message', onSaved); reject(staleError('extension không trả lời')); }, 4000);
       function onSaved(event) {
         if (event.source !== window || event.data?.type !== 'POINTSNAP_SPEC_SAVED') return;
         clearTimeout(timer);
         window.removeEventListener('message', onSaved);
-        if (event.data.detail?.ok) resolve(); else reject(new Error(event.data.detail?.error || 'không rõ lỗi'));
+        const d = event.data.detail || {};
+        if (d.ok) resolve();
+        else reject(d.stale || /context invalidated/i.test(d.error || '') ? staleError(d.error) : new Error(d.error || 'không rõ lỗi'));
       }
       window.addEventListener('message', onSaved);
       window.postMessage({ type: 'POINTSNAP_SPEC_SAVE', detail: { guidelineJson, guidelineName } }, location.origin);
@@ -701,14 +669,20 @@
 
   async function openSpecEditor(ctx) {
     const job = ctx.job, projectId = job.projectId;
+    // Bản chưa Save được (extension vừa tải lại) giữ trong sessionStorage của tab: tải lại trang, mở lại là còn.
+    const draftKey = `pointsnap.specDraft.${projectId ? `p${projectId}` : `t${job.taskId}`}`;
+    let kept = null;
+    try { kept = JSON.parse(sessionStorage.getItem(draftKey)); } catch (_) { kept = null; }
+    const keptGuideline = kept && G.resolve(JSON.parse(kept.json)).guideline;
     let projectName = projectId ? `Project ${projectId}` : `Task ${job.taskId}`;
     try {
       if (projectId) projectName = (await (await fetch(`/api/projects/${projectId}`, { credentials: 'same-origin' })).json()).name || projectName;
     } catch (_) { /* giữ tên mặc định */ }
     SpecEditor.open({
       labels: job.labels.map((l) => ({ name: l.name, attributes: (l.attributes || []).map((a) => ({ name: a.name, inputType: a.inputType, values: a.values || [] })) })),
-      guideline: S.guideline,
-      guidelineName: S.guidelineName,
+      guideline: keptGuideline || S.guideline,
+      guidelineName: keptGuideline ? kept.name : S.guidelineName,
+      restored: !!keptGuideline,
       projectName,
       selectedLabel: S.measure?.label,
       boxes: () => jobBoxes(job),
@@ -717,12 +691,21 @@
         const m = S.measure;
         if (!m) return null;
         const issues = Checks.checkBox({ ...m.input, classKey: G.classKey(draft, m.label, m.input.attributes),
-          others: m.input.others.map((o) => ({ ...o, classKey: G.classKey(draft, o.label, A.attributesOf(o.state)) })) }, draft)
+          others: m.input.others.map((o) => ({ ...o, classKey: G.classKey(draft, o.label, o.attributes) })) }, draft)
           .filter((i) => i.severity !== 'info');
         return issues.length ? { ok: false, text: `#${m.objectState.clientID}: ${issues[0].short}${issues.length > 1 ? ` (+${issues.length - 1})` : ''}` }
           : { ok: true, text: `✓ #${m.objectState.clientID} đạt` };
       },
-      onSave: saveSpec,
+      onSave: async (json, name) => {
+        try {
+          await saveSpec(json, name);
+          try { sessionStorage.removeItem(draftKey); } catch (_) { /* không có bộ nhớ trang */ }
+        } catch (error) {
+          if (!error.stale) throw error;
+          try { sessionStorage.setItem(draftKey, JSON.stringify({ json, name })); } catch (_) { /* không giữ được bản nháp */ }
+          throw new Error('PointSnap vừa được tải lại nên trang này chưa lưu được. Bản sửa đã giữ: tải lại trang (F5), mở ⚙ rồi Save.');
+        }
+      },
     });
   }
 
@@ -798,12 +781,24 @@
     panel.render(viewModel(ctx, m));
   }
 
-  window.postMessage({ type: `${SETTINGS_MESSAGE}_REQUEST` }, location.origin);
-  A.connect(() => {
-    A.subscribe(onStoreChange);
-    requestAnimationFrame(tick);
-  });
-  /** Đọc bởi popup (chrome.scripting, MAIN world) để báo extension đã chạy đúng trên CVAT này chưa. */
-  const health = () => ({ ...A.health(), enabled: S.enabled, guidelineErrors: S.guidelineErrors.length });
+  /**
+   * Đọc bởi popup (chrome.scripting, MAIN world) để báo extension đã chạy đúng trên CVAT này chưa. Gắn trước khi nối
+   * CVAT: lỗi lúc khởi động thì popup vẫn đọc được và hiện lỗi đó, thay vì chỉ thấy "chưa chạy".
+   */
+  const health = () => ({ ...A.health(), enabled: S.enabled, guidelineErrors: S.guidelineErrors.length, startError: S.startError || null });
   root.PointSnapAnnotator = { state: S, health };
+  window.postMessage({ type: `${SETTINGS_MESSAGE}_REQUEST` }, location.origin);
+  const start = () => {
+    try {
+      A.subscribe(onStoreChange);
+      requestAnimationFrame(tick);
+    } catch (error) {
+      S.startError = error.message;
+    }
+  };
+  try {
+    A.connect(start);
+  } catch (error) {
+    S.startError = error.message;
+  }
 })(globalThis);

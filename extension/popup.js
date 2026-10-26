@@ -25,16 +25,51 @@ async function probe(tabId) {
         const about = await fetch('/api/server/about', { credentials: 'same-origin' })
           .then((r) => (r.ok ? r.json() : null)).catch(() => null);
         const ps = window.PointSnapAnnotator;
+        // Các file của PointSnap đã nạp vào trang chưa: thiếu hết là trình duyệt chưa chèn script, thiếu một phần là
+        // một file lỗi lúc nạp.
+        const parts = ['PointSnapBox', 'PointSnapGuideline', 'PointSnapChecks', 'PointSnapCvatAdapter', 'PointSnapAnnotatorPanel', 'PointSnapAnnotator'];
+        let health = null, error = null;
+        try { health = ps && ps.health ? ps.health() : null; } catch (e) { error = e.message; }
         return {
           cvat: about && /annotation tool/i.test(about.name || '') ? { version: about.version || '' } : null,
-          health: ps && ps.health ? ps.health() : null,
+          health, error, loaded: parts.filter((k) => k in window), parts,
+          loading: document.readyState !== 'complete' || !window.cvatUI,
         };
       },
     });
     return result || null;
-  } catch (_) {
-    return null;
+  } catch (error) {
+    return { probeError: error.message };
   }
+}
+
+/** Vì sao PointSnap chưa chạy trong trang: { text, sub, fix } với fix = 'reload' | 'register'. */
+async function diagnose(origin, page) {
+  // Địa chỉ nằm trong danh sách "không cho phép tiện ích" của trình duyệt: mọi extension bị chặn, kể cả đã cấp quyền.
+  if (/blocked/i.test(page?.probeError || '')) {
+    return { text: 'Trình duyệt đang chặn mọi tiện ích trên địa chỉ này', fix: 'reload',
+      sub: 'Bấm biểu tượng Tiện ích (mảnh ghép) trên thanh địa chỉ, bật cho phép tiện ích trên trang này; hoặc gỡ địa chỉ khỏi danh sách không cho phép ở trang Tiện ích → Quyền truy cập trang web. Rồi tải lại trang.' };
+  }
+  if (!page || page.probeError) {
+    return { text: 'Extension không đọc được trang này', fix: 'reload',
+      sub: `${page?.probeError || ''} Kiểm tra quyền truy cập trang của PointSnap trong trang Tiện ích của trình duyệt.`.trim() };
+  }
+  if (page.error) return { text: 'PointSnap lỗi trong trang', sub: page.error, fix: 'reload' };
+  // Trình duyệt chỉ chèn PointSnap sau khi code của CVAT chạy xong. Lần đầu mở, CVAT tải ~10 MB, mạng chậm có thể mất
+  // nửa phút: báo đang tải, không bảo tải lại (tải lại là chờ lại từ đầu).
+  if (!page.loaded.length && page.loading) {
+    return { text: 'CVAT đang tải', sub: 'PointSnap tự chạy khi trang tải xong. Mở lại bảng này sau ít giây.', fix: null };
+  }
+  if (!page.loaded.length) {
+    const scripts = await chrome.scripting.getRegisteredContentScripts().catch(() => []);
+    const registered = Hosts.isBuiltIn(origin) || scripts.some((s) => (s.matches || []).includes(`${origin}/*`));
+    if (!registered) return { text: 'PointSnap chưa đăng ký cho địa chỉ này', sub: 'Bấm nút dưới để đăng ký lại và tải lại trang.', fix: 'register' };
+    return { text: 'Trình duyệt chưa chèn PointSnap vào trang', fix: 'reload',
+      sub: 'Tải lại trang. Vẫn vậy thì mở trang Tiện ích, mục PointSnap: Quyền truy cập trang web → cho phép trên địa chỉ này.' };
+  }
+  const missing = page.parts.filter((k) => !page.loaded.includes(k));
+  return { text: 'PointSnap lỗi khi khởi động', fix: 'reload',
+    sub: `Chưa nạp được ${missing.join(', ')}. Bấm "Lỗi" ở mục PointSnap trong trang Tiện ích để xem chi tiết.` };
 }
 
 function renderChecks(health) {
@@ -42,9 +77,7 @@ function renderChecks(health) {
     [health.store, 'Đã nhận dữ liệu của CVAT', 'Chưa nhận được dữ liệu của CVAT: tải lại trang'],
     [health.job3d, 'Đang mở job 3D', 'Mở một job 3D (point cloud) để dùng bảng PointSnap'],
   ];
-  if (health.job3d) {
-    items.push([health.saveStates, 'Ctrl+Z của CVAT hoàn tác thao tác của PointSnap', 'Hoàn tác thao tác nhiều keyframe bằng nút ↶ của PointSnap', 'warn']);
-  }
+  if (health.startError) items.push([false, '', `PointSnap lỗi khi khởi động: ${health.startError}`, 'err']);
   if (health.guidelineErrors) items.push([false, '', `Bộ ngưỡng có ${health.guidelineErrors} lỗi, đang dùng mặc định`, 'warn']);
   $('checks').innerHTML = '';
   for (const [ok, good, bad, badKind = 'err'] of items) {
@@ -120,8 +153,15 @@ async function main() {
   await renderProfile(origin);
   const health = page?.health;
   if (!health) {
-    setSite('err', 'Đã bật nhưng PointSnap chưa chạy trong trang', 'Tải lại trang để nạp extension.');
-    $('reload').onclick = () => { chrome.tabs.reload(tab.id); window.close(); };
+    const why = await diagnose(origin, page);
+    setSite(why.fix ? 'err' : '', why.text, why.sub);
+    if (!why.fix) return;
+    $('reload').textContent = why.fix === 'register' ? 'Đăng ký lại và tải lại trang' : 'Tải lại trang';
+    $('reload').onclick = async () => {
+      if (why.fix === 'register') await chrome.runtime.sendMessage({ type: 'syncScripts' });
+      chrome.tabs.reload(tab.id);
+      window.close();
+    };
     show('reload');
     return;
   }
