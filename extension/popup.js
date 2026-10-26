@@ -77,9 +77,6 @@ function renderChecks(health) {
     [health.store, 'Đã nhận dữ liệu của CVAT', 'Chưa nhận được dữ liệu của CVAT: tải lại trang'],
     [health.job3d, 'Đang mở job 3D', 'Mở một job 3D (point cloud) để dùng bảng PointSnap'],
   ];
-  if (health.job3d) {
-    items.push([health.saveStates, 'Ctrl+Z của CVAT hoàn tác thao tác của PointSnap', 'Hoàn tác thao tác nhiều keyframe bằng nút ↶ của PointSnap', 'warn']);
-  }
   if (health.startError) items.push([false, '', `PointSnap lỗi khi khởi động: ${health.startError}`, 'err']);
   if (health.guidelineErrors) items.push([false, '', `Bộ ngưỡng có ${health.guidelineErrors} lỗi, đang dùng mặc định`, 'warn']);
   $('checks').innerHTML = '';
