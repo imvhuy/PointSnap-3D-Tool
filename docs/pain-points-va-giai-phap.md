@@ -32,7 +32,7 @@
 |---|---|---|---|---|---|
 | PP-01 | Pre-label đặt keyframe ở mọi frame, phải sửa từng frame | Annotator | Đồng bộ kích thước track, tỉa keyframe, áp delta cho dải frame | Có | **Đã làm** đồng bộ kích thước, làm mượt yaw, tỉa keyframe; chưa làm áp delta, gợi ý frame tham chiếu |
 | PP-02 | Căn đáy box sát mặt đất bằng mắt | Annotator | Bản đồ địa hình + HUD ΔZ + hạ đáy box một chạm | Có (hạ đáy) | **Đã làm** trong extension; backend vẫn dùng thuật toán cũ |
-| PP-03 | Mất dấu box khi chuyển frame | Annotator | Camera theo track | Không | **Đã làm** |
+| PP-03 | Mất dấu box khi chuyển frame | Annotator | Khoá box (camera đi theo box) | Không | **Đã làm** |
 | PP-04 | Không biết frame nào trong track bị sai | Annotator | Dải tổng quan track, đánh dấu ngoại lai | Không | **Đã làm** (kích thước, yaw) |
 | PP-05 | Không thấy box ôm hết vật chưa | Annotator | Tô điểm trong/ngoài box, khoảng hở từng mặt | Không | **Đã làm** |
 | PP-06 | Box chồng nhau, trùng track do pre-label | Annotator, QC | Cảnh báo chồng box khi kéo, phát hiện track trùng | Không | **Đã làm** cảnh báo trong frame (cả cặp spec cho phép); chưa làm track trùng |
@@ -123,7 +123,13 @@ rồi hạ đáy: đặt giữa lệch nhãn chuẩn p50 3–7 cm, p90 9–18 cm
 
 **Vấn đề.** Sang frame mới phải tìm box, chọn lại và chỉnh lại góc nhìn. Việc này lặp lại ở mọi box, không chỉ box lỗi.
 
-**Giải pháp.** Camera theo track (<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>; phím `F` và `D` đơn là phím chuyển frame của CVAT): khi frame đổi, tự chọn box cùng track và focus camera vào box, qua sự kiện `canvas.selected` và `canvas.focus` của CVAT.
+**Giải pháp.** **Khoá box**, bật sẵn (nút ◎ hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>; phím `F` và `D` đơn là phím chuyển frame của CVAT). Khi frame đổi:
+- chọn lại đúng box đang khoá (sự kiện `canvas.selected` của CVAT);
+- **dời camera đúng quãng tâm box đã đi** giữa hai frame (`setLookAt` của camera-controls trong canvas3d). Góc nhìn và độ zoom annotator đang dùng giữ nguyên, nên box đứng yên trên màn hình.
+
+Bản đầu chỉ chọn lại box mà camera đứng yên. Xe thu chạy thì box trôi dần khỏi màn hình, và annotator dễ chọn / sửa nhầm box khác (CVAT 3D chọn box theo chuột). Không dùng `focusObjectByClientId` mỗi frame vì nó đổi zoom và góc nhìn, kèm hiệu ứng chuyển cảnh.
+
+Cũng áp dụng khi **bấm ô keyframe trên dải track**: tới frame mới vẫn chọn đúng box đó, camera đi theo. Tắt khoá thì bấm ô keyframe đưa camera tới box một lần. Bật lại khoá khi box đã trôi khỏi màn hình thì camera về box trước. Bỏ chọn box trong frame thì thôi khoá, đổi frame không chọn lại box cũ. Box không có ở frame mới (ra khỏi track) thì báo, và chọn lại khi box xuất hiện trở lại.
 
 **Ghi chú.** Không cần ghi box, làm được ngay. Đây là pain point bị đánh giá thấp nhất so với thời gian nó tiêu tốn.
 
@@ -325,6 +331,11 @@ Sau khi sửa: 0 báo nhầm trên 840 box chuẩn. Luật này chỉ còn là l
 - Đo precision từng luật trên dữ liệu thật, từ kết luận Đúng/Báo nhầm của QC.
 - **Chỉ chặn submit bằng luật gần như không báo nhầm:** thiếu/sai thuộc tính, box rỗng, trùng box. Không dùng "Z ngoài ngưỡng" để chặn: trên dữ liệu thật mặt đất chung chỉ tin được trong 35 m (PP-09).
 - Luật có ngưỡng hình học chỉ cảnh báo. Annotator bỏ qua được nhưng phải chọn lý do, và QC thấy danh sách đã bỏ qua.
+- *(Đã làm, phía annotator)* Nút **✕** trên dòng Cần xem / Lỗi của checklist: "báo nhầm, không báo mục này cho box này nữa".
+  - Áp dụng cho cả track: mọi frame của track, theo ID track trên server.
+  - Dòng chuyển xám "đã bỏ qua", không tính vào số mục cần xem, nút sửa ẩn đi. Nút ↺ hiện lại cảnh báo.
+  - Bỏ qua Kích thước / Hướng thì dải track thôi tô vàng vì lý do đó. Bỏ qua Chồng lấn thì thôi vẽ khung đỏ.
+  - Lưu theo job trong trình duyệt (`localStorage`), không ghi vào CVAT; QC chưa thấy. Chọn lý do và cho QC xem danh sách để cho phase QC.
 
 **Rủi ro hành vi.** Nếu luật kích thước chặn submit, annotator junior có thể kéo box cho tắt cảnh báo thay vì sửa đúng (ví dụ thu box van về cỡ car). Lỗi rõ ràng biến thành lỗi ẩn.
 
@@ -454,6 +465,11 @@ CVAT local, nạp qua phiên đăng nhập của trình duyệt (dữ liệu kh�
 - **Save bằng Ctrl+S thật, tải lại trang**: 40/40 frame khớp với trước khi Save (lệch lớn nhất 0,05 mm), 14 keyframe.
 - **Phím thật**: Alt+Shift+F bật camera theo track, phím F của CVAT qua frame vẫn giữ track; Alt+Shift+G hạ box nâng
   30 cm về cách nhãn chuẩn 3 cm (bản dời ít nhất: 7 cm).
+- **Khoá box (26/10/2026, job 75, xe thu đang chạy)**:
+  - car #8 từ frame 0 tới 12 và khi bấm ô keyframe 7 / 13 / 1: tâm box đứng yên trên màn hình, lệch ≤ 1 px.
+  - Tắt khoá: tới frame 10, box ra ngoài màn hình hơn 1500 px.
+  - Box ra khỏi track ở frame 15: báo "không có mặt"; về frame 9 thì chọn lại đúng box, vẫn ở vị trí cũ.
+- **Bỏ qua cảnh báo**: pedestrian #30 "27 điểm đỏ lòi ra ngoài box" → ✕: dòng xám, số mục cần xem về 0, chấm xanh, sang frame 5 cùng track vẫn đã bỏ qua; ↺ hiện lại.
 
 **Đo thêm trên dữ liệu thật:**
 - Box chuẩn nuScenes scene-1077 dư so với điểm ở mặt LiDAR thấy: p50 19 cm, p90 33 cm (scene-1100: 10 / 25 cm). Vì vậy co
@@ -465,6 +481,10 @@ CVAT local, nạp qua phiên đăng nhập của trình duyệt (dữ liệu kh�
 **Thay đổi rút ra:** nới khoảng kích thước (PP-07), viết lại luật yaw của dải track (PP-04), hạ đáy đặt giữa khoảng mặt
 đất (PP-02). Kèm các lỗi sửa khi kiểm edge case: point cloud có NaN / Infinity, guideline ghi đè sai kiểu, box bị khóa
 trong CVAT, đổi job trong cùng tab, keyframe ngoài đoạn của job.
+
+Sửa thêm sau khi dùng thật: phóng to một view (nút fullscreen của CVAT) thì đường mặt đất / nhãn của 3 view kia không còn
+vẽ đè lên view đang phóng to. CVAT chỉ đặt view phóng to đè lên, 3 view kia vẫn giữ chỗ cũ bên dưới; lớp vẽ giờ thử
+xem view có bị che không trước khi vẽ.
 
 **Chưa kiểm:** độ mượt khi kéo chuột ở frame đông điểm (khung trình duyệt thử quá hẹp); dữ liệu Việt Nam.
 

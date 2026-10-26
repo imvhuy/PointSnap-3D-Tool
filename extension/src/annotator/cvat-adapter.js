@@ -195,10 +195,29 @@
     return { restored: states.length, skipped };
   }
 
-  /** Chọn object và đưa camera tới object, như khi người dùng bấm vào box. */
-  function select(ctx, clientID) {
+  /**
+   * Chọn object như khi người dùng bấm vào box. `focus`: đưa camera tới box bằng `focusObjectByClientId` của canvas3d
+   * (CVAT tự chọn khoảng cách / góc vừa box), dùng khi nhảy sang box khác; khi đổi frame thì dùng `shiftCamera`.
+   */
+  function select(ctx, clientID, focus = false) {
     ctx.dom.perspective.dispatchEvent(new CustomEvent('canvas.selected', { detail: { clientID } }));
-    ctx.canvas.focus?.(clientID);
+    if (!focus) return;
+    const view = ctx.canvas.view;
+    if (view?.focusObjectByClientId) view.focusObjectByClientId(clientID, true);
+    else ctx.canvas.focus?.(clientID);
+  }
+
+  /**
+   * Dời camera phối cảnh một đoạn `delta` [dx, dy, dz] (hệ point cloud), giữ nguyên góc nhìn và độ zoom người dùng đang
+   * dùng. Dùng để box đang khoá đứng yên trên màn hình khi đổi frame. Trả về false khi CVAT không có camera-controls.
+   */
+  function shiftCamera(ctx, delta) {
+    const view = ctx.views.perspective, controls = view.controls;
+    if (!controls?.getTarget || !controls.getPosition || !controls.setLookAt || !delta.every(Number.isFinite)) return false;
+    const target = controls.getTarget(view.camera.position.clone()), position = controls.getPosition(view.camera.position.clone());
+    const [dx, dy, dz] = delta;
+    controls.setLookAt(position.x + dx, position.y + dy, position.z + dz, target.x + dx, target.y + dy, target.z + dz, false);
+    return true;
   }
 
   const subscribe = (listener) => store.subscribe(listener);
@@ -215,6 +234,6 @@
 
   root.PointSnapCvatAdapter = {
     connect, context, rawStates, currentFrame, frameStates, activeClientId, isSaving, attributesOf, liveBox, cloudObject, pointCloud,
-    trackKeyframes, applyEdits, undoEdits, refresh, select, subscribe, health,
+    trackKeyframes, applyEdits, undoEdits, refresh, select, shiftCamera, subscribe, health,
   };
 })(globalThis);

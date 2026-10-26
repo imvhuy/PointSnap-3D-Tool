@@ -40,10 +40,11 @@ khác thì xin phép chủ hệ thống trước.
 ## Bảng trong job
 
 - **Thanh tiêu đề** (luôn hiện, kể cả khi thu gọn): chấm trạng thái (xanh ổn / cam cần xem / đỏ lỗi), box đang chọn,
-  khoảng cách, số mục cần xem, tiến độ `xong/tổng`, ◎ camera theo track, ⏭ track chưa xong, ▴ thu gọn.
+  khoảng cách, số mục cần xem, tiến độ `xong/tổng`, ◎ khoá box, ⏭ track chưa xong, ▴ thu gọn.
 - **Checklist**, mỗi khía cạnh một dòng ✓ / ! / ✕ kèm một cụm từ ngắn (rê chuột xem đầy đủ) và **nút sửa nằm ngay trên
   dòng của vấn đề**: Mặt đất (**Hạ đáy** <kbd>G</kbd>), Kích thước (**Cỡ trung vị**), Ôm vật, Hướng (**Mượt yaw**),
-  Chồng lấn, Thuộc tính.
+  Chồng lấn, Thuộc tính. Báo nhầm thì bấm **✕** cuối dòng: dòng chuyển xám, không báo mục đó cho box / track này nữa;
+  **↺** hiện lại.
 - **Dải track**: một ô mỗi keyframe, ô vàng là keyframe lệch (rê chuột xem lý do), ô viền trắng là frame đang đứng;
   bấm ô để tới frame. **Sửa cả track** mở 4 thao tác.
 - **Xem trước**: trước khi Áp dụng, box sau khi sửa ở frame này được vẽ **nét đứt xanh dương** chồng lên box hiện tại.
@@ -63,7 +64,8 @@ khác thì xin phép chủ hệ thống trước.
 | Đồng bộ kích thước cả track | Theo frame hiện tại hoặc theo trung vị; giữ mặt LiDAR nhìn thấy, giữ đáy box. Có xem trước | Có, cả track |
 | Làm mượt yaw | Sửa keyframe lật 180°, lọc trung vị giữ đoạn rẽ thật. Có xem trước | Có, cả track |
 | Tỉa keyframe | Bỏ keyframe mà CVAT nội suy lại được trong dung sai (tâm 5 cm, yaw 1°, kích thước 2 cm). Có xem trước | Có, cả track |
-| Camera theo track | **Camera theo track** hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>: đổi frame vẫn chọn và focus đúng track | Không |
+| Khoá box | Bật sẵn; nút ◎ hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> để tắt / bật. Đổi frame (phím CVAT hay ô dải track) vẫn chọn đúng box, camera đi theo box nên box đứng yên trên màn hình, giữ góc nhìn và zoom. Tắt khoá thì bấm ô dải track đưa camera tới box | Không |
+| Bỏ qua cảnh báo | **✕** trên dòng báo nhầm: bỏ qua mục đó cho box (track: mọi frame); **↺** hiện lại. Lưu theo job trong trình duyệt | Không |
 | Track đã xong | **Đánh dấu xong** hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd>; **Track chưa xong ›** chọn track kế tiếp. Chỉ lưu ID track trong trình duyệt | Không |
 
 Thứ tự nên dùng cho một track pre-label: làm chuẩn một frame nhìn rõ → **Đồng bộ kích thước** → **Làm mượt yaw** →
