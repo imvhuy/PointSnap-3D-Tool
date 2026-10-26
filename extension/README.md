@@ -12,9 +12,27 @@ người dùng kéo box: annotator xem trước, hoàn tác được (mục Hoà
    bấm biểu tượng PointSnap trên thanh trình duyệt → **Bật PointSnap cho trang này** → đồng ý quyền Chrome hỏi. Trang tự
    tải lại. Popup nhận ra trang có phải CVAT không (đọc `/api/server/about` của chính trang), báo phiên bản, và sau khi bật
    cho biết đã nhận dữ liệu CVAT chưa, đã mở job 3D chưa, Ctrl+Z của CVAT có hoàn tác được thao tác của PointSnap không.
-3. **Bộ ngưỡng của dự án** (nếu khác mặc định): trưởng nhóm vào **Tùy chọn**, chỉnh / **Xuất** file JSON, gửi cho
-   annotator; annotator bấm **Nhập file** ở đúng địa chỉ CVAT. Mỗi địa chỉ CVAT có bộ ngưỡng riêng, kiểm ngay khi nhập.
-   Phần QC backend cũ nằm trong mục **Nâng cao**, annotator không cần.
+3. **Spec của dự án** (nếu khác mặc định): mở một job của project, bấm **⚙** trên thanh tiêu đề bảng PointSnap (hoặc
+   **Sửa** trên thẻ Spec). Xem mục *Spec của project* bên dưới. Trưởng nhóm **Export** file, annotator **Import** rồi
+   **Save** ở job của cùng project. Trang **Tùy chọn** liệt kê bộ ngưỡng theo địa chỉ CVAT và theo project; phần QC
+   backend cũ nằm trong mục **Nâng cao**, annotator không cần.
+
+## Spec của project
+
+Trình sửa mở ngay trong trang CVAT, không cần biết JSON:
+
+- **Class** lấy từ label của job đang mở (tên, thuộc tính, giá trị), nên luôn khớp CVAT; class mới của project tự hiện.
+- **Kích thước**: dài / rộng / cao dạng `min–max` (m). **Chia theo** một thuộc tính dạng chọn hoặc checkbox: mỗi giá trị một
+  dòng (checkbox hiện **on / off**), ví dụ `rider_state` on cao 1,50–2,00, off cao 0,90–1,55. Ô để trống = không kiểm.
+- Cột **Job**: khoảng thực tế của box đã gán trong job (đọc qua phiên đăng nhập CVAT của bạn), tô vàng khi lệch khoảng đang
+  đặt; **Gợi ý từ job** điền khoảng đó vào các dòng có ≥ 3 box, xem lại rồi mới Save.
+- Công tắc **Mặt đất**, **Chồng lấn**, **Vật cứng** (kiểm scale theo track, đồng bộ cỡ, mượt yaw); **Bắt buộc** cho thuộc
+  tính dạng chọn (checkbox luôn có giá trị nên không cần); **Ghi chú** hiện trên thẻ Spec cho annotator.
+- **Chồng lấn**: ngưỡng và cặp class được chồng. **Luật spec**: người lái có box riêng, người nằm trong xe. **Ngưỡng**: mặt
+  đất, phạm vi gán nhãn, độ cao LiDAR, lề kích thước.
+- Ô sai dạng tô đỏ và khóa **Save**; dòng cuối cho biết box đang chọn có đạt với ngưỡng đang sửa không, trước khi Save.
+- **Save** lưu cho project (chỉ phần khác mặc định, để mặc định được hiệu chỉnh sau này vẫn áp vào phần bạn không sửa);
+  job không thuộc project nào thì lưu cho địa chỉ CVAT. **Export** ra file đầy đủ, **Import** đọc lại (chưa lưu tới khi Save).
 
 Extension chỉ chạy trong trình duyệt của bạn và không gửi dữ liệu đi, nhưng có ghi vào nhãn: dùng trên CVAT của người
 khác thì xin phép chủ hệ thống trước.
@@ -108,6 +126,7 @@ src/annotator/
   overlay.js        vẽ SVG trên 4 view
   cloud-colors.js   tô màu chính các điểm của point cloud CVAT (A4), trả màu gốc khi bỏ chọn
   panel.js          giao diện bảng: checklist, dải track, xem trước (shadow DOM)
+  spec-editor.js    trình sửa spec của project (shadow DOM)
   annotator.js      bộ điều khiển
   settings-bridge.js  chuyển cấu hình của địa chỉ CVAT đang mở sang trang (ISOLATED world)
 hosts.js            các CVAT đã bật + cấu hình theo từng địa chỉ (popup, Tùy chọn, service worker, bridge dùng chung)

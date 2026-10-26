@@ -23,13 +23,22 @@
 
   const isBuiltIn = (origin) => BUILT_IN.includes(origin);
 
-  /** Cấu hình annotator của `origin`: cấu hình riêng nếu có, không thì cấu hình chung. */
-  function profileFor(local, origin) {
-    const own = (local.annotatorProfiles || {})[origin];
+  /** Khóa cấu hình của một project CVAT trên `origin`; job không thuộc project nào dùng khóa của origin. */
+  const projectKey = (origin, projectId) => (Number.isInteger(projectId) && projectId > 0 ? `${origin}#project-${projectId}` : origin);
+
+  /**
+   * Cấu hình annotator của `key` (origin, hoặc origin#project-<id>). Bật / tắt luôn theo origin. Bộ ngưỡng: của project nếu
+   * project đã có, không thì của origin, không thì cấu hình chung cũ. `scope` cho biết bộ ngưỡng đang lấy từ đâu.
+   */
+  function profileFor(local, key) {
+    const profiles = local.annotatorProfiles || {}, origin = key.split('#')[0];
+    const site = profiles[origin], project = key !== origin ? profiles[key] : null;
+    const source = project || site;
     return {
-      enabled: own ? own.enabled !== false : local.annotatorEnabled !== false,
-      guidelineName: own ? own.guidelineName || '' : (local.annotatorGuideline ? 'Cấu hình chung' : ''),
-      guidelineJson: own ? own.guidelineJson || '' : local.annotatorGuideline || '',
+      enabled: site ? site.enabled !== false : local.annotatorEnabled !== false,
+      guidelineName: source ? source.guidelineName || '' : (local.annotatorGuideline ? 'Cấu hình chung' : ''),
+      guidelineJson: source ? source.guidelineJson || '' : local.annotatorGuideline || '',
+      scope: project ? 'project' : site ? 'site' : 'shared',
     };
   }
 
@@ -38,11 +47,14 @@
     return { sync, local };
   }
 
-  /** Ghi đè một phần cấu hình riêng của `origin`. */
-  async function saveProfile(origin, patch) {
+  /** Ghi đè một phần cấu hình của `key` (origin hoặc project). Cấu hình project chỉ giữ bộ ngưỡng. */
+  async function saveProfile(key, patch) {
     const { local } = await readAll();
-    const profiles = { ...local.annotatorProfiles, [origin]: { ...profileFor(local, origin), ...patch } };
-    await chrome.storage.local.set({ annotatorProfiles: profiles });
+    const { scope, ...current } = profileFor(local, key);
+    const next = key.includes('#')
+      ? { guidelineName: current.guidelineName, guidelineJson: current.guidelineJson, ...patch }
+      : { ...current, ...patch };
+    await chrome.storage.local.set({ annotatorProfiles: { ...local.annotatorProfiles, [key]: next } });
   }
 
   /** Các origin đã bật: localhost mặc định + origin thêm có quyền truy cập. */
@@ -55,5 +67,5 @@
     return [...BUILT_IN, ...extra];
   }
 
-  root.PointSnapHosts = { BUILT_IN, SYNC_DEFAULTS, LOCAL_DEFAULTS, httpOrigin, isBuiltIn, profileFor, readAll, saveProfile, enabledOrigins };
+  root.PointSnapHosts = { BUILT_IN, SYNC_DEFAULTS, LOCAL_DEFAULTS, httpOrigin, isBuiltIn, projectKey, profileFor, readAll, saveProfile, enabledOrigins };
 })(globalThis);

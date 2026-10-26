@@ -110,3 +110,5 @@ textarea { min-height: 72px; resize: vertical; }
 
 /* Thuộc tính hidden phải thắng display của .btn / .status. */
 [hidden] { display: none !important; }
+
+.host.project { margin-left: 18px; border-style: dashed; }

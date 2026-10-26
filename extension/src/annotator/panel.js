@@ -143,6 +143,7 @@
     const tools = vm.status === 'ready'
       ? `<button class="${vm.follow ? 'on' : ''}" data-action="toggle-follow" aria-pressed="${vm.follow}" aria-label="Camera theo track" title="Camera theo track: đổi frame vẫn chọn đúng track (Alt+Shift+F)">◎</button>`
         + '<button data-action="next-undone" aria-label="Track chưa xong kế tiếp" title="Chọn track chưa xong kế tiếp trong frame">⏭</button>'
+        + '<button data-action="open-spec" aria-label="Spec của project" title="Spec của project: ngưỡng theo class / thuộc tính">⚙</button>'
       : '';
     return `<div class="head" title="${esc(SHORTCUTS)}">${status}<span class="title">${title}</span>${count}${progress}${tools}`
       + `<button data-action="collapse" aria-label="${collapsed ? 'Mở rộng' : 'Thu gọn'}">${collapsed ? '▾' : '▴'}</button></div>`;
@@ -191,7 +192,7 @@
       : '<div class="muted">Chưa có khoảng kích thước cho class này.</div>';
     const required = spec.required.map((a) => `<div class="row"><span>${esc(a.name)}</span><span class="${a.value ? '' : 'bad'}">${a.value ? esc(a.value) : 'chưa chọn'}</span></div>`).join('');
     const overlap = spec.overlapWith.length ? `<div><b>Được chồng với:</b> ${esc(spec.overlapWith.join(', '))}</div>` : '';
-    return `<div class="spec"><b>Spec · ${esc(spec.key)}</b>${dims}${required}${overlap}<ul>${spec.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>`;
+    return `<div class="spec"><div class="row"><b>Spec · ${esc(spec.key)}</b><button class="link" data-action="open-spec">Sửa</button></div>${dims}${required}${overlap}<ul>${spec.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>`;
   }
 
   /** Dải track: một ô mỗi keyframe (vàng: lệch), ô đang đứng có viền; bấm ô để tới frame. */

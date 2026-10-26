@@ -57,6 +57,15 @@ async function removeHost(origin) {
   render();
 }
 
+async function removeProject(key) {
+  const { local } = await Hosts.readAll();
+  const profiles = { ...local.annotatorProfiles };
+  delete profiles[key];
+  await chrome.storage.local.set({ annotatorProfiles: profiles });
+  hostStatus('Đã gỡ bộ ngưỡng của project; project dùng lại bộ ngưỡng của địa chỉ CVAT.', 'ok');
+  render();
+}
+
 let fileTarget = null;
 $('file').addEventListener('change', async () => {
   const file = $('file').files[0];
@@ -68,16 +77,22 @@ async function render() {
   const { local } = await Hosts.readAll();
   const enabled = await Hosts.enabledOrigins();
   const focus = decodeURIComponent(location.hash.slice(1));
-  const origins = focus && !enabled.includes(focus) ? [...enabled, focus] : enabled;
+  const sites = focus && !enabled.includes(focus) ? [...enabled, focus] : enabled;
+  // Bộ ngưỡng riêng của từng project (lưu từ trình sửa spec trong CVAT) nằm ngay dưới địa chỉ CVAT của nó.
+  const projects = Object.keys(local.annotatorProfiles || {}).filter((k) => k.includes('#project-'));
+  const origins = sites.flatMap((site) => [site, ...projects.filter((k) => k.startsWith(`${site}#`))]);
   $('hosts').innerHTML = '';
   for (const origin of origins) {
     const p = Hosts.profileFor(local, origin);
     const row = $('host-row').content.firstElementChild.cloneNode(true);
     const q = (sel) => row.querySelector(sel);
-    q('.origin').textContent = origin.replace(/^https?:\/\//, '');
-    q('.badge').textContent = Hosts.isBuiltIn(origin) ? 'mặc định' : enabled.includes(origin) ? '' : 'chưa bật';
+    const isProject = origin.includes('#');
+    q('.origin').textContent = isProject ? `↳ project ${origin.split('#project-')[1]}` : origin.replace(/^https?:\/\//, '');
+    q('.badge').textContent = isProject ? '' : Hosts.isBuiltIn(origin) ? 'mặc định' : enabled.includes(origin) ? '' : 'chưa bật';
     q('.enabled').checked = p.enabled;
     q('.enabled').onchange = () => Hosts.saveProfile(origin, { enabled: q('.enabled').checked });
+    q('.switch').hidden = isProject;
+    if (isProject) row.classList.add('project');
     q('.g-name').textContent = p.guidelineName || 'Mặc định';
     const errors = guidelineErrors(p.guidelineJson);
     q('.g-errors').textContent = errors.length ? `Bộ ngưỡng đang lưu có lỗi, CVAT dùng mặc định: ${errors[0]}` : '';
@@ -92,7 +107,7 @@ async function render() {
     q('textarea').value = p.guidelineJson ? JSON.stringify(JSON.parse(p.guidelineJson), null, 2) : '';
     q('.apply').onclick = () => saveGuideline(origin, p.guidelineName || 'Sửa tay', q('textarea').value);
     q('.remove').hidden = Hosts.isBuiltIn(origin);
-    q('.remove').onclick = () => removeHost(origin);
+    q('.remove').onclick = () => (isProject ? removeProject(origin) : removeHost(origin));
     if (origin === focus) {
       row.classList.add('focus');
       q('.editor').hidden = false;

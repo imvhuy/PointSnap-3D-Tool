@@ -71,6 +71,7 @@
         "src/annotator/overlay.js",
         "src/annotator/cloud-colors.js",
         "src/annotator/panel.js",
+        "src/annotator/spec-editor.js",
         "src/annotator/annotator.js"
       ],
       "run_at": "document_idle",

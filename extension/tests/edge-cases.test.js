@@ -237,7 +237,7 @@ test('guideline: ghi đè không phải object (null, mảng, chuỗi) thì dùn
 test('guideline: ghi đè sai kiểu ở mọi phần luật dùng thì báo lỗi, không làm sập vòng vẽ', () => {
   const bad = [
     { size: null },
-    { size: { ranges: { car: null } } },
+    { size: { ranges: { car: { length: null } } } }, // null cả khóa car là bỏ khoảng (hợp lệ); null một chiều thì không
     { size: { nonRigidClasses: 'pedestrian' } },
     { size: { inTrack: { warningAbsM: 'x' } } },
     { ground: null },
@@ -383,4 +383,31 @@ test('tô màu: đổi frame (geometry mới) không ghi màu cũ vào cloud m�
   Colors.clear();
   Colors.clear();
   assert.equal(second.geometry.attributes.color.array[3], 0.5);
+});
+
+// ------------------------------------------------------------------ người lái / người trong xe (spec 4.3B, 4.3C)
+
+const rider = (rs, height) => ({ box: box([10, 0, GROUND + height / 2], [1.9, 0.8, height]), label: 'Two-wheels', classKey: `Two-wheels/${rs}`, clientId: 7 });
+const person = (x, bottom = GROUND, height = 1.7) => ({ box: box([x, 0, bottom + height / 2], [0.6, 0.6, height]), label: 'Pedestrian', classKey: 'Pedestrian/adult', clientId: 5 });
+const rules = (target, others = []) => Checks.checkBox({ ...baseInput(), ...target, attributes: {}, others, clientId: target.clientId }, g).map((i) => i.rule);
+
+test('spec: ghi with_rider mà box không gồm người (1,1 m), hoặc without_rider mà box gồm người (1,75 m), đều bị báo', () => {
+  assert.ok(rules(rider('with_rider', 1.1)).includes('size.class_range'));
+  assert.ok(rules(rider('without_rider', 1.75)).includes('size.class_range'));
+  assert.ok(!rules(rider('with_rider', 1.75)).includes('size.class_range'));
+  assert.ok(!rules(rider('without_rider', 1.1)).includes('size.class_range'));
+});
+
+test('spec: xe có người lái mà người lái còn box riêng thì báo ở cả hai box; người dắt xe không người thì được chồng', () => {
+  assert.ok(rules(rider('with_rider', 1.75), [person(10.1)]).includes('spec.rider_double'));
+  assert.ok(rules(person(10.1), [rider('with_rider', 1.75)]).includes('spec.rider_double'));
+  const walking = rules(rider('without_rider', 1.1), [person(10.9)]);
+  assert.ok(!walking.includes('spec.rider_double') && walking.includes('overlap.allowed'));
+});
+
+test('spec: người trong xe con bị báo; người đứng trên thùng xe tải (đáy cao hơn 0,6 m) thì không', () => {
+  const car = { box: box([10, 0, GROUND + 0.8], [4.5, 1.9, 1.6]), label: 'Vehicle', classKey: 'Vehicle/car', clientId: 9 };
+  assert.ok(rules(person(10.3, GROUND, 1.2), [car]).includes('spec.inside'));
+  const truck = { box: box([10, 0, GROUND + 0.6], [6, 2.3, 1.2]), label: 'Vehicle', classKey: 'Vehicle/truck', clientId: 9 };
+  assert.ok(!rules(person(10, GROUND + 1.2), [truck]).includes('spec.inside'));
 });

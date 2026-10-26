@@ -9,6 +9,7 @@
   const Checks = root.PointSnapChecks, Ops = root.PointSnapTrackOps, G = root.PointSnapGuideline;
   const ObjectPoints = root.PointSnapObjectPoints, Colors = root.PointSnapCloudColors;
   const Overlay = root.PointSnapAnnotatorOverlay, Panel = root.PointSnapAnnotatorPanel, Dom = root.PointSnapCvat;
+  const SpecEditor = root.PointSnapSpecEditor;
   if (root.PointSnapAnnotator || !A || !Panel) return;
 
   const SETTINGS_MESSAGE = 'POINTSNAP_ANNOTATOR_SETTINGS';
@@ -22,6 +23,7 @@
     enabled: true,
     guideline: G.DEFAULT_GUIDELINE,
     guidelineErrors: [],
+    guidelineName: '',
     settingsVersion: 0,
     jobId: null,
     frameCache: null,
@@ -53,8 +55,9 @@
 
   window.addEventListener('message', (event) => {
     if (event.source !== window || event.origin !== location.origin || event.data?.type !== SETTINGS_MESSAGE) return;
-    const { enabled, guidelineJson } = event.data.detail || {};
+    const { enabled, guidelineJson, guidelineName } = event.data.detail || {};
     S.enabled = enabled !== false;
+    S.guidelineName = guidelineName || '';
     let override = {};
     let parseError = null;
     try {
@@ -90,8 +93,10 @@
    * Mở job khác trong cùng tab (CVAT là SPA): clientID đánh lại từ đầu theo job, nên track / camera theo / bản xem trước
    * của job cũ có thể trùng ID với một object khác của job mới. Bỏ hết trạng thái gắn với job cũ.
    */
-  function onJobChanged(jobId) {
+  function onJobChanged(jobId, projectId) {
     S.jobId = jobId;
+    // Bộ ngưỡng theo project của job (cấu hình riêng của project, không có thì của địa chỉ CVAT).
+    window.postMessage({ type: `${SETTINGS_MESSAGE}_REQUEST`, detail: { projectId } }, location.origin);
     S.followClientId = null;
     S.track = null;
     S.trackToken += 1;
@@ -172,16 +177,17 @@
     const points = objectPoints(cache, box, others, contact ? contact.topContactZ : B.bottomZ(box));
     const trackDims = trackReady
       ? S.track.keyframes.filter((k) => !k.outside && k.frame !== ctx.frame).map((k) => k.box.dims) : null;
-    const issues = Checks.checkBox({
-      box, label, classKey, attributes, occluded: !!objectState.occluded, trackDims, contact,
+    const input = {
+      box, label, classKey, attributes, occluded: !!objectState.occluded, trackDims, contact, clientId: objectState.clientID,
       coarseGroundZ: cache.terrain.coarseHeightAt(box.center[0], box.center[1]),
       others: others.map((o) => ({ ...o, classKey: G.classKey(g, o.label, A.attributesOf(o.state)) })),
       pointsInside: points.insideAboveFloor,
-    }, g);
+    };
+    const issues = Checks.checkBox(input, g);
     const byId = new Map(others.map((o) => [o.clientId, o]));
     S.measureKey = key;
     S.measure = {
-      objectState, box, label, classKey, contact, issues,
+      objectState, box, label, classKey, contact, issues, input,
       insideIdx: points.inside.map((q) => q[3]),
       outsideIdx: points.outside.map((q) => q[3]),
       insidePoints: sample(points.inside, MAX_DRAWN_POINTS),
@@ -189,8 +195,10 @@
       insideCount: points.inside.length,
       outsideCount: points.outside.length,
       faces: points.faces,
-      overlaps: issues.filter((i) => i.rule.startsWith('overlap') && byId.has(i.otherClientId))
-        .map((i) => ({ box: byId.get(i.otherClientId).box, ratio: i.ratio, allowed: i.rule === 'overlap.allowed' })),
+      // Cặp vi phạm spec (người lái / người trong xe) vẽ khung đỏ như chồng lấn cần xem.
+      overlaps: issues.filter((i) => (i.rule.startsWith('overlap') || i.rule.startsWith('spec.')) && byId.has(i.otherClientId))
+        .map((i) => ({ box: byId.get(i.otherClientId).box, ratio: i.ratio ?? B.overlapRatio(box, byId.get(i.otherClientId).box),
+          allowed: i.rule === 'overlap.allowed' })),
     };
     return S.measure;
   }
@@ -293,7 +301,7 @@
         fix: editable && rigid ? { action: 'plan-smooth-yaw', label: 'Mượt yaw' } : null });
     }
 
-    const overlap = row('Chồng lấn', pick((r) => r.startsWith('overlap')), 'không', null);
+    const overlap = row('Chồng lấn', pick((r) => r.startsWith('overlap') || r.startsWith('spec.')), 'không', null);
     if (overlap.level === 'na') overlap.level = 'ok';
     const required = g.attributes.required[m.label] || [];
     const attrs = row('Thuộc tính', pick((r) => r.startsWith('attr.')), required.length ? 'đủ' : 'không bắt buộc', null);
@@ -514,6 +522,9 @@
         case 'undo-last':
           await undoLast(ctx);
           break;
+        case 'open-spec':
+          await openSpecEditor(ctx);
+          break;
         case 'toggle-spec':
           S.specOpen = !S.specOpen;
           break;
@@ -576,6 +587,71 @@
     return vm;
   }
 
+  // ------------------------------------------------------------------ trình sửa spec của project
+
+  /** Box của cả job (REST của chính CVAT, phiên đăng nhập của người dùng) cho "Gợi ý từ job": { label, attributes, dims }. */
+  async function jobBoxes(job) {
+    const res = await fetch(`/api/jobs/${job.id}/annotations`, { credentials: 'same-origin' });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const labels = new Map(job.labels.map((l) => [l.id, l]));
+    const names = (label, list) => Object.fromEntries((list || []).map((a) => [label.attributes.find((s) => s.id === a.spec_id)?.name, a.value]));
+    const out = [];
+    const push = (labelId, points, attrs) => {
+      const label = labels.get(labelId), box = B.fromCvatPoints(points);
+      if (label && box) out.push({ label: label.name, attributes: attrs, dims: box.dims });
+    };
+    for (const s of data.shapes || []) if (s.type === 'cuboid') push(s.label_id, s.points, names(labels.get(s.label_id) || { attributes: [] }, s.attributes));
+    for (const t of data.tracks || []) {
+      const label = labels.get(t.label_id) || { attributes: [] };
+      const fixed = names(label, t.attributes);
+      for (const s of t.shapes || []) if (!s.outside && s.type === 'cuboid') push(t.label_id, s.points, { ...fixed, ...names(label, s.attributes) });
+    }
+    return out;
+  }
+
+  /** Lưu qua settings-bridge (ISOLATED world có chrome.storage); chờ xác nhận. */
+  function saveSpec(guidelineJson, guidelineName) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { window.removeEventListener('message', onSaved); reject(new Error('extension không trả lời')); }, 4000);
+      function onSaved(event) {
+        if (event.source !== window || event.data?.type !== 'POINTSNAP_SPEC_SAVED') return;
+        clearTimeout(timer);
+        window.removeEventListener('message', onSaved);
+        if (event.data.detail?.ok) resolve(); else reject(new Error(event.data.detail?.error || 'không rõ lỗi'));
+      }
+      window.addEventListener('message', onSaved);
+      window.postMessage({ type: 'POINTSNAP_SPEC_SAVE', detail: { guidelineJson, guidelineName } }, location.origin);
+    });
+  }
+
+  async function openSpecEditor(ctx) {
+    const job = ctx.job, projectId = job.projectId;
+    let projectName = projectId ? `Project ${projectId}` : `Task ${job.taskId}`;
+    try {
+      if (projectId) projectName = (await (await fetch(`/api/projects/${projectId}`, { credentials: 'same-origin' })).json()).name || projectName;
+    } catch (_) { /* giữ tên mặc định */ }
+    SpecEditor.open({
+      labels: job.labels.map((l) => ({ name: l.name, attributes: (l.attributes || []).map((a) => ({ name: a.name, inputType: a.inputType, values: a.values || [] })) })),
+      guideline: S.guideline,
+      guidelineName: S.guidelineName,
+      projectName,
+      selectedLabel: S.measure?.label,
+      boxes: () => jobBoxes(job),
+      // Box đang chọn với bộ ngưỡng nháp: cùng số đo, chỉ đổi ngưỡng / khóa class.
+      preview: (draft) => {
+        const m = S.measure;
+        if (!m) return null;
+        const issues = Checks.checkBox({ ...m.input, classKey: G.classKey(draft, m.label, m.input.attributes),
+          others: m.input.others.map((o) => ({ ...o, classKey: G.classKey(draft, o.label, A.attributesOf(o.state)) })) }, draft)
+          .filter((i) => i.severity !== 'info');
+        return issues.length ? { ok: false, text: `#${m.objectState.clientID}: ${issues[0].short}${issues.length > 1 ? ` (+${issues.length - 1})` : ''}` }
+          : { ok: true, text: `✓ #${m.objectState.clientID} đạt` };
+      },
+      onSave: saveSpec,
+    });
+  }
+
   /** Thẻ spec (A8) của class box đang chọn: khoảng kích thước, thuộc tính bắt buộc, cặp được chồng, quy tắc. */
   function specCard(m, g) {
     const range = g.size.ranges[m.classKey] || g.size.ranges[m.label] || null;
@@ -603,7 +679,7 @@
   function tick() {
     try {
       const ctx = S.enabled ? A.context() : null;
-      if (ctx && ctx.job.id !== S.jobId) onJobChanged(ctx.job.id);
+      if (ctx && ctx.job.id !== S.jobId) onJobChanged(ctx.job.id, ctx.job.projectId);
       const cache = ctx && frameData(ctx);
       const m = cache && measureActive(ctx, cache);
       if (ctx) syncTrack(ctx, m?.objectState || null);

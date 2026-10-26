@@ -42,8 +42,11 @@
         'Vehicle/Stroller': range([0.6, 1.2], [0.4, 0.8], [0.8, 1.3]),
         'Vehicle/Wheelchair': range([0.8, 1.3], [0.55, 0.8], [0.8, 1.4]),
         'Vehicle/other': range([1.0, 20.0], [0.5, 3.5], [0.8, 5.0]),
-        'Two-wheels/with_rider': range([1.20, 2.80], [0.45, 1.45], [1.0, 2.0]),
-        'Two-wheels/without_rider': range([1.2, 2.6], [0.4, 1.2], [0.8, 1.8]),
+        // Chiều cao tách có / không người lái: nhãn chuẩn nuScenes mini (thuộc tính cycle.with_rider / without_rider, 596 box
+        // xe máy + xe đạp): có người 1,56–1,93 m, không người 0,95–1,53 m (p99). Khoảng cũ [1,0–2,0] và [0,8–1,8] chồng nhau
+        // nên xe ghi with_rider mà box không gồm người (hoặc ngược lại) không bị báo.
+        'Two-wheels/with_rider': range([1.20, 2.80], [0.45, 1.45], [1.50, 2.00]),
+        'Two-wheels/without_rider': range([1.20, 2.80], [0.40, 1.30], [0.90, 1.55]),
         'Pedestrian/adult': range([0.30, 1.30], [0.30, 1.05], [1.0, 2.2]),
         'Pedestrian/child': range([0.3, 0.9], [0.3, 0.8], [0.7, 1.5]),
         'Animal/dog': range([0.4, 1.2], [0.15, 0.5], [0.3, 0.9]),
@@ -96,6 +99,15 @@
     attributes: {
       required: { Vehicle: ['subtype'], 'Two-wheels': ['rider_state'], Pedestrian: ['age_group', 'pose'], Animal: ['species'], Obstacle: ['type'] },
     },
+    // Luật spec về việc box có nên tồn tại, giống bộ quét QC (pointsnap/guidelines/spec-vn.yaml). Cặp được xét trước
+    // overlap.allowedPairs: vi phạm spec thì không ghi "được phép chồng".
+    spec: {
+      // spec 4.3C: xe có người lái thì người lái nằm trong box xe, không gán thêm box người.
+      riderDouble: [['Two-wheels/with_rider', 'Pedestrian']],
+      // spec 4.3B: không gán người bên trong xe; người đứng trên nóc / thùng xe (đáy cao hơn đáy xe ≥ insideMinLiftM) thì được.
+      insideForbidden: [['Pedestrian', 'Vehicle']],
+      insideMinLiftM: 0.6,
+    },
     // Thẻ spec (A8): quy tắc ngắn theo class, trích các điều khoản spec-vn mà bộ luật đang dùng. '*' áp cho mọi class.
     specNotes: {
       '*': [
@@ -129,9 +141,28 @@
     if (!isObject(override)) return base;
     const out = { ...base };
     for (const [key, value] of Object.entries(override)) {
-      out[key] = isObject(value) && isObject(base[key]) ? merge(base[key], value) : value;
+      // null bỏ một mục dạng object của mặc định (vd khoảng kích thước của một class); với giá trị đơn, null giữ nghĩa riêng
+      // (maxDistanceM: null = không kiểm).
+      if (value === null && isObject(base[key])) delete out[key];
+      else out[key] = isObject(value) && isObject(base[key]) ? merge(base[key], value) : value;
     }
     return out;
+  }
+
+  /**
+   * Phần của `value` khác `base`, dạng ghi đè: merge(base, diff(base, value)) cho lại `value`. Trình sửa spec chỉ lưu
+   * phần này, để khi mặc định được hiệu chỉnh lại (vd khoảng kích thước theo dữ liệu mới), project vẫn hưởng phần
+   * mình không sửa. Khóa có trong `base` mà `value` bỏ đi không biểu diễn được bằng ghi đè nên ghi null.
+   */
+  function diff(base, value) {
+    if (!isObject(base) || !isObject(value)) return JSON.stringify(base) === JSON.stringify(value) ? undefined : value;
+    const out = {};
+    for (const key of new Set([...Object.keys(base), ...Object.keys(value)])) {
+      if (!(key in value)) { out[key] = null; continue; }
+      const d = key in base ? diff(base[key], value[key]) : value[key];
+      if (d !== undefined) out[key] = d;
+    }
+    return Object.keys(out).length ? out : undefined;
   }
 
   function finitePair(v) {
@@ -148,7 +179,7 @@
     'ground.okM', 'ground.warningM', 'ground.errorM', 'ground.minConfidence', 'ground.pointsBelowBottomMin', 'ground.maxRangeM',
     'zRange.minM', 'zRange.maxM', 'zRange.maxRangeM', 'overlap.warning', 'overlap.error',
     'trackOps.yawSmoothing.window', 'trackOps.yawSmoothing.minChangeDeg', 'trackOps.yawSmoothing.flipToleranceDeg',
-    'trackOps.yawJumpDeg.rigid', 'trackOps.yawJumpDeg.nonRigid',
+    'trackOps.yawJumpDeg.rigid', 'trackOps.yawJumpDeg.nonRigid', 'spec.insideMinLiftM',
   ];
   const POSITIVE = ['trackOps.thinning.centerM', 'trackOps.thinning.yawDeg', 'trackOps.thinning.dimsM'];
   const STRING_LISTS = ['size.nonRigidClasses', 'ground.classes', 'overlap.classes'];
@@ -169,8 +200,10 @@
     }
     for (const [key, v] of Object.entries(get(g, 'attributes.required') || {})) if (!isStrings(v)) errors.push(`attributes.required["${key}"] phải là danh sách tên thuộc tính`);
     for (const [key, v] of Object.entries(get(g, 'specNotes') || {})) if (!isStrings(v)) errors.push(`specNotes["${key}"] phải là danh sách câu`);
-    const pairs = get(g, 'overlap.allowedPairs');
-    if (!Array.isArray(pairs) || !pairs.every((p) => isStrings(p) && p.length === 2)) errors.push('overlap.allowedPairs phải là danh sách cặp [class, class]');
+    for (const name of ['overlap.allowedPairs', 'spec.riderDouble', 'spec.insideForbidden']) {
+      const pairs = get(g, name);
+      if (!Array.isArray(pairs) || !pairs.every((p) => isStrings(p) && p.length === 2)) errors.push(`${name} phải là danh sách cặp [class, class]`);
+    }
     if (g.maxDistanceM !== null && !(Number.isFinite(g.maxDistanceM) && g.maxDistanceM > 0)) errors.push('maxDistanceM phải là số dương hoặc null');
     if (!(Array.isArray(g.sensorOrigin) && g.sensorOrigin.length === 3 && g.sensorOrigin.every(Number.isFinite))) errors.push('sensorOrigin phải là [x, y, z]');
     return errors;
@@ -191,7 +224,7 @@
     return label;
   }
 
-  const api = { DEFAULT_GUIDELINE, merge, validate, resolve, classKey };
+  const api = { DEFAULT_GUIDELINE, merge, diff, validate, resolve, classKey };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PointSnapGuideline = api;
 })(globalThis);
