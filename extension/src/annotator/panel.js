@@ -9,10 +9,10 @@
   'use strict';
 
   const STORAGE_KEY = 'pointsnap.annotator.panel';
-  const SHORTCUTS = 'Alt+Shift+G: hạ đáy box · Alt+Shift+F: camera theo track · Alt+Shift+D: đánh dấu track xong. Save / Undo bằng CVAT.';
+  const SHORTCUTS = 'Alt+Shift+G: hạ đáy box · Alt+Shift+F: khoá box · Alt+Shift+D: đánh dấu track xong. Save / Undo bằng CVAT.';
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-  const ICON = { ok: '✓', warning: '!', error: '✕', na: '–' };
-  const LEVEL_TEXT = { ok: 'Ổn', warning: 'Cần xem', error: 'Lỗi', na: 'Chưa đo được' };
+  const ICON = { ok: '✓', warning: '!', error: '✕', na: '–', muted: '–' };
+  const LEVEL_TEXT = { ok: 'Ổn', warning: 'Cần xem', error: 'Lỗi', na: 'Chưa đo được', muted: 'Đã bỏ qua' };
 
   const CSS = `
     :host { all: initial; }
@@ -22,6 +22,7 @@
     .head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: #0b1220; border-bottom: 1px solid #1f2937; cursor: move; user-select: none; }
     .head .title { font-weight: 600; margin-right: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .head .title small { font-weight: 400; color: #9ca3af; }
+    .head > .muted, .head .count { flex: none; white-space: nowrap; }
     .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #4b5563; }
     .dot.ok { background: #22c55e; } .dot.warning { background: #f59e0b; } .dot.error { background: #ef4444; }
     .count { font-weight: 700; font-size: 11px; padding: 0 6px; border-radius: 9px; background: #78350f; color: #fde68a; }
@@ -44,7 +45,11 @@
     .check:first-child { border-top: 0; }
     .check i { font-style: normal; font-weight: 800; text-align: center; border-radius: 50%; width: 15px; height: 15px; line-height: 15px; font-size: 10px; }
     .check.ok i { background: #14532d; color: #86efac; } .check.warning i { background: #78350f; color: #fde68a; }
-    .check.error i { background: #7f1d1d; color: #fecaca; } .check.na i { background: #374151; color: #9ca3af; }
+    .check.error i { background: #7f1d1d; color: #fecaca; } .check.na i, .check.muted i { background: #374151; color: #9ca3af; }
+    .check.muted .text { color: #6b7280; }
+    .check .acts { display: flex; gap: 3px; align-items: center; }
+    .check .acts .x { border: 0; background: none; color: #6b7280; padding: 0 3px; font-size: 12px; }
+    .check .acts .x:hover { color: #e5e7eb; background: none; }
     .check .name { color: #9ca3af; }
     .check .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .check.warning .text { color: #fbbf24; } .check.error .text { color: #f87171; }
@@ -141,7 +146,7 @@
     const count = b && b.problems ? `<span class="count ${b.level === 'error' ? 'error' : ''}" title="Số mục cần xem">${b.problems}</span>` : '';
     const progress = vm.progress ? `<span class="muted" title="Track đã xong / track trong frame">${vm.progress.done}/${vm.progress.total}</span>` : '';
     const tools = vm.status === 'ready'
-      ? `<button class="${vm.follow ? 'on' : ''}" data-action="toggle-follow" aria-pressed="${vm.follow}" aria-label="Camera theo track" title="Camera theo track: đổi frame vẫn chọn đúng track (Alt+Shift+F)">◎</button>`
+      ? `<button class="${vm.follow ? 'on' : ''}" data-action="toggle-follow" aria-pressed="${vm.follow}" aria-label="Khoá box" title="Khoá box: đổi frame thì camera đi theo box đang chọn (Alt+Shift+F)">◎</button>`
         + '<button data-action="next-undone" aria-label="Track chưa xong kế tiếp" title="Chọn track chưa xong kế tiếp trong frame">⏭</button>'
         + '<button data-action="open-spec" aria-label="Spec của project" title="Spec của project: ngưỡng theo class / thuộc tính">⚙</button>'
       : '';
@@ -176,9 +181,13 @@
     const rows = b.rows.map((r) => {
       const fix = r.fix
         ? `<button data-action="${esc(r.fix.action)}"${r.fix.source ? ` data-source="${esc(r.fix.source)}"` : ''}>${esc(r.fix.label)}${r.fix.key ? `<kbd>${esc(r.fix.key)}</kbd>` : ''}</button>`
-        : '<span></span>';
+        : '';
+      // Báo nhầm: bỏ qua dòng này cho box / track này; đã bỏ qua thì có nút hiện lại.
+      const toggle = r.canDismiss
+        ? `<button class="x" data-action="dismiss-row" data-row="${esc(r.key)}" data-name="${esc(r.name)}" title="Báo nhầm: không báo mục này cho box này nữa" aria-label="Bỏ qua ${esc(r.name)}">✕</button>`
+        : r.dismissed ? `<button class="x" data-action="restore-row" data-row="${esc(r.key)}" title="Hiện lại cảnh báo này" aria-label="Hiện lại ${esc(r.name)}">↺</button>` : '';
       return `<div class="check ${r.level}" title="${esc(r.tip || LEVEL_TEXT[r.level])}"><i aria-label="${LEVEL_TEXT[r.level]}">${ICON[r.level]}</i>`
-        + `<span class="name">${esc(r.name)}</span><span class="text">${esc(r.text)}</span>${fix}</div>`;
+        + `<span class="name">${esc(r.name)}</span><span class="text">${esc(r.text)}</span><span class="acts">${fix}${toggle}</span></div>`;
     }).join('');
     return `<div class="checks">${rows}</div>`;
   }

@@ -14,6 +14,7 @@
 
   const SETTINGS_MESSAGE = 'POINTSNAP_ANNOTATOR_SETTINGS';
   const DONE_KEY = 'pointsnap.annotator.done.';
+  const DISMISS_KEY = 'pointsnap.annotator.dismissed.';
   const PANEL_INTERVAL_MS = 120;
   const TRACK_RELOAD_DELAY_MS = 400;
   const MAX_DRAWN_POINTS = 600;
@@ -27,7 +28,13 @@
     settingsVersion: 0,
     jobId: null,
     frameCache: null,
-    followClientId: null,
+    // Khoá box: đổi frame thì camera dời theo box đang chọn (box đứng yên trên màn hình). Bật sẵn theo
+    // guideline.trackOps.followCamera; nút ◎ / Alt+Shift+F tắt bật. `lockAnchor`: box đang khoá ở frame trước.
+    lock: true,
+    lockAnchor: null,
+    focusOnArrive: null,
+    lastActive: null,
+    dismissCache: null,
     track: null,
     trackDirtyAt: 0,
     trackToken: 0,
@@ -67,6 +74,8 @@
     }
     const { guideline, errors } = G.resolve(override);
     S.guideline = guideline;
+    // Khoá box bật / tắt sẵn theo spec ở lần nạp đầu; sau đó theo nút ◎ của annotator.
+    if (S.settingsVersion === 0) S.lock = guideline.trackOps.followCamera !== false;
     S.guidelineErrors = parseError ? [parseError] : errors;
     S.settingsVersion += 1;
     S.frameCache = null;
@@ -97,7 +106,10 @@
     S.jobId = jobId;
     // Bộ ngưỡng theo project của job (cấu hình riêng của project, không có thì của địa chỉ CVAT).
     window.postMessage({ type: `${SETTINGS_MESSAGE}_REQUEST`, detail: { projectId } }, location.origin);
-    S.followClientId = null;
+    S.lockAnchor = null;
+    S.focusOnArrive = null;
+    S.lastActive = null;
+    S.dismissCache = null;
     S.track = null;
     S.trackToken += 1;
     S.plan = null;
@@ -106,14 +118,24 @@
     S.lastStates = null;
   }
 
+  /**
+   * Đổi frame: box đang khoá vẫn được chọn và camera dời đúng quãng box đã đi, nên box không trôi khỏi màn hình và
+   * annotator không chọn / sửa nhầm box khác. Tắt khoá mà vừa nhảy từ dải track thì đưa camera tới box một lần.
+   */
   function onFrameChanged(ctx) {
-    if (S.followClientId === null) return;
-    const followed = A.frameStates().find((s) => s.clientID === S.followClientId);
-    if (!followed || followed.outside) {
-      notify({ kind: 'info', text: 'Track đang theo không có mặt ở frame này.' });
-    } else if (A.activeClientId() !== S.followClientId) {
-      A.select(ctx, S.followClientId);
+    const anchor = S.lockAnchor, arrive = S.focusOnArrive;
+    S.focusOnArrive = null;
+    const id = S.lock ? anchor?.clientID : arrive;
+    if (id === undefined || id === null) return;
+    const state = A.frameStates().find((s) => s.clientID === id && !s.outside), box = state && B.fromCvatPoints(state.points);
+    if (!box) {
+      notify({ kind: 'info', text: 'Box đang khoá không có mặt ở frame này.' });
+      return;
     }
+    if (!S.lock) { A.select(ctx, id, true); return; }
+    if (A.activeClientId() !== id) A.select(ctx, id);
+    A.shiftCamera(ctx, box.center.map((v, i) => v - anchor.center[i]));
+    S.lockAnchor = { clientID: id, center: box.center };
   }
 
   // ------------------------------------------------------------------ số đo của box đang chọn
@@ -238,7 +260,7 @@
    * của luật `size.in_track` (dải và checklist cùng một kết luận); vật không cứng dùng trung vị / MAD; yaw theo
    * `angleOutliers` (đoán từ keyframe lân cận, xe rẽ thật không bị đánh dấu).
    */
-  function trackCells(keyframes, rigid) {
+  function trackCells(keyframes, rigid, dismissed = new Set()) {
     const shown = keyframes.filter((k) => !k.outside);
     const dimFlags = (i) => (rigid ? Checks.inTrackOutliers(shown.map((k) => k.box.dims[i]), S.guideline)
       : Checks.madOutliers(shown.map((k) => k.box.dims[i]), 0.05));
@@ -246,12 +268,15 @@
     const yaw = Checks.angleOutliers(shown.map((k) => k.box.rotation[2]),
       S.guideline.trackOps.yawJumpDeg[rigid ? 'rigid' : 'nonRigid'], shown.map((k) => k.frame));
     return shown.map((k, i) => {
-      const reasons = [...['dài', 'rộng', 'cao'].filter((_, d) => dims[d][i]).map((d) => `${d} lệch track`), ...(yaw[i] ? ['hướng nhảy'] : [])];
+      // Đã bỏ qua dòng Kích thước / Hướng cho track này thì dải cũng thôi tô vàng vì lý do đó.
+      const sizeOn = !dismissed.has('size'), yawOn = !dismissed.has('heading');
+      const reasons = [...(sizeOn ? ['dài', 'rộng', 'cao'].filter((_, d) => dims[d][i]).map((d) => `${d} lệch track`) : []),
+        ...(yawOn && yaw[i] ? ['hướng nhảy'] : [])];
       return { frame: k.frame, level: reasons.length ? 'warning' : 'ok', reasons, yawJump: yaw[i] };
     });
   }
 
-  const RANK = { error: 0, warning: 1, na: 2, ok: 3 };
+  const RANK = { error: 0, warning: 1, na: 2, ok: 3, muted: 3 };
 
   /**
    * Checklist của box đang chọn: mỗi khía cạnh một dòng { name, level: ok | warning | error | na, text, tip, fix }.
@@ -261,23 +286,23 @@
     const pick = (test) => m.issues.filter((i) => test(i.rule));
     const editable = !m.objectState.lock, isTrack = m.objectState.objectType === 'track';
     const rigid = !g.size.nonRigidClasses.includes(m.label);
-    const row = (name, issues, okText, fix) => {
+    const row = (key, name, issues, okText, fix) => {
       const real = issues.filter((i) => i.severity !== 'info'), info = issues.filter((i) => i.severity === 'info');
       const level = real.some((i) => i.severity === 'error') ? 'error' : real.length ? 'warning' : info.length && !okText ? 'na' : 'ok';
-      return { name, level, text: (real[0] || info[0])?.short || okText, tip: issues.map((i) => i.message).join('\n'),
+      return { key, name, level, text: (real[0] || info[0])?.short || okText, tip: issues.map((i) => i.message).join('\n'),
         fix: level === 'warning' || level === 'error' ? fix : null };
     };
 
     const gap = measured?.gapM ?? 0;
     const groundText = measured && (Math.abs(gap) <= g.ground.okM ? 'sát đất' : `${gap > 0 ? 'cao' : 'thấp'} ${cm(Math.abs(gap))}`);
     const snap = measured && editable ? { action: 'snap-ground', label: 'Hạ đáy', key: 'G' } : null;
-    const ground = row('Mặt đất', pick((r) => r.startsWith('ground.') || r === 'z.range'), groundText, snap);
+    const ground = row('ground', 'Mặt đất', pick((r) => r.startsWith('ground.') || r === 'z.range'), groundText, snap);
     // Lệch nhỏ (dưới ngưỡng Cảnh báo) vẫn cho hạ đáy một chạm, không tô vàng.
     if (ground.level === 'ok' && measured && Math.abs(gap) > g.ground.okM) ground.fix = snap;
 
     const sizeIssues = pick((r) => r.startsWith('size.'));
     const syncable = editable && isTrack && rigid && sizeIssues.some((i) => i.rule === 'size.in_track');
-    const size = row('Kích thước', sizeIssues, m.box.dims.map((d) => d.toFixed(2)).join(' × ') + ' m',
+    const size = row('size', 'Kích thước', sizeIssues, m.box.dims.map((d) => d.toFixed(2)).join(' × ') + ' m',
       syncable ? { action: 'plan-sync-size', source: 'median', label: 'Cỡ trung vị' } : null);
 
     // Ôm vật: Cảnh báo khi mặt LiDAR thấy có vật lòi ra > 10 cm, hoặc ≥ 20 điểm đỏ chiếm ≥ 15% điểm của vật. Đo 25/10/2026
@@ -288,26 +313,26 @@
     const redShare = m.outsideCount / Math.max(1, m.insideCount + m.outsideCount);
     const manyRed = m.outsideCount >= 20 && redShare >= 0.15;
     const counts = `${m.insideCount} điểm${m.outsideCount ? ` · ${m.outsideCount} lòi ra` : ''}`;
-    const fit = row('Ôm vật', pick((r) => r.startsWith('fit.')), [counts, ...faces.slice(0, 1).map((f) => f.text)].join(' · '), null);
+    const fit = row('fit', 'Ôm vật', pick((r) => r.startsWith('fit.')), [counts, ...faces.slice(0, 1).map((f) => f.text)].join(' · '), null);
     if (fit.level === 'ok' && (protruding.length || manyRed)) {
       Object.assign(fit, { level: 'warning', text: protruding.length ? protruding.map((f) => f.text).join(', ') : `${m.outsideCount} điểm đỏ lòi ra ngoài box`,
         tip: 'Điểm đỏ là điểm nối liền với vật nằm ngoài box. Dưới tán cây / sát tường có thể là điểm của vật bên cạnh.' });
     }
 
     const currentCell = track?.cells?.find((c) => c.frame === frame);
-    const heading = row('Hướng', [], `${Math.round(m.box.rotation[2] * DEG)}°`, null);
+    const heading = row('heading', 'Hướng', [], `${Math.round(m.box.rotation[2] * DEG)}°`, null);
     if (currentCell?.yawJump) {
       Object.assign(heading, { level: 'warning', text: 'nhảy so với keyframe kề',
         fix: editable && rigid ? { action: 'plan-smooth-yaw', label: 'Mượt yaw' } : null });
     }
 
-    const overlap = row('Chồng lấn', pick((r) => r.startsWith('overlap') || r.startsWith('spec.')), 'không', null);
+    const overlap = row('overlap', 'Chồng lấn', pick((r) => r.startsWith('overlap') || r.startsWith('spec.')), 'không', null);
     if (overlap.level === 'na') overlap.level = 'ok';
     const required = g.attributes.required[m.label] || [];
-    const attrs = row('Thuộc tính', pick((r) => r.startsWith('attr.')), required.length ? 'đủ' : 'không bắt buộc', null);
+    const attrs = row('attrs', 'Thuộc tính', pick((r) => r.startsWith('attr.')), required.length ? 'đủ' : 'không bắt buộc', null);
     const rows = [ground, size, fit, heading, overlap, attrs];
     const far = pick((r) => r === 'range.too_far');
-    if (far.length) rows.push(row('Phạm vi', far, '', null));
+    if (far.length) rows.push(row('range', 'Phạm vi', far, '', null));
     return rows;
   }
 
@@ -328,6 +353,32 @@
       notify({ kind: 'error', text: 'Trình duyệt chặn bộ nhớ trang: không lưu được trạng thái track.' });
     }
     if (!objectState.serverID) notify({ kind: 'info', text: 'Track mới chưa Save: dấu "đã xong" chỉ giữ tới khi tải lại trang.' });
+  }
+
+  // ------------------------------------------------------------------ cảnh báo đã bỏ qua (theo job, trong trình duyệt)
+
+  /** { [object]: [dòng checklist] } của job; đọc một lần rồi giữ trong S.dismissCache. */
+  function dismissedMap(jobId) {
+    if (S.dismissCache?.jobId === jobId) return S.dismissCache.map;
+    let map = {};
+    try { map = JSON.parse(localStorage.getItem(DISMISS_KEY + jobId)) || {}; } catch (_) { map = {}; }
+    S.dismissCache = { jobId, map };
+    return map;
+  }
+
+  const dismissedFor = (jobId, state) => new Set(dismissedMap(jobId)[trackId(state)] || []);
+
+  function setDismissed(ctx, state, row, on) {
+    const map = { ...dismissedMap(ctx.job.id) }, key = trackId(state);
+    const rows = new Set(map[key] || []);
+    if (on) rows.add(row); else rows.delete(row);
+    if (rows.size) map[key] = [...rows]; else delete map[key];
+    S.dismissCache = { jobId: ctx.job.id, map };
+    try {
+      localStorage.setItem(DISMISS_KEY + ctx.job.id, JSON.stringify(map));
+    } catch (_) {
+      notify({ kind: 'error', text: 'Trình duyệt chặn bộ nhớ trang: không nhớ được mục đã bỏ qua.' });
+    }
   }
 
   function frameTracks() {
@@ -476,9 +527,20 @@
     try {
       switch (name) {
         case 'toggle-follow':
-          if (S.followClientId !== null) S.followClientId = null;
-          else if (objectState?.objectType === 'track') S.followClientId = objectState.clientID;
-          else notify({ kind: 'info', text: 'Chọn một track trước khi bật camera theo track.' });
+          S.lock = !S.lock;
+          // Bật khoá khi box đã trôi khỏi màn hình: đưa camera về box trước đã.
+          if (S.lock && objectState) A.select(ctx, objectState.clientID, true);
+          notify({ kind: 'info', text: S.lock ? 'Khoá box: đổi frame thì camera đi theo box đang chọn.' : 'Đã tắt khoá box: camera đứng yên khi đổi frame.' });
+          break;
+        case 'dismiss-row':
+        case 'restore-row':
+          if (objectState) {
+            setDismissed(ctx, objectState, data.row, name === 'dismiss-row');
+            if (name === 'dismiss-row') {
+              notify({ kind: 'ok', text: `Đã bỏ qua "${data.name}" cho ${objectState.label?.name || 'box'} #${objectState.clientID}`
+                + `${objectState.objectType === 'track' ? ' ở mọi frame của track' : ''}; bấm ↺ trên dòng đó để hiện lại.` });
+            }
+          }
           break;
         case 'next-undone': {
           const done = doneSet(ctx.job.id), tracks = frameTracks().filter((s) => !done.has(trackId(s)));
@@ -486,13 +548,18 @@
           const next = tracks[(start + 1) % tracks.length];
           if (!next) notify({ kind: 'ok', text: 'Mọi track trong frame này đã đánh dấu xong.' });
           else if (next.clientID === objectState?.clientID) notify({ kind: 'info', text: 'Chỉ còn track đang chọn chưa xong trong frame này.' });
-          else A.select(ctx, next.clientID);
+          else A.select(ctx, next.clientID, true);
           break;
         }
         case 'toggle-done':
           if (objectState?.objectType === 'track') toggleDone(ctx, objectState);
           break;
         case 'goto-frame': {
+          // Nhảy từ dải track: giữ đúng box này khi tới frame mới (khoá thì camera đi theo, tắt khoá thì đưa camera tới box).
+          S.focusOnArrive = objectState?.clientID ?? null;
+          if (objectState && S.lockAnchor?.clientID !== objectState.clientID) {
+            S.lockAnchor = { clientID: objectState.clientID, center: B.fromCvatPoints(objectState.points)?.center || [0, 0, 0] };
+          }
           const res = await Dom.goToFrame(Number(data.frame));
           if (!res.ok) notify({ kind: 'error', text: res.reason });
           break;
@@ -557,7 +624,7 @@
   function viewModel(ctx, m) {
     const g = S.guideline;
     if (S.notice && performance.now() > S.notice.until) S.notice = null;
-    const base = { notice: S.notice, guidelineErrors: S.guidelineErrors, follow: S.followClientId !== null, plan: S.plan };
+    const base = { notice: S.notice, guidelineErrors: S.guidelineErrors, follow: S.lock, plan: S.plan };
     if (!ctx) return { ...base, status: 'waiting', message: 'Chờ mở job 3D (point cloud) trên CVAT…' };
     const done = doneSet(ctx.job.id), tracks = frameTracks();
     const vm = { ...base, status: 'ready', frame: ctx.frame,
@@ -568,13 +635,20 @@
     const isTrack = m.objectState.objectType === 'track', rigid = !g.size.nonRigidClasses.includes(m.label);
     if (isTrack) {
       const t = S.track?.clientID === m.objectState.clientID ? S.track : null;
-      const cells = t && !t.loading ? trackCells(t.keyframes, rigid) : null;
+      const cells = t && !t.loading ? trackCells(t.keyframes, rigid, dismissedFor(ctx.job.id, m.objectState)) : null;
       vm.track = !cells ? { loading: true } : {
         loading: false, cells, flagged: cells.filter((c) => c.level !== 'ok').length,
         done: done.has(trackId(m.objectState)), rigid, locked: !!m.objectState.lock,
       };
     }
     const rows = checklist(m, g, vm.track, measured, ctx.frame);
+    // Dòng người dùng đã bỏ qua cho object này: không tô màu, không tính vào số mục cần xem, có nút hiện lại.
+    const dismissed = dismissedFor(ctx.job.id, m.objectState);
+    for (const r of rows) {
+      const flagged = r.level === 'warning' || r.level === 'error';
+      if (flagged && dismissed.has(r.key)) Object.assign(r, { level: 'muted', dismissed: true, fix: null, text: `đã bỏ qua · ${r.text}` });
+      else r.canDismiss = flagged;
+    }
     vm.box = {
       label: m.label, classKey: m.classKey, clientId: m.objectState.clientID, isTrack, locked: !!m.objectState.lock,
       rangeM: B.rangeXY(m.box, g.sensorOrigin), rows,
@@ -683,14 +757,20 @@
       const cache = ctx && frameData(ctx);
       const m = cache && measureActive(ctx, cache);
       if (ctx) syncTrack(ctx, m?.objectState || null);
+      // Người dùng bỏ chọn box (Esc / bấm chỗ trống) ngay trong frame này thì thôi khoá, đổi frame không chọn lại box cũ.
+      if (cache && !m && S.lastActive?.frame === ctx.frame && S.lastActive.id !== null) S.lockAnchor = null;
+      if (cache) S.lastActive = { frame: ctx.frame, id: m?.objectState.clientID ?? null };
       if (m) {
         // Tô màu chính các điểm của CVAT; cloud không có thuộc tính màu thì vẽ chấm trên lớp phủ thay thế.
         const painted = Colors.highlight(A.cloudObject(ctx), m.insideIdx, m.outsideIdx);
         // Bản xem trước đang mở mà đổi box ở frame này: vẽ box mới bằng nét đứt chồng lên box hiện tại.
         const ghost = S.plan?.clientID === m.objectState.clientID ? S.plan.edits.find((e) => e.frame === ctx.frame && e.box)?.box : null;
+        // Box đang khoá: nhớ vị trí ở frame này để đổi frame thì dời camera đúng quãng box đi.
+        S.lockAnchor = { clientID: m.objectState.clientID, center: m.box.center };
+        const overlaps = dismissedFor(ctx.job.id, m.objectState).has('overlap') ? [] : m.overlaps;
         Overlay.render({ ctx, box: m.box, contact: Checks.usableContact(m.contact, m.box, S.guideline),
           okM: S.guideline.ground.okM, insidePoints: painted ? [] : m.insidePoints, outsidePoints: painted ? [] : m.outsidePoints,
-          faces: m.faces, overlaps: m.overlaps, ghost: ghost || null });
+          faces: m.faces, overlaps, ghost: ghost || null });
       } else {
         Colors.clear();
         Overlay.clear();

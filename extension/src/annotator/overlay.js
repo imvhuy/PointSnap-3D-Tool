@@ -26,6 +26,21 @@
     return [(ndc[0] + 1) * rect.width / 2, (1 - ndc[1]) * rect.height / 2];
   }
 
+  /**
+   * Khung của view nếu view đang thật sự nhìn thấy, không thì null. Phóng to một view (nút fullscreen của CVAT) chỉ
+   * đặt view đó đè lên 3 view kia, 3 view kia vẫn giữ chỗ cũ bên dưới; lớp vẽ nằm trên cùng nên phải tự ẩn view bị che.
+   * Thử 5 điểm trong view: điểm nào chạm vào chính view (canvas hoặc nút / nhãn của CVAT trên view) là còn thấy.
+   */
+  function visibleRect(el) {
+    if (!el.offsetParent || el.offsetWidth <= 25) return null;
+    const rect = el.getBoundingClientRect(), box = el.closest('.cvat-canvas-grid-item') || el.parentElement;
+    const seen = [[0.5, 0.5], [0.15, 0.15], [0.85, 0.15], [0.15, 0.85], [0.85, 0.85]].some(([fx, fy]) => {
+      const hit = document.elementFromPoint(rect.left + rect.width * fx, rect.top + rect.height * fy);
+      return hit && (hit === el || box.contains(hit));
+    });
+    return seen ? rect : null;
+  }
+
   function layerFor(view) {
     let svg = layers.get(view);
     if (svg?.isConnected) return svg;
@@ -73,8 +88,7 @@
     const { ctx, box, contact, okM, insidePoints, outsidePoints, faces, overlaps, ghost = null } = scene;
     const rects = {};
     for (const view of Object.keys(ctx.views)) {
-      const el = ctx.views[view].renderer.domElement;
-      rects[view] = el.offsetParent && el.offsetWidth > 25 ? el.getBoundingClientRect() : null;
+      rects[view] = visibleRect(ctx.views[view].renderer.domElement);
     }
     const key = JSON.stringify([box, contact && [contact.contactZ, contact.gapM], insidePoints.length, outsidePoints.length,
       faces.map((f) => f.gapM), overlaps.map((o) => [o.ratio, o.allowed]), ghost,
