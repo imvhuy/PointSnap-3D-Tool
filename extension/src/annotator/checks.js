@@ -171,15 +171,16 @@
 
   function overlaps(target, others, g, skip = new Set()) {
     const cfg = g.overlap;
-    if (!names(target).some((n) => cfg.classes.includes(n))) return [];
+    const checked = (o) => cfg.classes.includes('*') || names(o).some((n) => cfg.classes.includes(n));
+    if (!checked(target)) return [];
     const allowed = (a, b) => cfg.allowedPairs.some(([x, y]) =>
       (names(a).includes(x) && names(b).includes(y)) || (names(a).includes(y) && names(b).includes(x)));
     const out = [];
     for (const other of others) {
-      if (skip.has(other.clientId) || !names(other).some((n) => cfg.classes.includes(n))) continue;
+      if (skip.has(other.clientId) || !checked(other)) continue;
       const ratio = B.overlapRatio(target.box, other.box);
       if (ratio <= cfg.warning) continue;
-      const pct = Math.round(ratio * 100);
+      const pct = ratio < 0.01 ? '<1' : Math.round(ratio * 100);
       // Cặp spec cho phép (người trên thùng xe, người lái…) vẫn hiện ở mức Thông tin để annotator thấy box đang chồng.
       const found = allowed(target, other)
         ? issue('overlap.allowed', 'info', 'Chồng lấn (spec cho phép)', `Chồng ${pct}% lên ${other.label} #${other.clientId}: cặp này được phép chồng theo spec`,

@@ -35,7 +35,7 @@
 | PP-03 | Mất dấu box khi chuyển frame | Annotator | Khoá box (camera đi theo box) | Không | **Đã làm** |
 | PP-04 | Không biết frame nào trong track bị sai | Annotator | Dải tổng quan track, đánh dấu ngoại lai | Không | **Đã làm** (kích thước, yaw) |
 | PP-05 | Không thấy box ôm hết vật chưa | Annotator | Tô điểm trong/ngoài box, khoảng hở từng mặt | Không | **Đã làm** |
-| PP-06 | Box chồng nhau, trùng track do pre-label | Annotator, QC | Cảnh báo chồng box khi kéo, phát hiện track trùng | Không | **Đã làm** cảnh báo trong frame (cả cặp spec cho phép); chưa làm track trùng |
+| PP-06 | Box chồng nhau, trùng track do pre-label | Annotator, QC | Cảnh báo chồng box khi kéo, phát hiện track trùng | Không | **Đã làm** báo Lỗi mọi chồng lấn trong frame, mọi class (cặp spec cho phép ở mức Thông tin); chưa làm track trùng |
 | PP-07 | Kích thước sai class, scale không đồng bộ | Annotator | Kiểm tra kích thước theo class/subtype và theo track | Không | **Đã làm** |
 | PP-08 | Hướng box lật hoặc đổi đột ngột | Annotator | Phát hiện lật hướng + làm mượt yaw | Có (làm mượt) | **Đã làm** (vật cứng) |
 | PP-09 | Box Z vô lý ở nơi thiếu điểm mặt đất | Annotator, QC | Kiểm tra "Z ngoài ngưỡng" so với mặt đất chung | Không | **Đã làm** |
@@ -79,7 +79,7 @@
 **Hoàn tác (đo trên CVAT 2.75.1).**
 - Bản CVAT mới có `job.annotations.saveStates`: cả thao tác là một bước Ctrl+Z.
 - CVAT 2.75.1 không có hàm này, và lịch sử Undo chỉ giữ 32 bước. Lưu từng keyframe thì một thao tác 38 keyframe vừa không Undo hết được, vừa đẩy mất lịch sử của annotator.
-- Vì vậy trên CVAT cũ, extension tạm dừng ghi lịch sử CVAT (`job.actions.freeze`) trong lúc lưu, và có nút **Hoàn tác** riêng. Keyframe nào đã bị sửa tiếp sau đó thì giữ nguyên, không ghi đè.
+- Vì vậy trên CVAT cũ, extension tạm dừng ghi lịch sử CVAT (`job.actions.freeze`) trong lúc lưu, và có nút **Hoàn tác** riêng. Keyframe nào đã bị sửa tiếp sau đó thì giữ nguyên, không ghi đè. Nút chỉ hiện khi đang chọn đúng track vừa sửa: bản đầu vẫn hiện khi đã chọn track khác, dễ tưởng là hoàn tác track đang chọn.
 
 **Kết quả trên CVAT thật.** Đồng bộ 38 keyframe: canvas vẽ lại ngay, nút Hoàn tác phục hồi đủ 38 keyframe. Trên nhãn nuScenes, tỉa keyframe không bỏ được keyframe nào: nhãn nằm ở hệ LiDAR của từng frame, xe thu đang chạy nên vị trí không tuyến tính. Hiệu quả thật phụ thuộc pre-label của dự án.
 
@@ -193,11 +193,18 @@ Cũng áp dụng khi **bấm ô keyframe trên dải track**: tới frame mới 
 **Vấn đề.** Ở bãi đỗ và dòng xe máy đông, box dễ lấn nhau. Tracker của pre-label đôi khi sinh hai track cho một vật.
 
 **Giải pháp:**
-- Tỉ lệ chồng = diện tích chồng nhìn từ trên (cắt đa giác lồi Sutherland–Hodgman) / diện tích box nhỏ hơn, với điều kiện chồng theo chiều cao ≥ 30%. Chia cho box nhỏ hơn để bắt box nhỏ nằm gọn trong box lớn, trường hợp IoU bỏ sót.
+- Tỉ lệ chồng = diện tích chồng nhìn từ trên (cắt đa giác lồi Sutherland–Hodgman) / diện tích box nhỏ hơn, khi hai box có phần thể tích chung. Chia cho box nhỏ hơn để bắt box nhỏ nằm gọn trong box lớn, trường hợp IoU bỏ sót. Chồng theo chiều cao ≤ 1 cm hoặc phần chung nhìn từ trên ≤ 1 cm² coi là chạm mép.
 - Bỏ qua cặp spec cho phép (`overlap_allowed_pairs`: người–người, người–xe hai bánh, đầu kéo–rơ-moóc…).
-- *(Đã làm)* Trong lúc kéo: box đang chồng có khung **đỏ đậm**, phần chồng tô đỏ ở view Top / 3D, nhãn "chồng X%" cạnh box kia, và mục trong panel. Cảnh báo > 20%, Lỗi > 50%. Trên 840 box nhãn chuẩn: 0 báo nhầm.
+- *(Đã làm)* Trong lúc kéo: box đang chồng có khung **đỏ đậm**, phần chồng tô đỏ ở view Top / 3D, nhãn "chồng X%" cạnh box kia, và mục trong panel. Bản đầu: Cảnh báo > 20%, Lỗi > 50%, chỉ khi chồng theo chiều cao ≥ 30%.
 - *(Đã làm)* **Cặp spec cho phép vẫn hiện**, ở mức Thông tin với khung xám. Bản đầu bỏ qua hoàn toàn các cặp này, nên trên nhãn chuẩn annotator không thấy gì: mọi box đang chồng trong frame đều là cặp được phép (xe đạp–người 32%, người đứng trên thùng xe tải 100%), và annotator tưởng tính năng không chạy.
-- Cọc tiêu và rào chắn không nằm trong danh sách class kiểm chồng lấn, giống backend.
+- *(Đã làm, 26/10)* **Cứ chồng là Lỗi, mọi class** (theo yêu cầu người dùng). Ngưỡng mặc định `overlap.warning` =
+  `overlap.error` = 0, `overlap.classes: ['*']` (thêm cọc tiêu, rào chắn, Obstacle và class bất kỳ của project), bỏ điều
+  kiện chồng theo chiều cao ≥ 30%. Lấn dưới 1% ghi "chồng <1%". Cặp spec cho phép vẫn chỉ là Thông tin. Project muốn nới
+  thì đặt lại ngưỡng / bỏ tick class trong ⚙. Tool QC dùng chung luật nên cũng báo theo.
+  - Đo trên nhãn chuẩn công khai (box có cặp chồng không được phép / tổng box): nuScenes scene-1100 0 / 848, scene-1077
+    54 / 639 (toàn rào chắn nối nhau, < 20%), scene-0061 630 / 3 333 (rào chắn nối nhau, rào chắn – xe công trình / người /
+    cọc tiêu; 161 cặp < 1%), AV2 116 / 1 515 (người ngồi xe lăn 100%, xe đạp – xe con, xe – xe). Phần lớn là lấn
+    thật nhưng nhỏ mà người gán nhãn chuẩn để nguyên; luật cũ không kiểm rào chắn và bỏ qua phần chồng dưới 20%.
 - *(Đã làm, 26/10)* **Cặp "được phép" mà vi phạm spec thì không còn là "được phép".** Bản trước coi mọi cặp người–xe hai
   bánh, người–xe là được chồng, nên hai lỗi spec không bị báo. Nay extension có hai luật giống bộ quét QC, xét trước danh
   sách cặp được phép, báo ở cả box người lẫn box xe:
@@ -386,7 +393,7 @@ frame). Coi nhãn chuẩn là đúng, nên mọi cảnh báo trên đó là báo
 | Overlay mặt đất / footprint | Nằm đúng trên box và point cloud ở cả 4 view (xác nhận điểm và box cùng hệ tọa độ) |
 | Dựng bản đồ địa hình | 5–16 ms mỗi frame |
 | Báo nhầm trên 840 box chuẩn (10 frame, mọi luật một-frame) | 14 Cảnh báo / Lỗi = **1,7 / 100 box**: 9 lơ lửng / lún (chủ yếu người đi bộ 20–45 m), 1 điểm dưới đáy box, 4 bề rộng xe buýt |
-| Z ngoài ngưỡng / chồng lấn | 0 báo nhầm (bản đầu: 55 Lỗi nhầm trên 210 box) |
+| Z ngoài ngưỡng / chồng lấn | Z: 0 báo nhầm (bản đầu: 55 Lỗi nhầm trên 210 box). Chồng lấn: từ 26/10 cứ chồng là Lỗi, xem PP-06 |
 | Đo được mặt đất (độ tin cậy ≥ 0,3) | ~54% box trong 30 m; |ΔZ| trung vị 4 cm, p90 16 cm |
 | Dải track trên 1395 keyframe chuẩn | Kích thước: 0 đánh dấu nhầm. Yaw: chỉnh ngưỡng theo dữ liệu (xe 15°, người 45°) |
 | Làm mượt yaw trên nhãn chuẩn | Xe / rào chắn: đổi 1 keyframe (2°); người đi bộ: 25 keyframe nên đã tắt cho người / động vật |

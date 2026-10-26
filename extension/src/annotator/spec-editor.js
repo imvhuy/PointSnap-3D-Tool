@@ -146,7 +146,7 @@
         <div class="row sep">
           <button data-act="suggest" title="Khoảng thực tế của box đã gán trong job; xem lại trước khi Save">Gợi ý từ job</button>
           <label class="chk"><input type="checkbox" data-toggle="ground" ${draft.ground.classes.includes(l.name) ? 'checked' : ''}> Mặt đất</label>
-          <label class="chk"><input type="checkbox" data-toggle="overlap" ${draft.overlap.classes.includes(l.name) ? 'checked' : ''}> Chồng lấn</label>
+          <label class="chk"><input type="checkbox" data-toggle="overlap" ${['*', l.name].some((n) => draft.overlap.classes.includes(n)) ? 'checked' : ''}> Chồng lấn</label>
           <label class="chk" title="Kiểm scale theo track, đồng bộ cỡ, mượt yaw"><input type="checkbox" data-toggle="rigid" ${draft.size.nonRigidClasses.includes(l.name) ? '' : 'checked'}> Vật cứng</label>
         </div>
         ${required.length ? `<div class="row"><span class="muted">Bắt buộc</span>${required.map((a) => `<label class="chk"><input type="checkbox" data-required="${esc(a.name)}" ${req.includes(a.name) ? 'checked' : ''}> ${esc(a.name)}</label>`).join('')}</div>` : ''}
@@ -308,7 +308,11 @@
         setDirty();
       } else if (t.dataset.toggle && l) {
         if (t.dataset.toggle === 'ground') draft.ground.classes = toggleIn(draft.ground.classes, l.name, t.checked);
-        if (t.dataset.toggle === 'overlap') draft.overlap.classes = toggleIn(draft.overlap.classes, l.name, t.checked);
+        if (t.dataset.toggle === 'overlap') {
+          // '*' = mọi class: bỏ tick một class thì đổi '*' thành danh sách các class còn lại của project.
+          const list = draft.overlap.classes.includes('*') ? labels.map((x) => x.name) : draft.overlap.classes;
+          draft.overlap.classes = toggleIn(list, l.name, t.checked);
+        }
         if (t.dataset.toggle === 'rigid') draft.size.nonRigidClasses = toggleIn(draft.size.nonRigidClasses, l.name, !t.checked);
         setDirty();
       } else if (t.dataset.required && l) {

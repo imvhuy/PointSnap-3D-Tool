@@ -187,9 +187,10 @@ test('checks: box rất xa – không đo cao độ (Thông tin), quá phạm vi
   assert.ok(issues.some((i) => i.rule === 'range.too_far'));
 });
 
-test('checks: chồng lấn với box chính nó / class không kiểm thì bỏ qua', () => {
+test('checks: chồng lấn với class không kiểm thì bỏ qua', () => {
   const others = [{ box: car, label: 'barrier', classKey: 'barrier', clientId: 9 }];
-  assert.deepEqual(Checks.checkBox(baseInput({ others }), g).filter((i) => i.rule.startsWith('overlap')), []);
+  const listed = G.resolve({ overlap: { classes: ['car'] } }).guideline;
+  assert.deepEqual(Checks.checkBox(baseInput({ others }), listed).filter((i) => i.rule.startsWith('overlap')), []);
 });
 
 test('checks: ngoại lai – mảng rỗng / 1–2 phần tử / toàn bằng nhau không báo', () => {
