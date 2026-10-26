@@ -203,8 +203,18 @@
 
   const subscribe = (listener) => store.subscribe(listener);
 
+  /** Tình trạng kết nối cho popup: đã nhận store CVAT chưa, đang mở job 3D chưa, CVAT có Undo gộp (saveStates) không. */
+  function health() {
+    const ctx = store ? context() : null;
+    return {
+      store: !!store,
+      job3d: !!ctx,
+      saveStates: ctx ? typeof ctx.job.annotations.saveStates === 'function' : null,
+    };
+  }
+
   root.PointSnapCvatAdapter = {
     connect, context, rawStates, currentFrame, frameStates, activeClientId, isSaving, attributesOf, liveBox, cloudObject, pointCloud,
-    trackKeyframes, applyEdits, undoEdits, refresh, select, subscribe,
+    trackKeyframes, applyEdits, undoEdits, refresh, select, subscribe, health,
   };
 })(globalThis);

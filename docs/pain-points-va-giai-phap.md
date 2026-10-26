@@ -171,6 +171,12 @@ rồi hạ đáy: đặt giữa lệch nhãn chuẩn p50 3–7 cm, p90 9–18 cm
    - Quay về phía LiDAR và **không bị nhìn xiên quá 70°**: góc giữa pháp tuyến mặt và hướng tới LiDAR ≤ 70°.
    - **Không bị che:** trên tia từ LiDAR tới tâm mặt có ít hơn 3 điểm của vật khác cách tia < 0,3 m.
    - Bản đầu chỉ xét "quay về phía LiDAR", nên báo "đuôi dư 72 cm" cho một xe mà LiDAR nằm lệch hẳn sang hông: mặt đuôi bị nhìn xiên khoảng 10° và có vật chắn. Sau khi sửa, frame AV2 đó chỉ còn 9 mặt đủ điều kiện để đo. Tính cho 39 box mất 45 ms.
+5. **Dòng "Ôm vật" trên checklist (0.5.0)** tô vàng khi một mặt nhìn thấy có vật lòi ra > 10 cm, **hoặc** ≥ 20 điểm đỏ chiếm
+   ≥ 15% điểm của vật. Box dư chỉ ghi số, không tô vàng (nhãn chuẩn nuScenes dư p90 tới 33 cm).
+   - Thử trên CVAT thật: xe ngắn đi 40 cm có 272 điểm đỏ (37%) nhưng không mặt nào đủ điều kiện để đo, nên chỉ dùng mặt
+     thì bỏ sót.
+   - Đo trên box chuẩn và box co 15% (nuScenes scene-1077, scene-1100, AV2): báo nhầm 0–5% như khi chỉ dùng mặt; bắt được
+     38% / 78% / 76% box co, so với 32% / 78% / 71%. Dùng riêng tỉ lệ điểm đỏ thì bắt kém hơn (14% / 59% / 65%).
 
 **Kiểm trên CVAT thật:** xe tải 16 m có 479 điểm trong box (xanh lá), 4 điểm lòi ra (đỏ), đo được mặt đuôi và mặt phải.
 
@@ -186,6 +192,14 @@ rồi hạ đáy: đặt giữa lệch nhãn chuẩn p50 3–7 cm, p90 9–18 cm
 - *(Đã làm)* Trong lúc kéo: box đang chồng có khung **đỏ đậm**, phần chồng tô đỏ ở view Top / 3D, nhãn "chồng X%" cạnh box kia, và mục trong panel. Cảnh báo > 20%, Lỗi > 50%. Trên 840 box nhãn chuẩn: 0 báo nhầm.
 - *(Đã làm)* **Cặp spec cho phép vẫn hiện**, ở mức Thông tin với khung xám. Bản đầu bỏ qua hoàn toàn các cặp này, nên trên nhãn chuẩn annotator không thấy gì: mọi box đang chồng trong frame đều là cặp được phép (xe đạp–người 32%, người đứng trên thùng xe tải 100%), và annotator tưởng tính năng không chạy.
 - Cọc tiêu và rào chắn không nằm trong danh sách class kiểm chồng lấn, giống backend.
+- *(Đã làm, 26/10)* **Cặp "được phép" mà vi phạm spec thì không còn là "được phép".** Bản trước coi mọi cặp người–xe hai
+  bánh, người–xe là được chồng, nên hai lỗi spec không bị báo. Nay extension có hai luật giống bộ quét QC, xét trước danh
+  sách cặp được phép, báo ở cả box người lẫn box xe:
+  - `spec.rider_double` (spec 4.3C): xe ghi `with_rider` mà người lái còn box riêng (≥ 50% footprint của người nằm trong
+    xe, đáy lệch < 1 m). Người dắt xe `without_rider` vẫn là "được phép chồng".
+  - `spec.inside` (spec 4.3B): box người nằm trong box xe (tâm trong footprint, đáy người không cao hơn đáy xe 0,6 m). Người
+    đứng trên nóc / thùng xe không bị báo.
+  - Trên 4 310 box người đi bộ nhãn chuẩn nuScenes mini: 0 báo nhầm `spec.inside`.
 - *(Chưa làm)* Nghi trùng track: cùng class, chồng ≥ 70% ở ≥ 3 frame liền nhau. Gợi ý giữ track nào, xóa track nào; người dùng xác nhận.
 
 ### PP-07. Kích thước sai class, scale không đồng bộ
@@ -201,6 +215,11 @@ rồi hạ đáy: đặt giữa lệch nhãn chuẩn p50 3–7 cm, p90 9–18 cm
   - **Giữ nguyên khoảng của car** (1,3% báo nhầm): đây là luật bắt pre-label cắt ngắn xe. Trên pre-label thật của
     PointPillars (KITTI 000008) nó bắt được xe dài 3,14 m.
   - `pointsnap/config.yaml` của bộ quét QC **chưa** cập nhật theo: cần làm khi tới phần QC.
+  - *(26/10)* **Xe hai bánh có / không người lái** tách theo chiều cao box: nhãn chuẩn nuScenes mini (596 box có thuộc tính
+    `cycle.with_rider` / `without_rider`) cho có người 1,56–1,93 m, không người 0,95–1,53 m. Khoảng `Two-wheels/with_rider`
+    cao 1,50–2,00 m, `without_rider` 0,90–1,55 m (extension và `spec-vn.yaml` của QC). Khoảng cũ chồng nhau (1,0–2,0 và
+    0,8–1,8), nên xe ghi `with_rider` mà box không gồm người, hoặc ngược lại, không bị báo. Nay báo và gợi ý "hoặc thuộc tính
+    rider_state chọn sai"; báo nhầm 1/596 box (xe không người cao 1,74 m, mức Cảnh báo).
 - **Scale không đồng bộ** (`size.in_track`): lệch so với trung vị track > max(10 cm, 5%) thì Cảnh báo, > max(30 cm, 15%) thì Lỗi. Không áp cho người và động vật.
 
 Ngưỡng kép (tuyệt đối và tương đối) co giãn theo cỡ vật: cùng một epsilon không thể vừa cho xe buýt 12 m vừa cho cọc tiêu 0,4 m.

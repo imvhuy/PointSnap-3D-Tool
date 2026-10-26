@@ -11,29 +11,35 @@
       <path d="M24 6 L38 14 L24 22 L10 14 Z M10 14 V30 L24 38 L38 30 V14 M24 22 V38" stroke="#fff" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
       <circle cx="24" cy="38" r="5" fill="#4C9AFF"/>
     </svg>
-    <b>PointSnap cho CVAT</b>
+    <b>PointSnap</b>
     <span class="ver" id="version"></span>
   </header>
   <main>
-    <div id="server" class="status" role="status">
+    <div id="site" class="status" role="status">
       <span class="dot"></span>
-      <div><span id="server-text">Đang tìm PointSnap…</span><small id="server-sub"></small></div>
+      <div><span id="site-text">Đang xem trang này…</span><small id="site-sub"></small></div>
     </div>
-    <div class="actions">
-      <button id="open-web" class="btn primary" type="button">Mở PointSnap</button>
-      <button id="open-cvat" class="btn" type="button">Mở CVAT</button>
-    </div>
-    <p class="section-title">Trong job CVAT</p>
+    <button id="enable" class="btn primary block" type="button" hidden>Bật PointSnap cho trang này</button>
+    <button id="enable-anyway" class="btn block" type="button" hidden>Vẫn bật cho trang này</button>
+    <button id="reload" class="btn block" type="button" hidden>Tải lại trang</button>
+    <ul id="checks" class="checks" hidden></ul>
+    <section id="profile" class="profile" hidden>
+      <p class="section-title">Trên trang này</p>
+      <div class="row"><span>Bộ ngưỡng: <b id="guideline-name"></b></span><button id="change-guideline" class="link" type="button">Đổi</button></div>
+      <label class="check"><input id="site-enabled" type="checkbox"><span>Hiện bảng annotator</span></label>
+    </section>
+    <p class="privacy">Mọi phép tính chạy trong trang CVAT; extension không gửi dữ liệu đi đâu.</p>
     <ul class="keys">
-      <li><span class="k"><kbd>.</kbd><kbd>,</kbd></span><span>Frame có lỗi tiếp theo / trước</span></li>
-      <li><span class="k"><kbd>]</kbd><kbd>[</kbd></span><span>Cũng chuyển lỗi (khi không gõ Telex)</span></li>
-      <li><span class="k"><kbd>↗</kbd></span><span>Trên bảng PointSnap: mở kết quả job trên web</span></li>
+      <li><span class="k"><kbd>⌥⇧G</kbd></span><span>Hạ đáy box</span></li>
+      <li><span class="k"><kbd>⌥⇧F</kbd></span><span>Camera theo track</span></li>
+      <li><span class="k"><kbd>⌥⇧D</kbd></span><span>Đánh dấu track xong</span></li>
     </ul>
     <div class="foot">
-      <span>Bảng hiện khi mở một job 3D</span>
+      <span id="site-origin"></span>
       <button id="open-options" type="button">Tùy chọn</button>
     </div>
   </main>
+  <script src="hosts.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

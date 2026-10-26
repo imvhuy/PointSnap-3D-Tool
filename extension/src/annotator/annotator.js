@@ -9,6 +9,7 @@
   const Checks = root.PointSnapChecks, Ops = root.PointSnapTrackOps, G = root.PointSnapGuideline;
   const ObjectPoints = root.PointSnapObjectPoints, Colors = root.PointSnapCloudColors;
   const Overlay = root.PointSnapAnnotatorOverlay, Panel = root.PointSnapAnnotatorPanel, Dom = root.PointSnapCvat;
+  const SpecEditor = root.PointSnapSpecEditor;
   if (root.PointSnapAnnotator || !A || !Panel) return;
 
   const SETTINGS_MESSAGE = 'POINTSNAP_ANNOTATOR_SETTINGS';
@@ -22,6 +23,7 @@
     enabled: true,
     guideline: G.DEFAULT_GUIDELINE,
     guidelineErrors: [],
+    guidelineName: '',
     settingsVersion: 0,
     jobId: null,
     frameCache: null,
@@ -53,8 +55,9 @@
 
   window.addEventListener('message', (event) => {
     if (event.source !== window || event.origin !== location.origin || event.data?.type !== SETTINGS_MESSAGE) return;
-    const { enabled, guidelineJson } = event.data.detail || {};
+    const { enabled, guidelineJson, guidelineName } = event.data.detail || {};
     S.enabled = enabled !== false;
+    S.guidelineName = guidelineName || '';
     let override = {};
     let parseError = null;
     try {
@@ -90,8 +93,10 @@
    * Mở job khác trong cùng tab (CVAT là SPA): clientID đánh lại từ đầu theo job, nên track / camera theo / bản xem trước
    * của job cũ có thể trùng ID với một object khác của job mới. Bỏ hết trạng thái gắn với job cũ.
    */
-  function onJobChanged(jobId) {
+  function onJobChanged(jobId, projectId) {
     S.jobId = jobId;
+    // Bộ ngưỡng theo project của job (cấu hình riêng của project, không có thì của địa chỉ CVAT).
+    window.postMessage({ type: `${SETTINGS_MESSAGE}_REQUEST`, detail: { projectId } }, location.origin);
     S.followClientId = null;
     S.track = null;
     S.trackToken += 1;
@@ -172,16 +177,17 @@
     const points = objectPoints(cache, box, others, contact ? contact.topContactZ : B.bottomZ(box));
     const trackDims = trackReady
       ? S.track.keyframes.filter((k) => !k.outside && k.frame !== ctx.frame).map((k) => k.box.dims) : null;
-    const issues = Checks.checkBox({
-      box, label, classKey, attributes, occluded: !!objectState.occluded, trackDims, contact,
+    const input = {
+      box, label, classKey, attributes, occluded: !!objectState.occluded, trackDims, contact, clientId: objectState.clientID,
       coarseGroundZ: cache.terrain.coarseHeightAt(box.center[0], box.center[1]),
       others: others.map((o) => ({ ...o, classKey: G.classKey(g, o.label, A.attributesOf(o.state)) })),
       pointsInside: points.insideAboveFloor,
-    }, g);
+    };
+    const issues = Checks.checkBox(input, g);
     const byId = new Map(others.map((o) => [o.clientId, o]));
     S.measureKey = key;
     S.measure = {
-      objectState, box, label, classKey, contact, issues,
+      objectState, box, label, classKey, contact, issues, input,
       insideIdx: points.inside.map((q) => q[3]),
       outsideIdx: points.outside.map((q) => q[3]),
       insidePoints: sample(points.inside, MAX_DRAWN_POINTS),
@@ -189,8 +195,10 @@
       insideCount: points.inside.length,
       outsideCount: points.outside.length,
       faces: points.faces,
-      overlaps: issues.filter((i) => i.rule.startsWith('overlap') && byId.has(i.otherClientId))
-        .map((i) => ({ box: byId.get(i.otherClientId).box, ratio: i.ratio, allowed: i.rule === 'overlap.allowed' })),
+      // Cặp vi phạm spec (người lái / người trong xe) vẽ khung đỏ như chồng lấn cần xem.
+      overlaps: issues.filter((i) => (i.rule.startsWith('overlap') || i.rule.startsWith('spec.')) && byId.has(i.otherClientId))
+        .map((i) => ({ box: byId.get(i.otherClientId).box, ratio: i.ratio ?? B.overlapRatio(box, byId.get(i.otherClientId).box),
+          allowed: i.rule === 'overlap.allowed' })),
     };
     return S.measure;
   }
@@ -226,29 +234,81 @@
   }
 
   /**
-   * Dải tổng quan track. Kích thước của vật cứng đánh dấu theo đúng ngưỡng của luật `size.in_track`, để dải và
-   * thẻ kiểm tra cùng một kết luận; vật không cứng dùng trung vị / MAD; yaw so với keyframe lân cận để xe rẽ thật
-   * không bị đánh dấu.
+   * Dải track: một ô cho mỗi keyframe nhìn thấy, vàng khi keyframe đó lệch. Kích thước của vật cứng theo đúng ngưỡng
+   * của luật `size.in_track` (dải và checklist cùng một kết luận); vật không cứng dùng trung vị / MAD; yaw theo
+   * `angleOutliers` (đoán từ keyframe lân cận, xe rẽ thật không bị đánh dấu).
    */
-  function trackSeries(keyframes, rigid) {
+  function trackCells(keyframes, rigid) {
     const shown = keyframes.filter((k) => !k.outside);
-    let previous = null;
-    const yaw = shown.map((k) => {
-      previous = previous === null ? k.box.rotation[2] : previous + B.angleDiff(previous, k.box.rotation[2]);
-      return previous * DEG;
+    const dimFlags = (i) => (rigid ? Checks.inTrackOutliers(shown.map((k) => k.box.dims[i]), S.guideline)
+      : Checks.madOutliers(shown.map((k) => k.box.dims[i]), 0.05));
+    const dims = [0, 1, 2].map(dimFlags);
+    const yaw = Checks.angleOutliers(shown.map((k) => k.box.rotation[2]),
+      S.guideline.trackOps.yawJumpDeg[rigid ? 'rigid' : 'nonRigid'], shown.map((k) => k.frame));
+    return shown.map((k, i) => {
+      const reasons = [...['dài', 'rộng', 'cao'].filter((_, d) => dims[d][i]).map((d) => `${d} lệch track`), ...(yaw[i] ? ['hướng nhảy'] : [])];
+      return { frame: k.frame, level: reasons.length ? 'warning' : 'ok', reasons, yawJump: yaw[i] };
     });
-    const dimFlags = (values) => (rigid ? Checks.inTrackOutliers(values, S.guideline) : Checks.madOutliers(values, 0.05));
-    const series = [
-      ['Dài', shown.map((k) => k.box.dims[0]), dimFlags],
-      ['Rộng', shown.map((k) => k.box.dims[1]), dimFlags],
-      ['Cao', shown.map((k) => k.box.dims[2]), dimFlags],
-      ['Yaw', yaw, () => Checks.angleOutliers(shown.map((k) => k.box.rotation[2]),
-        S.guideline.trackOps.yawJumpDeg[rigid ? 'rigid' : 'nonRigid'], shown.map((k) => k.frame))],
-    ];
-    return series.map(([name, values, flagsOf]) => {
-      const flags = flagsOf(values);
-      return { name, points: shown.map((k, i) => ({ frame: k.frame, value: values[i], outlier: flags[i] })) };
-    });
+  }
+
+  const RANK = { error: 0, warning: 1, na: 2, ok: 3 };
+
+  /**
+   * Checklist của box đang chọn: mỗi khía cạnh một dòng { name, level: ok | warning | error | na, text, tip, fix }.
+   * `fix` là thao tác sửa đúng vấn đề của dòng đó (chỉ khi có vấn đề, box không khóa và thao tác áp dụng được).
+   */
+  function checklist(m, g, track, measured, frame) {
+    const pick = (test) => m.issues.filter((i) => test(i.rule));
+    const editable = !m.objectState.lock, isTrack = m.objectState.objectType === 'track';
+    const rigid = !g.size.nonRigidClasses.includes(m.label);
+    const row = (name, issues, okText, fix) => {
+      const real = issues.filter((i) => i.severity !== 'info'), info = issues.filter((i) => i.severity === 'info');
+      const level = real.some((i) => i.severity === 'error') ? 'error' : real.length ? 'warning' : info.length && !okText ? 'na' : 'ok';
+      return { name, level, text: (real[0] || info[0])?.short || okText, tip: issues.map((i) => i.message).join('\n'),
+        fix: level === 'warning' || level === 'error' ? fix : null };
+    };
+
+    const gap = measured?.gapM ?? 0;
+    const groundText = measured && (Math.abs(gap) <= g.ground.okM ? 'sát đất' : `${gap > 0 ? 'cao' : 'thấp'} ${cm(Math.abs(gap))}`);
+    const snap = measured && editable ? { action: 'snap-ground', label: 'Hạ đáy', key: 'G' } : null;
+    const ground = row('Mặt đất', pick((r) => r.startsWith('ground.') || r === 'z.range'), groundText, snap);
+    // Lệch nhỏ (dưới ngưỡng Cảnh báo) vẫn cho hạ đáy một chạm, không tô vàng.
+    if (ground.level === 'ok' && measured && Math.abs(gap) > g.ground.okM) ground.fix = snap;
+
+    const sizeIssues = pick((r) => r.startsWith('size.'));
+    const syncable = editable && isTrack && rigid && sizeIssues.some((i) => i.rule === 'size.in_track');
+    const size = row('Kích thước', sizeIssues, m.box.dims.map((d) => d.toFixed(2)).join(' × ') + ' m',
+      syncable ? { action: 'plan-sync-size', source: 'median', label: 'Cỡ trung vị' } : null);
+
+    // Ôm vật: Cảnh báo khi mặt LiDAR thấy có vật lòi ra > 10 cm, hoặc ≥ 20 điểm đỏ chiếm ≥ 15% điểm của vật. Đo 25/10/2026
+    // (nuScenes scene-1077, 1100, AV2): nhãn chuẩn bị báo 0–5%, box co 15% bắt được 38–78% (chỉ dùng mặt: 32–78%).
+    // Box dư chỉ ghi số, không tô vàng: nhãn chuẩn nuScenes dư p90 tới 33 cm.
+    const faces = m.faces.map((f) => ({ ...f, text: `${f.name} ${f.gapM >= 0 ? 'dư' : 'lòi'} ${cm(Math.abs(f.gapM))}` }));
+    const protruding = faces.filter((f) => f.gapM < -0.1);
+    const redShare = m.outsideCount / Math.max(1, m.insideCount + m.outsideCount);
+    const manyRed = m.outsideCount >= 20 && redShare >= 0.15;
+    const counts = `${m.insideCount} điểm${m.outsideCount ? ` · ${m.outsideCount} lòi ra` : ''}`;
+    const fit = row('Ôm vật', pick((r) => r.startsWith('fit.')), [counts, ...faces.slice(0, 1).map((f) => f.text)].join(' · '), null);
+    if (fit.level === 'ok' && (protruding.length || manyRed)) {
+      Object.assign(fit, { level: 'warning', text: protruding.length ? protruding.map((f) => f.text).join(', ') : `${m.outsideCount} điểm đỏ lòi ra ngoài box`,
+        tip: 'Điểm đỏ là điểm nối liền với vật nằm ngoài box. Dưới tán cây / sát tường có thể là điểm của vật bên cạnh.' });
+    }
+
+    const currentCell = track?.cells?.find((c) => c.frame === frame);
+    const heading = row('Hướng', [], `${Math.round(m.box.rotation[2] * DEG)}°`, null);
+    if (currentCell?.yawJump) {
+      Object.assign(heading, { level: 'warning', text: 'nhảy so với keyframe kề',
+        fix: editable && rigid ? { action: 'plan-smooth-yaw', label: 'Mượt yaw' } : null });
+    }
+
+    const overlap = row('Chồng lấn', pick((r) => r.startsWith('overlap') || r.startsWith('spec.')), 'không', null);
+    if (overlap.level === 'na') overlap.level = 'ok';
+    const required = g.attributes.required[m.label] || [];
+    const attrs = row('Thuộc tính', pick((r) => r.startsWith('attr.')), required.length ? 'đủ' : 'không bắt buộc', null);
+    const rows = [ground, size, fit, heading, overlap, attrs];
+    const far = pick((r) => r === 'range.too_far');
+    if (far.length) rows.push(row('Phạm vi', far, '', null));
+    return rows;
   }
 
   // ------------------------------------------------------------------ track đã xong (chỉ lưu ID, trong trình duyệt)
@@ -462,6 +522,9 @@
         case 'undo-last':
           await undoLast(ctx);
           break;
+        case 'open-spec':
+          await openSpecEditor(ctx);
+          break;
         case 'toggle-spec':
           S.specOpen = !S.specOpen;
           break;
@@ -502,27 +565,91 @@
       progress: tracks.length ? { done: tracks.filter((s) => done.has(trackId(s))).length, total: tracks.length } : null };
     if (!m) return vm;
     const measured = Checks.usableContact(m.contact, m.box, g);
-    const gapKind = !measured ? null : Math.abs(measured.gapM) <= g.ground.okM ? 'ok' : measured.gapM > 0 ? 'float' : 'sink';
+    const isTrack = m.objectState.objectType === 'track', rigid = !g.size.nonRigidClasses.includes(m.label);
+    if (isTrack) {
+      const t = S.track?.clientID === m.objectState.clientID ? S.track : null;
+      const cells = t && !t.loading ? trackCells(t.keyframes, rigid) : null;
+      vm.track = !cells ? { loading: true } : {
+        loading: false, cells, flagged: cells.filter((c) => c.level !== 'ok').length,
+        done: done.has(trackId(m.objectState)), rigid, locked: !!m.objectState.lock,
+      };
+    }
+    const rows = checklist(m, g, vm.track, measured, ctx.frame);
     vm.box = {
-      label: m.label, classKey: m.classKey, clientId: m.objectState.clientID, isTrack: m.objectState.objectType === 'track',
-      locked: !!m.objectState.lock,
-      dims: m.box.dims, yawDeg: m.box.rotation[2] * DEG, rangeM: B.rangeXY(m.box, g.sensorOrigin), issues: m.issues,
-      contact: measured && { kind: gapKind, gapCm: Math.round(measured.gapM * 100),
-        text: { ok: 'Sát mặt đất', float: 'Lơ lửng', sink: 'Lún' }[gapKind] },
-      points: { inside: m.insideCount, outside: m.outsideCount, faces: m.faces },
+      label: m.label, classKey: m.classKey, clientId: m.objectState.clientID, isTrack, locked: !!m.objectState.lock,
+      rangeM: B.rangeXY(m.box, g.sensorOrigin), rows,
+      level: rows.reduce((w, r) => (RANK[r.level] < RANK[w] ? r.level : w), 'ok'),
+      problems: rows.filter((r) => r.level === 'warning' || r.level === 'error').length,
     };
     vm.spec = S.specOpen ? specCard(m, g) : null;
     vm.specOpen = S.specOpen;
     vm.trackOpen = S.trackOpen;
-    if (vm.box.isTrack) {
-      const t = S.track?.clientID === m.objectState.clientID ? S.track : null;
-      const rigid = !g.size.nonRigidClasses.includes(m.label);
-      vm.track = !t || t.loading ? { loading: true } : {
-        loading: false, keyframeCount: t.keyframes.length, series: trackSeries(t.keyframes, rigid),
-        done: done.has(trackId(m.objectState)), rigid,
-      };
-    }
     return vm;
+  }
+
+  // ------------------------------------------------------------------ trình sửa spec của project
+
+  /** Box của cả job (REST của chính CVAT, phiên đăng nhập của người dùng) cho "Gợi ý từ job": { label, attributes, dims }. */
+  async function jobBoxes(job) {
+    const res = await fetch(`/api/jobs/${job.id}/annotations`, { credentials: 'same-origin' });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const labels = new Map(job.labels.map((l) => [l.id, l]));
+    const names = (label, list) => Object.fromEntries((list || []).map((a) => [label.attributes.find((s) => s.id === a.spec_id)?.name, a.value]));
+    const out = [];
+    const push = (labelId, points, attrs) => {
+      const label = labels.get(labelId), box = B.fromCvatPoints(points);
+      if (label && box) out.push({ label: label.name, attributes: attrs, dims: box.dims });
+    };
+    for (const s of data.shapes || []) if (s.type === 'cuboid') push(s.label_id, s.points, names(labels.get(s.label_id) || { attributes: [] }, s.attributes));
+    for (const t of data.tracks || []) {
+      const label = labels.get(t.label_id) || { attributes: [] };
+      const fixed = names(label, t.attributes);
+      for (const s of t.shapes || []) if (!s.outside && s.type === 'cuboid') push(t.label_id, s.points, { ...fixed, ...names(label, s.attributes) });
+    }
+    return out;
+  }
+
+  /** Lưu qua settings-bridge (ISOLATED world có chrome.storage); chờ xác nhận. */
+  function saveSpec(guidelineJson, guidelineName) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { window.removeEventListener('message', onSaved); reject(new Error('extension không trả lời')); }, 4000);
+      function onSaved(event) {
+        if (event.source !== window || event.data?.type !== 'POINTSNAP_SPEC_SAVED') return;
+        clearTimeout(timer);
+        window.removeEventListener('message', onSaved);
+        if (event.data.detail?.ok) resolve(); else reject(new Error(event.data.detail?.error || 'không rõ lỗi'));
+      }
+      window.addEventListener('message', onSaved);
+      window.postMessage({ type: 'POINTSNAP_SPEC_SAVE', detail: { guidelineJson, guidelineName } }, location.origin);
+    });
+  }
+
+  async function openSpecEditor(ctx) {
+    const job = ctx.job, projectId = job.projectId;
+    let projectName = projectId ? `Project ${projectId}` : `Task ${job.taskId}`;
+    try {
+      if (projectId) projectName = (await (await fetch(`/api/projects/${projectId}`, { credentials: 'same-origin' })).json()).name || projectName;
+    } catch (_) { /* giữ tên mặc định */ }
+    SpecEditor.open({
+      labels: job.labels.map((l) => ({ name: l.name, attributes: (l.attributes || []).map((a) => ({ name: a.name, inputType: a.inputType, values: a.values || [] })) })),
+      guideline: S.guideline,
+      guidelineName: S.guidelineName,
+      projectName,
+      selectedLabel: S.measure?.label,
+      boxes: () => jobBoxes(job),
+      // Box đang chọn với bộ ngưỡng nháp: cùng số đo, chỉ đổi ngưỡng / khóa class.
+      preview: (draft) => {
+        const m = S.measure;
+        if (!m) return null;
+        const issues = Checks.checkBox({ ...m.input, classKey: G.classKey(draft, m.label, m.input.attributes),
+          others: m.input.others.map((o) => ({ ...o, classKey: G.classKey(draft, o.label, A.attributesOf(o.state)) })) }, draft)
+          .filter((i) => i.severity !== 'info');
+        return issues.length ? { ok: false, text: `#${m.objectState.clientID}: ${issues[0].short}${issues.length > 1 ? ` (+${issues.length - 1})` : ''}` }
+          : { ok: true, text: `✓ #${m.objectState.clientID} đạt` };
+      },
+      onSave: saveSpec,
+    });
   }
 
   /** Thẻ spec (A8) của class box đang chọn: khoảng kích thước, thuộc tính bắt buộc, cặp được chồng, quy tắc. */
@@ -552,16 +679,18 @@
   function tick() {
     try {
       const ctx = S.enabled ? A.context() : null;
-      if (ctx && ctx.job.id !== S.jobId) onJobChanged(ctx.job.id);
+      if (ctx && ctx.job.id !== S.jobId) onJobChanged(ctx.job.id, ctx.job.projectId);
       const cache = ctx && frameData(ctx);
       const m = cache && measureActive(ctx, cache);
       if (ctx) syncTrack(ctx, m?.objectState || null);
       if (m) {
         // Tô màu chính các điểm của CVAT; cloud không có thuộc tính màu thì vẽ chấm trên lớp phủ thay thế.
         const painted = Colors.highlight(A.cloudObject(ctx), m.insideIdx, m.outsideIdx);
+        // Bản xem trước đang mở mà đổi box ở frame này: vẽ box mới bằng nét đứt chồng lên box hiện tại.
+        const ghost = S.plan?.clientID === m.objectState.clientID ? S.plan.edits.find((e) => e.frame === ctx.frame && e.box)?.box : null;
         Overlay.render({ ctx, box: m.box, contact: Checks.usableContact(m.contact, m.box, S.guideline),
           okM: S.guideline.ground.okM, insidePoints: painted ? [] : m.insidePoints, outsidePoints: painted ? [] : m.outsidePoints,
-          faces: m.faces, overlaps: m.overlaps });
+          faces: m.faces, overlaps: m.overlaps, ghost: ghost || null });
       } else {
         Colors.clear();
         Overlay.clear();
@@ -594,5 +723,7 @@
     A.subscribe(onStoreChange);
     requestAnimationFrame(tick);
   });
-  root.PointSnapAnnotator = { state: S };
+  /** Đọc bởi popup (chrome.scripting, MAIN world) để báo extension đã chạy đúng trên CVAT này chưa. */
+  const health = () => ({ ...A.health(), enabled: S.enabled, guidelineErrors: S.guidelineErrors.length });
+  root.PointSnapAnnotator = { state: S, health };
 })(globalThis);

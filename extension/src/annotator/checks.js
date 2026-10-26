@@ -10,11 +10,13 @@
 
   const DIMS = ['length', 'width', 'height'];
   const DIM_VI = { length: 'Chiều dài', width: 'Chiều rộng', height: 'Chiều cao' };
+  const DIM_SHORT = { length: 'dài', width: 'rộng', height: 'cao' };
   const SEVERITY_RANK = { error: 0, warning: 1, info: 2 };
   const cm = (m) => `${Math.round(m * 100)} cm`;
 
-  function issue(rule, severity, title, message) {
-    return { rule, severity, title, message };
+  /** `short`: cụm từ ngắn cho dòng checklist trên panel ("lơ lửng 23 cm"); `message` đầy đủ hiện khi rê chuột. */
+  function issue(rule, severity, title, message, short) {
+    return { rule, severity, title, message, short };
   }
 
   function median(values) {
@@ -23,7 +25,7 @@
   }
 
   /** Kích thước ngoài khoảng của class: một vấn đề cho chiều lệch nặng nhất. */
-  function sizeRange(box, key, g) {
+  function sizeRange(box, key, label, g) {
     const ranges = g.size.ranges[key];
     if (!ranges) return [];
     let worst = null;
@@ -43,7 +45,9 @@
     if (!worst) return [];
     return [issue('size.class_range', worst.severity, 'Kích thước ngoài ngưỡng',
       `${DIM_VI[worst.dim]} ${worst.value.toFixed(2)} m ${worst.small ? 'nhỏ' : 'lớn'} bất thường với ${key} `
-      + `(khoảng chuẩn ${worst.lo.toFixed(2)}–${worst.hi.toFixed(2)} m)`)];
+      + `(khoảng chuẩn ${worst.lo.toFixed(2)}–${worst.hi.toFixed(2)} m)`
+      + (key !== label && g.size.keyAttributes[label] ? `; hoặc thuộc tính ${g.size.keyAttributes[label]} chọn sai` : ''),
+      `${DIM_SHORT[worst.dim]} ${worst.value.toFixed(2)} m, ${worst.small ? 'nhỏ' : 'lớn'} so với ${key}`)];
   }
 
   /** Kích thước keyframe này lệch so với trung vị các keyframe khác cùng track. */
@@ -64,7 +68,7 @@
     if (!worst) return [];
     return [issue('size.in_track', worst.severity, 'Scale không đồng bộ',
       `${DIM_VI[worst.dim]} lệch ${cm(worst.diff)} so với trung vị track (${worst.med.toFixed(2)} m, `
-      + `${trackDims.length} keyframe khác)`)];
+      + `${trackDims.length} keyframe khác)`, `${DIM_SHORT[worst.dim]} lệch ${cm(worst.diff)}`)];
   }
 
   /**
@@ -81,23 +85,25 @@
     if (!cfg.classes.includes(label)) return [];
     if (B.rangeXY(box, g.sensorOrigin) > cfg.maxRangeM) {
       return [issue('ground.no_evidence', 'info', 'Quá xa để đo cao độ',
-        `Box xa hơn ${cfg.maxRangeM} m: mặt đất ước lượng từ LiDAR không đủ tin; kiểm tra bằng mắt ở view Side / Front`)];
+        `Box xa hơn ${cfg.maxRangeM} m: mặt đất ước lượng từ LiDAR không đủ tin; kiểm tra bằng mắt ở view Side / Front`,
+        `quá xa để đo (> ${cfg.maxRangeM} m)`)];
     }
     if (!usableContact(contact, box, g)) {
       return [issue('ground.no_evidence', 'info', 'Không đủ điểm mặt đất',
-        'Quanh box quá ít điểm mặt đất để đo cao độ; kiểm tra bằng mắt ở view Side / Front')];
+        'Quanh box quá ít điểm mặt đất để đo cao độ; kiểm tra bằng mắt ở view Side / Front', 'chưa đo được, ít điểm đất')];
     }
     const out = [];
     if (contact.pointsBelowBottom >= cfg.pointsBelowBottomMin && contact.gapM > cfg.okM) {
       out.push(issue('ground.points_below', 'error', 'Box lơ lửng',
-        `${contact.pointsBelowBottom} điểm của vật nằm dưới đáy box: hạ đáy box xuống`));
+        `${contact.pointsBelowBottom} điểm của vật nằm dưới đáy box: hạ đáy box xuống`, `${contact.pointsBelowBottom} điểm dưới đáy box`));
     }
     const gap = Math.abs(contact.gapM);
     const severity = gap > cfg.errorM ? 'error' : gap > cfg.warningM ? 'warning' : null;
     if (severity) {
       out.push(issue('ground.gap', severity, contact.gapM > 0 ? 'Box lơ lửng' : 'Box lún',
         `Đáy box ${contact.gapM > 0 ? 'cao hơn' : 'thấp hơn'} mặt đất ${cm(gap)}`
-        + (contact.spreadM > 0.08 ? ` (mặt đất dưới box chênh ${cm(contact.spreadM)}: dốc hoặc bờ vỉa)` : '')));
+        + (contact.spreadM > 0.08 ? ` (mặt đất dưới box chênh ${cm(contact.spreadM)}: dốc hoặc bờ vỉa)` : ''),
+        `${contact.gapM > 0 ? 'lơ lửng' : 'lún'} ${cm(gap)}`));
     }
     return out;
   }
@@ -108,7 +114,7 @@
     if (d >= g.zRange.minM && d <= g.zRange.maxM) return [];
     return [issue('z.range', 'warning', 'Z ngoài ngưỡng',
       `Đáy box ${d > 0 ? 'cao hơn' : 'thấp hơn'} mặt đất chung của vùng ${cm(Math.abs(d))} `
-      + `(cho phép ${g.zRange.minM} … +${g.zRange.maxM} m)`)];
+      + `(cho phép ${g.zRange.minM} … +${g.zRange.maxM} m)`, `đáy lệch mặt đất vùng ${cm(Math.abs(d))}`)];
   }
 
   function tooFar(box, g) {
@@ -116,26 +122,71 @@
     const range = B.rangeXY(box, g.sensorOrigin);
     if (range <= g.maxDistanceM) return [];
     return [issue('range.too_far', 'warning', 'Quá xa',
-      `Box cách LiDAR ${range.toFixed(1)} m, ngoài phạm vi gán nhãn ${g.maxDistanceM} m`)];
+      `Box cách LiDAR ${range.toFixed(1)} m, ngoài phạm vi gán nhãn ${g.maxDistanceM} m`, `${range.toFixed(0)} m, ngoài phạm vi ${g.maxDistanceM} m`)];
   }
 
-  function overlaps(target, others, g) {
+  const names = (o) => [o.label, o.classKey];
+  const matches = (o, name) => names(o).includes(name);
+
+  /** Phần footprint của `inner` nằm trong footprint của `outer` (0–1), nhìn từ trên. */
+  function insideFraction(inner, outer) {
+    const fi = B.footprint(inner), area = B.polygonArea(fi);
+    return area > 0 ? B.polygonArea(B.clipConvex(fi, B.footprint(outer))) / area : 0;
+  }
+
+  /**
+   * Luật spec về việc box có nên tồn tại (giống `spec.rider_double` / `spec.inside` của bộ quét QC). Xét cả hai chiều:
+   * box đang chọn là người hay là xe đều thấy vấn đề.
+   */
+  function specPairs(target, others, g) {
+    const cfg = g.spec, out = [];
+    for (const other of others) {
+      for (const [riderOf, person] of cfg.riderDouble) {
+        const [bike, rider] = matches(target, riderOf) && matches(other, person) ? [target, other]
+          : matches(other, riderOf) && matches(target, person) ? [other, target] : [];
+        if (bike && insideFraction(rider.box, bike.box) >= 0.5 && Math.abs(B.bottomZ(rider.box) - B.bottomZ(bike.box)) < 1) {
+          out.push({ ...issue('spec.rider_double', 'warning', 'Người lái có box riêng',
+            `${rider.label} #${rider.clientId ?? ''} chồng lên ${bike.label} #${bike.clientId ?? ''} đang ghi có người lái: spec 4.3C người lái nằm trong box xe, `
+            + 'không gán thêm box người; người đã xuống xe thì đổi xe sang without_rider',
+            target === bike ? `có thêm box người #${other.clientId}` : `đã có trong xe #${other.clientId}`), otherClientId: other.clientId });
+        }
+      }
+      for (const [personName, vehicleName] of cfg.insideForbidden) {
+        const [person, vehicle] = matches(target, personName) && matches(other, vehicleName) ? [target, other]
+          : matches(other, personName) && matches(target, vehicleName) ? [other, target] : [];
+        if (!person) continue;
+        const local = B.toLocal(vehicle.box, person.box.center);
+        const within = Math.abs(local[0]) <= vehicle.box.dims[0] / 2 + 0.1 && Math.abs(local[1]) <= vehicle.box.dims[1] / 2 + 0.1;
+        const lifted = B.bottomZ(person.box) - B.bottomZ(vehicle.box) >= cfg.insideMinLiftM;
+        if (within && !lifted && person.box.center[2] < vehicle.box.center[2] + vehicle.box.dims[2] / 2) {
+          out.push({ ...issue('spec.inside', 'warning', 'Người trong xe có box riêng',
+            `${person.label} #${person.clientId ?? ''} nằm bên trong ${vehicle.label} #${vehicle.clientId ?? ''}: spec 4.3B không gán người bên trong xe `
+            + '(trừ người đứng trên nóc / thùng xe)', target === vehicle ? `có box người #${other.clientId} bên trong` : `nằm trong xe #${other.clientId}`),
+          otherClientId: other.clientId });
+        }
+      }
+    }
+    return out;
+  }
+
+  function overlaps(target, others, g, skip = new Set()) {
     const cfg = g.overlap;
-    const names = (o) => [o.label, o.classKey];
     if (!names(target).some((n) => cfg.classes.includes(n))) return [];
     const allowed = (a, b) => cfg.allowedPairs.some(([x, y]) =>
       (names(a).includes(x) && names(b).includes(y)) || (names(a).includes(y) && names(b).includes(x)));
     const out = [];
     for (const other of others) {
-      if (!names(other).some((n) => cfg.classes.includes(n))) continue;
+      if (skip.has(other.clientId) || !names(other).some((n) => cfg.classes.includes(n))) continue;
       const ratio = B.overlapRatio(target.box, other.box);
       if (ratio <= cfg.warning) continue;
       const pct = Math.round(ratio * 100);
       // Cặp spec cho phép (người trên thùng xe, người lái…) vẫn hiện ở mức Thông tin để annotator thấy box đang chồng.
       const found = allowed(target, other)
-        ? issue('overlap.allowed', 'info', 'Chồng lấn (spec cho phép)', `Chồng ${pct}% lên ${other.label} #${other.clientId}: cặp này được phép chồng theo spec`)
+        ? issue('overlap.allowed', 'info', 'Chồng lấn (spec cho phép)', `Chồng ${pct}% lên ${other.label} #${other.clientId}: cặp này được phép chồng theo spec`,
+          `chồng ${pct}% lên ${other.label} #${other.clientId}, được phép`)
         : issue('overlap', ratio > cfg.error ? 'error' : 'warning', 'Chồng lấn',
-          `Chồng ${pct}% lên ${other.label} #${other.clientId}: nghi vẽ trùng hoặc hai box lấn nhau`);
+          `Chồng ${pct}% lên ${other.label} #${other.clientId}: nghi vẽ trùng hoặc hai box lấn nhau`,
+          `chồng ${pct}% lên ${other.label} #${other.clientId}`);
       out.push({ ...found, otherClientId: other.clientId, ratio });
     }
     return out;
@@ -144,12 +195,12 @@
   function empty(pointsInside, occluded, groundMeasured) {
     if (occluded || !groundMeasured || pointsInside > 0) return [];
     return [issue('fit.empty', 'warning', 'Box rỗng',
-      'Không có điểm LiDAR nào trong box: vẽ vào chỗ trống, hoặc vật bị che thì đánh dấu occluded')];
+      'Không có điểm LiDAR nào trong box: vẽ vào chỗ trống, hoặc vật bị che thì đánh dấu occluded', 'không có điểm LiDAR')];
   }
 
   function requiredAttributes(label, attributes, g) {
     const missing = (g.attributes.required[label] || []).filter((name) => attributes[name] === undefined || attributes[name] === '');
-    return missing.length ? [issue('attr.missing', 'error', 'Thiếu thuộc tính', `Chưa chọn: ${missing.join(', ')}`)] : [];
+    return missing.length ? [issue('attr.missing', 'error', 'Thiếu thuộc tính', `Chưa chọn: ${missing.join(', ')}`, `thiếu ${missing.join(', ')}`)] : [];
   }
 
   /**
@@ -159,17 +210,20 @@
    */
   function checkBox(input, g) {
     const { box, label, classKey, attributes, occluded } = input;
+    // Vi phạm spec của một cặp thay cho "chồng lấn được phép" của cùng cặp đó.
+    const spec = specPairs({ box, label, classKey, clientId: input.clientId }, input.others || [], g);
     const geometric = occluded ? [] : [
       ...ground(box, input.contact, label, g),
       ...zRange(box, input.coarseGroundZ, g),
       ...empty(input.pointsInside, occluded, !!input.contact),
     ];
     return [
-      ...sizeRange(box, classKey, g),
+      ...sizeRange(box, classKey, label, g),
       ...sizeInTrack(box, label, input.trackDims, g),
       ...geometric,
       ...tooFar(box, g),
-      ...overlaps({ box, label, classKey }, input.others || [], g),
+      ...spec,
+      ...overlaps({ box, label, classKey }, input.others || [], g, new Set(spec.map((i) => i.otherClientId))),
       ...requiredAttributes(label, attributes || {}, g),
     ].sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
   }
