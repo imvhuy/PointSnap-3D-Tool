@@ -798,12 +798,24 @@
     panel.render(viewModel(ctx, m));
   }
 
-  window.postMessage({ type: `${SETTINGS_MESSAGE}_REQUEST` }, location.origin);
-  A.connect(() => {
-    A.subscribe(onStoreChange);
-    requestAnimationFrame(tick);
-  });
-  /** Đọc bởi popup (chrome.scripting, MAIN world) để báo extension đã chạy đúng trên CVAT này chưa. */
-  const health = () => ({ ...A.health(), enabled: S.enabled, guidelineErrors: S.guidelineErrors.length });
+  /**
+   * Đọc bởi popup (chrome.scripting, MAIN world) để báo extension đã chạy đúng trên CVAT này chưa. Gắn trước khi nối
+   * CVAT: lỗi lúc khởi động thì popup vẫn đọc được và hiện lỗi đó, thay vì chỉ thấy "chưa chạy".
+   */
+  const health = () => ({ ...A.health(), enabled: S.enabled, guidelineErrors: S.guidelineErrors.length, startError: S.startError || null });
   root.PointSnapAnnotator = { state: S, health };
+  window.postMessage({ type: `${SETTINGS_MESSAGE}_REQUEST` }, location.origin);
+  const start = () => {
+    try {
+      A.subscribe(onStoreChange);
+      requestAnimationFrame(tick);
+    } catch (error) {
+      S.startError = error.message;
+    }
+  };
+  try {
+    A.connect(start);
+  } catch (error) {
+    S.startError = error.message;
+  }
 })(globalThis);
