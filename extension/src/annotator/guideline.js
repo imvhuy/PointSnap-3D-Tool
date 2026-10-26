@@ -81,11 +81,11 @@
     zRange: { minM: -1.0, maxM: 2.0, maxRangeM: 35 },
     // Phạm vi gán nhãn theo spec (m, nhìn từ trên). null = chưa cấu hình, không kiểm tra.
     maxDistanceM: null,
+    // Cứ chồng là Lỗi (tỉ lệ > error), mọi class ('*'). Cặp trong allowedPairs chỉ hiện ở mức Thông tin.
     overlap: {
-      warning: 0.2,
-      error: 0.5,
-      classes: ['car', 'truck', 'bus', 'trailer', 'construction_vehicle', 'motorcycle', 'bicycle', 'pedestrian',
-        'Vehicle', 'Two-wheels', 'Pedestrian', 'Animal'],
+      warning: 0,
+      error: 0,
+      classes: ['*'],
       allowedPairs: [
         ['pedestrian', 'pedestrian'], ['pedestrian', 'bicycle'], ['pedestrian', 'motorcycle'], ['pedestrian', 'car'],
         ['pedestrian', 'truck'], ['pedestrian', 'construction_vehicle'], ['bicycle', 'bicycle'],

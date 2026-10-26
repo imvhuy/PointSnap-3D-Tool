@@ -28,7 +28,7 @@ Trình sửa mở ngay trong trang CVAT, không cần biết JSON:
   đặt; **Gợi ý từ job** điền khoảng đó vào các dòng có ≥ 3 box, xem lại rồi mới Save.
 - Công tắc **Mặt đất**, **Chồng lấn**, **Vật cứng** (kiểm scale theo track, đồng bộ cỡ, mượt yaw); **Bắt buộc** cho thuộc
   tính dạng chọn (checkbox luôn có giá trị nên không cần); **Ghi chú** hiện trên thẻ Spec cho annotator.
-- **Chồng lấn**: ngưỡng và cặp class được chồng. **Luật spec**: người lái có box riêng, người nằm trong xe. **Ngưỡng**: mặt
+- **Chồng lấn**: ngưỡng (mặc định 0%: cứ chồng là Lỗi, mọi class) và cặp class được chồng. **Luật spec**: người lái có box riêng, người nằm trong xe. **Ngưỡng**: mặt
   đất, phạm vi gán nhãn, độ cao LiDAR, lề kích thước.
 - Ô sai dạng tô đỏ và khóa **Save**; dòng cuối cho biết box đang chọn có đạt với ngưỡng đang sửa không, trước khi Save.
 - **Save** lưu cho project (chỉ phần khác mặc định, để mặc định được hiệu chỉnh sau này vẫn áp vào phần bạn không sửa);
@@ -58,7 +58,7 @@ khác thì xin phép chủ hệ thống trước.
 | Hạ đáy box | Nút **⤓ Hạ đáy** hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>: đáy box đặt giữa mặt đất thấp nhất và cao nhất dưới 4 góc (dốc / bờ vỉa) | Có, 1 frame |
 | Kiểm tra box đang chọn | Kích thước ngoài ngưỡng, scale không đồng bộ, lơ lửng / lún, Z ngoài ngưỡng, quá xa, chồng lấn, box rỗng, thiếu thuộc tính | Không |
 | Điểm của vật (A4) | Đổi màu chính các điểm của point cloud trên cả 4 view: điểm trong box **xanh lá**, điểm của vật lòi ra ngoài box **đỏ** (chỉ điểm nối liền với vật, không lấy cây / tường bên cạnh). Nhãn khoảng hở từng mặt LiDAR nhìn thấy: "đuôi dư 24 cm", "trái lòi 8 cm" | Không |
-| Chồng lấn | Box đang chồng: khung **đỏ** đậm, phần chồng tô đỏ ở view Top / 3D, nhãn "chồng 67%". Cặp spec cho phép (người trên thùng xe, người lái…) hiện khung **xám** và mục Thông tin | Không |
+| Chồng lấn | Box đang chồng: khung **đỏ** đậm, phần chồng tô đỏ ở view Top / 3D, nhãn "chồng 67%" (lấn dưới 1%: "chồng <1%"). Cứ chồng là **Lỗi**, mọi class. Cặp spec cho phép (người trên thùng xe, người lái…) hiện khung **xám** và mục Thông tin | Không |
 | Thẻ spec (A8) | Nút **Spec** cạnh tên box: khoảng kích thước của class (đánh dấu ✓ / ✗ theo box), thuộc tính bắt buộc, class được chồng box, quy tắc spec | Không |
 | Dải track | Một ô mỗi keyframe, vàng khi lệch kích thước / hướng; bấm ô để tới frame đó | Không |
 | Đồng bộ kích thước cả track | Theo frame hiện tại hoặc theo trung vị; giữ mặt LiDAR nhìn thấy, giữ đáy box. Có xem trước | Có, cả track |
@@ -82,7 +82,8 @@ LiDAR cao 1,73 m) hoặc hệ xe thu thì đặt `sensorOrigin` là vị trí Li
 - CVAT chưa có hàm đó (đã đo trên **2.75.1**): lịch sử Undo của CVAT chỉ giữ 32 bước, nên ghi 38 keyframe từng bước sẽ
   vừa không Undo hết vừa đẩy mất lịch sử của annotator. PointSnap tạm dừng ghi lịch sử CVAT trong lúc lưu và hiện nút
   **↶ Hoàn tác** cho thao tác vừa làm. Ctrl+Z của CVAT không hoàn tác thao tác này. Keyframe đã bị sửa tiếp thì nút
-  Hoàn tác giữ nguyên, không ghi đè.
+  Hoàn tác giữ nguyên, không ghi đè. Nút chỉ hiện khi đang chọn đúng track vừa sửa; chọn track khác thì ẩn, quay lại thì
+  hiện lại.
 
 ## Đã kiểm trên CVAT thật (2.75.1, task nuScenes scene-0061, 39 frame, 219 track)
 
@@ -91,7 +92,7 @@ LiDAR cao 1,73 m) hoặc hệ xe thu thì đặt `sensorOrigin` là vị trí Li
 | Ghi box / đồng bộ 38 keyframe / tỉa / hạ đáy | Canvas 4 view vẽ lại ngay; lịch sử CVAT không bị ghi đè; nút Hoàn tác phục hồi đúng |
 | Đường mặt đất, khung footprint | Nằm đúng trên box và point cloud ở cả 4 view |
 | Dựng bản đồ địa hình | 5–16 ms mỗi frame (~35k điểm) |
-| Báo nhầm trên 840 box nhãn chuẩn (10 frame) | 14 Cảnh báo / Lỗi (1,7 / 100 box), chủ yếu lơ lửng ở người đi bộ xa 20–45 m; Z ngoài ngưỡng 0, chồng lấn 0 |
+| Báo nhầm trên 840 box nhãn chuẩn (10 frame) | 14 Cảnh báo / Lỗi (1,7 / 100 box), chủ yếu lơ lửng ở người đi bộ xa 20–45 m; Z ngoài ngưỡng 0. Chồng lấn đo lại từ 26/10 khi đổi thành "cứ chồng là Lỗi": xem PP-06 |
 | Đo được mặt đất (độ tin cậy ≥ 0,3) | ~54% box trong 30 m; LiDAR 32 tia thưa nên box xa thường chỉ báo "không đủ điểm mặt đất" |
 | Dải track trên 1395 keyframe chuẩn | Kích thước: 0 keyframe bị đánh dấu nhầm; ngưỡng yaw chỉnh theo dữ liệu (xe 15°, người 45°) |
 | Làm mượt yaw trên nhãn chuẩn | Xe / rào chắn: đổi 1 keyframe (2°); người đi bộ bị đổi nhiều nên đã tắt cho người / động vật |

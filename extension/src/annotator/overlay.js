@@ -130,7 +130,7 @@
             parts.push(`<polygon points="${area.map((q) => q.join(',')).join(' ')}" fill="${color}" fill-opacity=".25" stroke="none"/>`);
           }
         }
-        label([o.box.center[0], o.box.center[1], o.box.center[2] + o.box.dims[2] / 2], `chồng ${Math.round(o.ratio * 100)}%${o.allowed ? ' (được phép)' : ''}`, color);
+        label([o.box.center[0], o.box.center[1], o.box.center[2] + o.box.dims[2] / 2], `chồng ${o.ratio < 0.01 ? '<1' : Math.round(o.ratio * 100)}%${o.allowed ? ' (được phép)' : ''}`, color);
       }
 
       if (contact) {

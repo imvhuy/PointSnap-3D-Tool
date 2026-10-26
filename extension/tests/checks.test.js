@@ -59,10 +59,17 @@ test('quá xa chỉ kiểm khi guideline có maxDistanceM', () => {
   assert.ok(rules(run(far, G.resolve({ maxDistanceM: 80 }).guideline)).includes('range.too_far'));
 });
 
-test('chồng lấn: báo cặp không được phép, bỏ qua cặp spec cho phép', () => {
+test('chồng lấn: cứ chồng là Lỗi, cặp spec cho phép chỉ Thông tin', () => {
   const other = { box: box([4.5, 1.9, 1.6], [10.5, 0, -1]), label: 'car', classKey: 'car', clientId: 7 };
   const found = run({ others: [other] }).find((i) => i.rule === 'overlap');
   assert.equal(found.otherClientId, 7);
+  const graze = run({ others: [{ ...other, box: box([4.5, 1.9, 1.6], [10, 1.88, -1]) }] }).find((i) => i.rule === 'overlap');
+  assert.equal(graze.severity, 'error', 'lấn 2 cm vẫn là Lỗi');
+  assert.match(graze.short, /chồng 1%/);
+  const cone = { box: box([0.4, 0.4, 0.8], [12.2, 0.8, -1.4]), label: 'Obstacle', classKey: 'Obstacle', clientId: 9 };
+  assert.ok(rules(run({ others: [cone] })).includes('overlap'), 'mọi class đều kiểm');
+  const listed = G.resolve({ overlap: { classes: ['car'] } }).guideline;
+  assert.ok(!rules(run({ others: [cone] }, listed)).includes('overlap'), 'spec liệt kê class thì chỉ kiểm các class đó');
   const ped = { box: box([0.7, 0.7, 1.7], [10, 0, -1]), label: 'pedestrian', classKey: 'pedestrian', clientId: 8 };
   const allowed = run({ others: [ped] });
   assert.ok(!rules(allowed).includes('overlap'));

@@ -29,8 +29,11 @@ test('overlapRatio: trùng = 1, rời = 0, box nhỏ nằm trong box lớn = 1',
   close(B.overlapRatio(box([0, 0, 0], [1, 1, 1]), box([0, 0, 0], [4, 4, 2])), 1, 1e-9);
 });
 
-test('overlapRatio bỏ qua hai box chồng theo chiều cao dưới 30%', () => {
-  assert.equal(B.overlapRatio(box([0, 0, 0], [4, 2, 1]), box([0, 0, 0.8], [4, 2, 1])), 0);
+test('overlapRatio: chồng chút ít theo chiều cao vẫn tính, chạm mép (≤ 1 cm) thì không', () => {
+  close(B.overlapRatio(box([0, 0, 0], [4, 2, 1]), box([0, 0, 0.9], [4, 2, 1])), 1, 1e-9);
+  assert.equal(B.overlapRatio(box([0, 0, 0], [4, 2, 1]), box([0, 0, 0.995], [4, 2, 1])), 0);
+  close(B.overlapRatio(box([0, 0, 0], [4, 2, 1]), box([3.98, 0, 0], [4, 2, 1])), 0.005, 1e-9);
+  assert.equal(B.overlapRatio(box([0, 0, 0], [4, 2, 1]), box([4.0, 0, 0], [4, 2, 1])), 0);
 });
 
 test('overlapRatio với box xoay 45°: hình vuông 2×2 và hình thoi cùng tâm chung diện tích 8(√2 − 1)', () => {

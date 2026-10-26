@@ -431,7 +431,9 @@
 
   async function commit(job, byFrame, edits, title) {
     const result = await A.applyEdits(job, byFrame, edits);
-    S.lastUndo = result.undo === 'pointsnap' && result.saved ? { jobId: job.id, title, record: result.record } : null;
+    // Nút Hoàn tác chỉ hiện khi đang chọn đúng track vừa sửa, để không tưởng nhầm là hoàn tác track khác.
+    S.lastUndo = result.undo === 'pointsnap' && result.saved
+      ? { jobId: job.id, clientID: result.record[0].clientID, title, record: result.record } : null;
     const undo = result.undo === 'cvat' ? 'Ctrl+Z một lần để hoàn tác' : 'hoàn tác bằng nút "Hoàn tác" của PointSnap (Ctrl+Z của CVAT bản này không gộp được thao tác nhiều keyframe)';
     const locked = result.locked ? ` ${result.locked} keyframe bị khóa (lock) nên bỏ qua.` : '';
     notify({ kind: 'ok', text: `${title}: đã ghi ${result.saved} keyframe vào CVAT, chưa Save; ${undo}.${locked}` });
@@ -445,7 +447,7 @@
 
   async function undoLast(ctx) {
     const last = S.lastUndo;
-    if (!last || last.jobId !== ctx.job.id) return;
+    if (!last || last.jobId !== ctx.job.id || last.clientID !== activeObject()?.clientID) return;
     const { restored, skipped } = await A.undoEdits(ctx.job, last.record);
     S.lastUndo = null;
     const kept = skipped ? ` ${skipped} keyframe đã bị sửa tiếp nên giữ nguyên.` : '';
@@ -591,7 +593,8 @@
     if (!ctx) return { ...base, status: 'waiting', message: 'Chờ mở job 3D (point cloud) trên CVAT…' };
     const done = doneSet(ctx.job.id), tracks = frameTracks();
     const vm = { ...base, status: 'ready', frame: ctx.frame,
-      undo: S.lastUndo?.jobId === ctx.job.id ? { title: S.lastUndo.title, count: S.lastUndo.record.length } : null,
+      undo: S.lastUndo?.jobId === ctx.job.id && S.lastUndo.clientID === m?.objectState.clientID
+        ? { title: S.lastUndo.title, count: S.lastUndo.record.length } : null,
       progress: tracks.length ? { done: tracks.filter((s) => done.has(trackId(s))).length, total: tracks.length } : null };
     if (!m) return vm;
     const measured = Checks.usableContact(m.contact, m.box, g);

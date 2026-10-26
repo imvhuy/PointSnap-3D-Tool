@@ -112,19 +112,20 @@
   }
 
   /**
-   * Tỉ lệ chồng: diện tích chồng nhìn từ trên / diện tích box nhỏ hơn, chỉ tính khi hai box chồng theo chiều cao
-   * quá 30% chiều cao box thấp hơn. Chia cho box nhỏ hơn để bắt cả box nhỏ nằm gọn trong box lớn (IoU bỏ sót).
+   * Tỉ lệ chồng: diện tích chồng nhìn từ trên / diện tích box nhỏ hơn, khi hai box có phần thể tích chung. Chia cho box
+   * nhỏ hơn để bắt cả box nhỏ nằm gọn trong box lớn (IoU bỏ sót). Chồng theo chiều cao dưới 1 cm hoặc phần chung nhìn
+   * từ trên dưới 1 cm² là chạm mép / sai số làm tròn, không tính.
    */
   function overlapRatio(a, b) {
     const top = (box) => box.center[2] + box.dims[2] / 2;
     const bottom = (box) => box.center[2] - box.dims[2] / 2;
     const zOverlap = Math.min(top(a), top(b)) - Math.max(bottom(a), bottom(b));
-    if (zOverlap <= 0.3 * Math.min(a.dims[2], b.dims[2])) return 0;
+    if (zOverlap <= 0.01) return 0;
     const reach = (Math.hypot(a.dims[0], a.dims[1]) + Math.hypot(b.dims[0], b.dims[1])) / 2;
     if (Math.hypot(a.center[0] - b.center[0], a.center[1] - b.center[1]) > reach) return 0;
     const fa = footprint(a), fb = footprint(b);
-    const smaller = Math.min(polygonArea(fa), polygonArea(fb));
-    return smaller > 0 ? polygonArea(clipConvex(fa, fb)) / smaller : 0;
+    const smaller = Math.min(polygonArea(fa), polygonArea(fb)), shared = polygonArea(clipConvex(fa, fb));
+    return smaller > 0 && shared > 1e-4 ? shared / smaller : 0;
   }
 
   /** Khoảng cách nhìn từ trên từ tâm box tới gốc cảm biến. */
