@@ -1,0 +1,251 @@
+'use strict';
+/*
+ * PointSnap QC: dịch vụ quét cả job CVAT bằng bộ luật chung với extension annotator, kèm trang web xem kết quả.
+ * Chạy: `node qc/server.js` (cấu hình ở qc/lib/config.js). Không thư viện ngoài; Node ≥ 20.
+ * Token CVAT chỉ nằm ở máy chủ này, không gửi xuống trình duyệt.
+ */
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+const { loadConfig } = require('./lib/config');
+const { CvatClient } = require('./lib/cvat');
+const { Store } = require('./lib/store');
+const { scanJob } = require('./lib/scan');
+const Tracks = require('./lib/tracks');
+const Box = require('../extension/src/annotator/box.js');
+const { toCsv } = require('./lib/export');
+const G = require('../extension/src/annotator/guideline.js');
+const { RULES, FIELDS, QC_FULL_DEFAULTS, resolveSpec } = require('./lib/rules');
+
+const config = loadConfig();
+const store = new Store(config.home);
+const client = config.cvatToken ? new CvatClient({ url: config.cvatUrl, token: config.cvatToken }) : null;
+const PUBLIC = path.join(__dirname, 'public');
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
+
+// ------------------------------------------------------------------ hàng đợi quét (một job một lúc)
+
+const runs = new Map(); // jobId → { state: queued | running | done | error, progress, error, controller }
+const queue = [];
+let busy = false;
+
+/** Guideline đang dùng cho project: của project, không có thì bản chung, không có nữa thì mặc định của extension. */
+function guidelineFor(projectId) {
+  const spec = store.spec(projectId);
+  const { guideline, qc, errors } = resolveSpec(spec?.override || {});
+  return { guideline, qc, errors, name: spec?.name || 'Mặc định', version: spec?.v || 0, project: spec?.project ?? null };
+}
+
+async function worker() {
+  if (busy) return;
+  busy = true;
+  while (queue.length) {
+    const jobId = queue.shift(), run = runs.get(jobId);
+    if (!run || run.controller.signal.aborted) continue;
+    run.state = 'running';
+    try {
+      const job = await client.job(jobId), task = await client.task(job.task_id);
+      const spec = guidelineFor(task.project_id);
+      const result = await scanJob({ client, jobId, guideline: spec.guideline, qc: spec.qc, gate: config.gate, signal: run.controller.signal,
+        onProgress: (p) => { run.progress = p; } });
+      result.spec = { name: spec.name, version: spec.version, project: spec.project, errors: spec.errors };
+      store.saveScan(jobId, result);
+      run.state = 'done';
+    } catch (error) {
+      run.state = 'error';
+      run.error = error.message;
+    }
+  }
+  busy = false;
+}
+
+function startScan(jobId) {
+  const current = runs.get(jobId);
+  if (current && (current.state === 'queued' || current.state === 'running')) return current;
+  const run = { state: 'queued', progress: { done: 0, total: 0, phase: 'Chờ' }, error: null, controller: new AbortController() };
+  runs.set(jobId, run);
+  queue.push(jobId);
+  worker();
+  return run;
+}
+
+const publicRun = (run) => run && { state: run.state, progress: run.progress, error: run.error };
+
+// ------------------------------------------------------------------ HTTP
+
+function send(res, status, body, type = 'application/json; charset=utf-8') {
+  const data = typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body);
+  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'" });
+  res.end(data);
+}
+
+async function readJson(req) {
+  const chunks = [];
+  let size = 0;
+  for await (const c of req) {
+    size += c.length;
+    if (size > 2e6) throw Object.assign(new Error('Dữ liệu quá lớn'), { status: 413 });
+    chunks.push(c);
+  }
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch (_) {
+    throw Object.assign(new Error('JSON không hợp lệ'), { status: 400 });
+  }
+}
+
+/**
+ * Hình nhìn từ trên cho một mục: điểm LiDAR quanh các box liên quan và box đã gán, ở frame của mục (đứt track: frame cuối
+ * đoạn trước và frame đầu đoạn sau), kèm box "ma" (chỗ vật kia lẽ ra ở). Đọc thẳng từ CVAT, không lưu lại.
+ */
+async function evidenceView(cvat, scan, finding) {
+  const jobId = scan.job.id;
+  const [labels, annotations, meta] = await Promise.all([cvat.labels(jobId), cvat.annotations(jobId), cvat.meta(jobId)]);
+  const { frames, cvatIds } = Tracks.expand(annotations, labels, { start: scan.job.start, stop: scan.job.stop });
+  const shown = finding.rule === 'track.fragment' ? [finding.frames[0], finding.frames[finding.frames.length - 1]] : [finding.frames[0]];
+  const chunkSize = meta.chunk_size || scan.job.stop - scan.job.start + 1, chunks = new Map();
+  const corners = (b) => Box.footprint(b).map(([x, y]) => [+x.toFixed(2), +y.toFixed(2)]);
+  const out = [];
+  for (const frame of shown) {
+    const c = Math.floor((frame - scan.job.start) / chunkSize);
+    if (!chunks.has(c)) chunks.set(c, await cvat.chunk(jobId, c));
+    const positions = chunks.get(c)[(frame - scan.job.start) % chunkSize]?.positions;
+    const objs = frames.get(frame) || [], main = objs.filter((o) => o.key === finding.objKey || o.key === finding.other);
+    const ghosts = (finding.evidence?.ghosts || []).filter((g) => g.frame === frame)
+      .map((g) => ({ center: [...g.center, 0], dims: [...g.dims, 1], rotation: [0, 0, g.yaw] }));
+    const focus = [...main.map((o) => o.box), ...ghosts];
+    if (!positions || !focus.length) { out.push({ frame, points: [], boxes: [], ghosts: [] }); continue; }
+    const cx = focus.reduce((s, b) => s + b.center[0], 0) / focus.length, cy = focus.reduce((s, b) => s + b.center[1], 0) / focus.length;
+    const R = 12, bottom = Math.min(...main.map((o) => Box.bottomZ(o.box)), Infinity);
+    const points = [];
+    for (let i = 0; i < positions.length && points.length < 15000; i += 3) {
+      const x = positions[i], y = positions[i + 1];
+      if (Math.abs(x - cx) > R || Math.abs(y - cy) > R) continue;
+      // 1 = cao hơn đáy box 25 cm (thân vật), 0 = mặt đất.
+      points.push(+x.toFixed(2), +y.toFixed(2), Number.isFinite(bottom) && positions[i + 2] > bottom + 0.25 ? 1 : 0);
+    }
+    const boxes = objs.filter((o) => Math.abs(o.box.center[0] - cx) < R + 3 && Math.abs(o.box.center[1] - cy) < R + 3)
+      .map((o) => ({ cvatId: cvatIds.get(o.key), label: o.label, role: o.key === finding.objKey ? 'a' : o.key === finding.other ? 'b' : 'other', corners: corners(o.box) }));
+    out.push({ frame, center: [cx, cy], range: R, points, boxes, ghosts: ghosts.map(corners) });
+  }
+  return { frames: out, verdict: finding.evidence?.verdict || null };
+}
+
+/** Danh sách job 3D, kèm tên task và tóm tắt lần quét gần nhất. */
+async function listJobs() {
+  const [jobs, tasks] = await Promise.all([client.jobs(), client.all('/api/tasks?dimension=3d')]);
+  const taskName = new Map(tasks.map((t) => [t.id, t]));
+  return jobs.map((j) => {
+    const scan = store.scan(j.id), t = taskName.get(j.task_id);
+    return { id: j.id, taskId: j.task_id, taskName: t?.name || `Task ${j.task_id}`, projectId: t?.project_id ?? null,
+      frames: j.stop_frame - j.start_frame + 1, stage: j.stage, state: j.state, assignee: j.assignee?.username || null,
+      run: publicRun(runs.get(j.id)),
+      last: scan && { startedAt: scan.startedAt, gate: scan.summary.gate.verdict, errors: scan.summary.errorGroups,
+        warnings: scan.summary.warningGroups, boxes: scan.summary.boxes } };
+  }).sort((a, b) => b.id - a.id);
+}
+
+async function route(req, res) {
+  const url = new URL(req.url, 'http://local');
+  const p = url.pathname;
+
+  // Trang dùng chung merge / diff guideline với extension.
+  if (req.method === 'GET' && p === '/vendor/guideline.js') return send(res, 200, fs.readFileSync(require.resolve('../extension/src/annotator/guideline.js')), TYPES['.js']);
+  if (req.method === 'GET' && !p.startsWith('/api/')) {
+    const file = path.join(PUBLIC, p === '/' ? 'index.html' : path.normalize(p).replace(/^([\\/])+/, ''));
+    if (!file.startsWith(PUBLIC + path.sep) || !fs.existsSync(file)) return send(res, 404, { error: 'Không có' });
+    return send(res, 200, fs.readFileSync(file), TYPES[path.extname(file)] || 'application/octet-stream');
+  }
+  // Chống trang khác gửi lệnh tới dịch vụ trên localhost: mọi lệnh ghi cần header riêng (trình duyệt không cho trang
+  // khác gửi header này nếu không qua CORS, mà dịch vụ không mở CORS).
+  if (req.method !== 'GET' && req.headers['x-pointsnap-qc'] !== '1') return send(res, 403, { error: 'Thiếu header X-PointSnap-QC' });
+  if (!client && p !== '/api/status') return send(res, 503, { error: 'Chưa cấu hình CVAT_TOKEN' });
+
+  if (req.method === 'GET' && p === '/api/status') {
+    if (!client) return send(res, 200, { ok: false, cvatUrl: config.cvatUrl, error: 'Chưa cấu hình CVAT_TOKEN (xem qc/README.md)' });
+    try {
+      const [about, self] = await Promise.all([client.about(), client.self()]);
+      return send(res, 200, { ok: true, cvatUrl: config.cvatUrl, version: about.version, user: self.username, gate: config.gate });
+    } catch (error) {
+      return send(res, 200, { ok: false, cvatUrl: config.cvatUrl, error: error.message });
+    }
+  }
+  if (req.method === 'GET' && p === '/api/jobs') return send(res, 200, await listJobs());
+
+  const m = p.match(/^\/api\/jobs\/(\d+)(\/[\w.]+)?$/);
+  if (m) {
+    const jobId = Number(m[1]), action = m[2] || '';
+    if (req.method === 'GET' && action === '') {
+      const result = store.scan(jobId), now = result && guidelineFor(result.job.projectId);
+      // Guideline đã đổi sau lần quét thì trang nhắc quét lại.
+      const specNow = now && { name: now.name, version: now.version, project: now.project };
+      return send(res, 200, { run: publicRun(runs.get(jobId)), result, reviews: store.reviews(jobId), specNow });
+    }
+    if (req.method === 'GET' && action === '/evidence') {
+      const scan = store.scan(jobId), finding = scan?.findings.find((f) => f.key === url.searchParams.get('key'));
+      if (!finding) return send(res, 404, { error: 'Không có mục này trong lần quét gần nhất' });
+      return send(res, 200, await evidenceView(client, scan, finding));
+    }
+    if (req.method === 'POST' && action === '/scan') return send(res, 202, publicRun(startScan(jobId)));
+    if (req.method === 'POST' && action === '/cancel') {
+      runs.get(jobId)?.controller.abort();
+      return send(res, 200, publicRun(runs.get(jobId)));
+    }
+    if (req.method === 'POST' && action === '/reviews') {
+      const { key, verdict = null, note = '' } = await readJson(req);
+      if (typeof key !== 'string' || ![null, 'confirmed', 'false_alarm'].includes(verdict)) return send(res, 400, { error: 'key / verdict sai' });
+      return send(res, 200, store.setReview(jobId, key, verdict, note));
+    }
+    if (req.method === 'GET' && (action === '/export.csv' || action === '/export.json')) {
+      const scan = store.scan(jobId);
+      if (!scan) return send(res, 404, { error: 'Job chưa quét' });
+      const reviews = store.reviews(jobId);
+      res.setHeader('Content-Disposition', `attachment; filename="pointsnap-qc-job-${jobId}${action.slice(7)}"`);
+      return action.endsWith('.csv')
+        ? send(res, 200, toCsv(scan, reviews, config.cvatUrl), 'text/csv; charset=utf-8')
+        : send(res, 200, { ...scan, reviews });
+    }
+  }
+
+  if (req.method === 'GET' && p === '/api/projects') {
+    const projects = await client.all('/api/projects');
+    return send(res, 200, projects.map((x) => ({ id: x.id, name: x.name })));
+  }
+
+  // Guideline theo project: xem (kèm mặc định, danh mục luật / ô ngưỡng, lịch sử), lưu phiên bản mới, khôi phục bản cũ.
+  const s = p.match(/^\/api\/specs\/(default|\d+)(\/restore)?$/);
+  if (s) {
+    const projectId = s[1] === 'default' ? null : Number(s[1]);
+    if (req.method === 'GET' && !s[2]) {
+      const now = guidelineFor(projectId), own = store.specHistory(projectId).versions;
+      return send(res, 200, { ...now, override: store.spec(projectId)?.override || {}, inherited: !own.length && now.version > 0,
+        versions: own.map(({ v, name, note, at }) => ({ v, name, note, at })).reverse(),
+        defaults: { guideline: G.DEFAULT_GUIDELINE, qc: QC_FULL_DEFAULTS }, rules: RULES, fields: FIELDS });
+    }
+    if (req.method === 'PUT' && !s[2]) {
+      const { name = '', note = '', override } = await readJson(req);
+      if (!override || typeof override !== 'object' || Array.isArray(override)) return send(res, 400, { error: 'Thiếu override (object JSON)' });
+      const { errors } = resolveSpec(override);
+      if (errors.length) return send(res, 400, { error: errors[0], errors });
+      return send(res, 200, { ok: true, version: store.addSpecVersion(projectId, { name, note, override }) });
+    }
+    if (req.method === 'POST' && s[2]) {
+      const { v } = await readJson(req);
+      const old = store.specHistory(projectId).versions.find((x) => x.v === v);
+      if (!old) return send(res, 404, { error: `Không có phiên bản ${v}` });
+      return send(res, 200, { ok: true, version: store.addSpecVersion(projectId, { name: old.name, note: `Khôi phục bản ${v}`, override: old.override }) });
+    }
+  }
+  return send(res, 404, { error: 'Không có' });
+}
+
+const server = http.createServer((req, res) => {
+  route(req, res).catch((error) => send(res, error.status || 500, { error: error.message }));
+});
+
+if (require.main === module) {
+  server.listen(config.port, config.host, () => {
+    console.log(`PointSnap QC: http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}  (CVAT ${config.cvatUrl}${client ? '' : ', CHƯA có CVAT_TOKEN'})`);
+  });
+}
+
+module.exports = { server, route };

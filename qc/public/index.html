@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PointSnap QC</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="logo" aria-hidden="true"></span>PointSnap QC</div>
+    <nav class="tabs" aria-label="Trang">
+      <button class="tab active" data-view="jobs">Job</button>
+      <button class="tab" data-view="spec">Guideline</button>
+    </nav>
+    <div id="status" class="status">Đang kết nối CVAT…</div>
+  </header>
+  <div class="layout" id="layout">
+    <aside class="side">
+      <input id="job-filter" class="search" type="search" placeholder="Tìm job…" aria-label="Tìm job">
+      <ul id="job-list" class="job-list"></ul>
+    </aside>
+    <main id="main" class="main">
+      <div class="empty">Chọn một job bên trái.</div>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/vendor/guideline.js"></script>
+  <script src="/app.js"></script>
+  <script src="/spec.js"></script>
+</body>
+</html>
