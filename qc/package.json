@@ -1,0 +1,14 @@
+{
+  "name": "pointsnap-qc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Quét QC cả job CVAT 3D bằng bộ luật chung với extension PointSnap annotator",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

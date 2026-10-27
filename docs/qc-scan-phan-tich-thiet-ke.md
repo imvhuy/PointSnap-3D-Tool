@@ -3,6 +3,10 @@
 *Ngày 25/10/2026. Phân tích dựa trên mã trong `pointsnap/` (backend Python ~18 000 dòng) và kiểm tra trực tiếp trên CVAT
 2.75.1 local. Tài liệu đi cùng: [pain point và giải pháp](pain-points-va-giai-phap.md) (phần annotator).*
 
+> **Cập nhật 26/10/2026.** Mentor cho phép chạy dịch vụ QC trên máy trong mạng công ty, nên tầng C được làm trước tầng B,
+> dưới dạng dịch vụ Node `qc/` dùng lại nguyên bộ luật JS của extension (không qua backend Python). Đã làm gì và kết quả
+> đo trên dữ liệu thật: mục 9.
+
 ## 1. Tóm tắt
 
 - Tool QC hiện tại **chạy tốt trên dữ liệu demo nuScenes**, nhưng **chưa dùng được trên CVAT của công ty**. Có ba lý do:
@@ -165,6 +169,9 @@ flowchart TB
   `ManifestFrames`; đọc mỗi frame một lần; bỏ nhánh sửa tự động v1; chọn một kiến trúc detector.
 - **Không** tiếp tục chỉnh ngưỡng song song ở `config.yaml`: ngưỡng và luật chung lấy từ một nguồn (guideline của extension),
   để tránh lệch như mục 3.1.
+- *Thực tế (26/10):* tầng C làm bằng Node (`qc/`) chứ không thêm `CvatFrames` vào Python. Lý do: chạy được ngay bộ luật JS
+  của extension, một nguồn luật duy nhất, không phải dịch luật sang Python. Backend Python vẫn giữ cho `eval`, `learn`,
+  luật camera / ML; chưa chuyển sang `qc/`: `lidar.missing`, camera / ML, gắn cờ `pointsnap_error`, CLI gate cho CI.
 
 ## 6. Lộ trình
 
@@ -193,3 +200,69 @@ flowchart TB
 | CVAT Issues không hiện trên job 3D | Dùng file kết quả QC (giai đoạn 2) |
 | Precision thật thấp hơn trên nhãn chuẩn | Giai đoạn 3 đo trên job của đội; luật nào precision thấp thì hạ xuống Thông tin |
 | Mất phần đã làm ở backend Python | Không xóa; giữ cho đánh giá và tầng C |
+
+## 9. Dịch vụ QC `qc/`: đã làm và kết quả đo (26/10/2026)
+
+### 9.1 Đã làm
+
+- Dịch vụ Node ≥ 20, không thư viện ngoài, chạy trên một máy trong mạng công ty (thử trên localhost). Đọc CVAT bằng access
+  token **chỉ đọc**; token nằm ở máy chủ, không xuống trình duyệt; point cloud đọc xong bỏ, không lưu.
+- Một lượt quét: đọc nhãn → dựng box mọi frame như CVAT (nội suy keyframe) → tải point cloud theo gói frame
+  (`/api/jobs/<id>/data?type=chunk`) → chạy `measure.js` + `checks.js` của extension trên mọi box, thêm `heading.jump`
+  cấp track → gộp theo object + luật (luật theo cặp gộp theo cặp) → coverage (frame thiếu point cloud, box không đo được
+  mặt đất, nhóm luật không kiểm).
+- Trang web: danh sách job, tiến độ, bảng theo luật, lọc, Đúng / Báo nhầm (lưu theo khoá ổn định, quét lại không mất),
+  Mở CVAT tới frame + object, xuất CSV / JSON. Chi tiết chạy: [qc/README.md](../qc/README.md).
+- Nguyên tắc: tool chỉ giảm việc lượt đầu, QC vẫn kiểm cả job. Không dùng model; mỗi mục kèm số đo để QC kiểm lại ngay.
+
+### 9.2 Kết quả trên CVAT local (nhãn chuẩn nuScenes / Argoverse 2)
+
+| Job | Dữ liệu | Frame | Box | Thời gian | Mục lỗi + cảnh báo |
+|---|---|---|---|---|---|
+| 75 | nuScenes scene-1100 | 40 | 906 | 3,5 s | 6 |
+| 74 | nuScenes scene-1077 | 41 | 651 | 2,8 s | 7 |
+| 72 | Argoverse 2 | 40 | 1 515 | 9,6 s | 19 |
+| 69 | nuScenes scene-0061 (công trường) | 39 | 3 333 | 5,0 s | 112 |
+
+Sửa trong `qc/` sau lần chạy đầu: CVAT 2.75 trả 406 cho `Accept: application/json` (dùng `application/vnd.cvat+json`);
+luật `overlap` không được gộp theo cặp nên mỗi cặp thành hai mục (41 cặp thay vì 82 mục); mục theo cặp giữ lời nhắn của
+frame chồng nhiều nhất; `ground.no_evidence` (≈ 1 300 box ở job 69) chuyển thành một dòng coverage.
+
+### 9.3 Từng luật: báo đúng hay nhầm
+
+Kiểm bằng số đo point cloud từng mục (điểm trong footprint so với đáy box, ô mặt đất quanh, độ tin cậy) và mở CVAT bằng
+link của tool (link đúng frame, lọc đúng object). Nhãn chuẩn nên "đúng" ở đây là đúng theo spec, không phải nhãn sai.
+
+| Luật | Mục (4 job) | Kết luận | Nguyên nhân | Đề xuất (luật chung, thuộc extension) |
+|---|---|---|---|---|
+| `overlap` | 41 cặp | Tool tính đúng; khác quy ước | Spec hiện tại: cứ chồng là Lỗi (`overlap.error = 0`). 13 cặp chồng < 1%, 8 cặp 1–5% (rào / nón sát nhau); còn lại rào chồng xe công trình, người – xe lăn (AV2) | Chồng < 2% (vài cm) hạ xuống Thông tin; hỏi mentor cặp người – xe lăn có được chồng |
+| `ground.gap`, `ground.points_below` | 26 | Phần lớn báo nhầm | 20/26 là người / xe máy ở 23–48 m, ≤ 20 điểm trong footprint, độ tin cậy mặt đất 0,30–0,56; ví dụ job 69 track 97 frame 10: chân người chạm đáy box, ô đất quanh thấp hơn 44 cm (đứng trên bệ) | Dùng điểm của chính vật: điểm thấp nhất của vật sát đáy box thì không báo lơ lửng; xa > 25 m cần độ tin cậy cao hơn |
+| `z.range` | 1 | Báo nhầm, lỗi thuật toán | Job 74 frame 6: điểm nhiễu ở z = −24,5 m (phản xạ) thành ô đất; `coarseHeightAt` lấy phân vị 20% của 14 ô nên ra mặt đất −24,5 m | `terrain.js`: bỏ ô đất thấp hơn hẳn mặt đất chung của frame (ví dụ > 5 m) |
+| `fit.empty` | 59 | Đúng theo spec, ít giá trị | nuScenes: nón / rào bị che 1–5 frame, không đánh occluded; AV2: box ở 40–162 m, LiDAR thưa | Không báo ngoài tầm đo đáng tin; QC xem cả tỉ lệ frame rỗng của track |
+| `heading.jump` | 14 | Báo nhầm | Cả 14 ở keyframe đầu / cuối track (chỉ có ngoại suy); 5 là nón giao thông (yaw không có nghĩa) | Đầu / cuối track cần lệch ≥ 3 × ngưỡng (45° với vật cứng), vẫn bắt lật 180° / quay 90°; bỏ nón. Mô phỏng: 14 → 5 |
+| `size.class_range` | 3 | Đúng theo spec | AV2: "car" dài 6,88 m, rộng 2,80 m; bicycle rộng 1,14 m (REGULAR_VEHICLE của AV2 gồm cả xe van) | Giữ |
+
+Chưa đo được precision thật: cần job do đội gán và QC bấm Đúng / Báo nhầm (giai đoạn 3).
+
+### 9.4 Luật chỉ QC, guideline theo phiên bản, giao diện mới (26/10, tối)
+
+- **Luật cấp track** (`qc/lib/trackrules.js`, cho nhãn pre-label: keyframe ở mọi frame, tracker đứt / đổi ID):
+  `track.jump` (box nhảy vị trí / kích thước trong một frame, hoặc track nhảy chỗ), `track.swap` (đổi ID), `track.fragment`
+  (đứt track), `track.duplicate` (vẽ hai lần). Chuyển động xe thu ước lượng từ chính nhãn (RANSAC trên tâm các track), luật
+  chuyển động chỉ báo khi toạ độ xe thu và toạ độ đã bù cùng báo. Trên 4 job: 289 → 8 box báo trên nhãn chuẩn; bắt lỗi cài
+  77–93% tuỳ loại. Số đo và lý do từng bước: [pain-points-va-giai-phap.md](pain-points-va-giai-phap.md) PP-20.
+- **Guideline theo project có phiên bản** (tab Guideline, `qc/lib/rules.js`): ghi đè = phần khác mặc định của guideline
+  extension + nhánh `qc` (ngưỡng luật chỉ QC, luật tắt). Kết quả quét ghi guideline + phiên bản đã dùng. PP-23.
+- **Giao diện**: mức ưu tiên thay cho ĐẠT, phần tool không kiểm hiện ngay đầu, dải frame, thanh theo luật, danh sách một
+  dòng mỗi mục với ↗ / ✓ / ✕. PP-24.
+
+- **Đứt track làm lại (27/10)**: chuyển động xe thu khớp từ point cloud (ICP), ghép đoạn Hungarian, bằng chứng point cloud
+  ở chỗ nối, hình nhìn từ trên trên trang. Nhãn chuẩn 0 báo nhầm, bắt 94% đứt track cài. Chi tiết: PP-20.
+
+### 9.5 Việc tiếp
+
+1. Đổi luật chung theo cột "Đề xuất" ở 9.3 ở phiên extension annotator (luật đổi thì bảng annotator đổi theo), quét lại.
+2. Mở xem 5 mục luật chỉ QC còn lại trên nhãn chuẩn (tách ID thật hay báo nhầm); thử trên job pre-label thật (job 73 và job
+   pre-label của đội) để đo precision.
+3. Danh sách mọi object có ô Đã xem (QC kiểm hết, không chỉ mục tool báo); dùng chung guideline giữa trang QC và extension.
+4. Chạy trên job thật của đội, đo precision theo luật và thời gian QC có / không có tool.
