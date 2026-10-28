@@ -4,11 +4,10 @@
  * hàng đợi lỗi có tìm / lọc, mở CVAT đúng object, trả lời và nộp lại cho QC nghiệm thu.
  */
 (function () {
-  const { api, esc, toast, $, icon, classIcon, fmtTime, PAGE } = window.QC;
+  const { api, esc, toast, $, icon, classIcon, fmtTime, PAGE, ticketObj, ticketUrl: cvatUrl } = window.QC;
   const STATUS = { open: ['Cần sửa', 'error'], returned: ['Trả lại', 'error'], submitted: ['Đã nộp', 'ok'], accepted: ['Đạt', 'ok'] };
   const A = { list: [], job: null, cur: null, q: '', status: new Set(), prio: '', page: 0 };
 
-  const cvatUrl = (t) => `${window.QC.S.status?.cvatUrl || ''}/tasks/${t.taskId}/jobs/${t.jobId}?frame=${t.frames[0]}&type=${t.kind}&serverID=${t.serverId}`;
   const qcNote = (t) => [...t.thread].reverse().find((m) => m.role === 'qc' && m.text)?.text || t.message || '';
   const canSubmit = (t) => t.status === 'open' || t.status === 'returned';
   const mine = () => A.list.filter((t) => t.jobId === A.job);
@@ -67,7 +66,7 @@
       <div class="tbl-wrap"><table class="a-tbl"><thead><tr><th>Lỗi</th><th>Đối tượng</th><th>Frame</th><th>Trạng thái</th><th>Ghi chú QC</th><th>Hành động</th></tr></thead><tbody>
       ${shown.map((x) => `<tr class="${x.id === A.cur ? 'cur' : ''}" data-aid="${x.id}">
         <td><span class="a-id ${x.priority === 'must' ? 'c-err' : 'c-warn'}"><b>${esc(x.id)}</b>${esc(x.title)}</span></td>
-        <td><span class="obj">${icon(classIcon(x.label))}<b>${esc(x.label)} #${x.cvatId ?? x.serverId}</b></span></td>
+        <td><span class="obj">${icon(classIcon(x.label))}<b>${esc(ticketObj(x))}</b></span></td>
         <td class="num">${x.frames[0]}–${x.frames[1]}</td>
         <td><span class="pill ${STATUS[x.status][1]}">${STATUS[x.status][0]}</span></td>
         <td class="muted a-note">${esc(qcNote(x))}</td>
@@ -79,7 +78,7 @@
         <span class="pg"><button class="btn sm" data-apage="${A.page - 1}" ${A.page ? '' : 'disabled'}>Trước</button><button class="btn sm" data-apage="${A.page + 1}" ${A.page + 1 < pages ? '' : 'disabled'}>Tiếp</button></span></div></div>`;
 
     const cur = t ? `<div class="card"><div class="card-h"><h2>Lỗi đang mở</h2><span class="right pill outline">${esc(t.id)}</span></div>
-      <div class="obj">${icon(classIcon(t.label))}<div><b>${esc(t.label)} #${t.cvatId ?? t.serverId}</b><div class="muted">Frame ${t.frames[0]}–${t.frames[1]}</div></div></div>
+      <div class="obj">${icon(classIcon(t.label))}<div><b>${esc(ticketObj(t))}</b><div class="muted">Frame ${t.frames[0]}–${t.frames[1]}</div></div></div>
       <div class="chips"><span class="pill ${t.priority === 'must' ? 'error' : 'warning'}">${esc(t.title)}</span><span class="pill ${STATUS[t.status][1]}">${STATUS[t.status][0]}</span>
         <span class="pill outline">${t.priority === 'must' ? 'Ưu tiên cao' : 'Cảnh báo'}</span></div>
       <div class="a-k">TRAO ĐỔI VỚI QC</div>

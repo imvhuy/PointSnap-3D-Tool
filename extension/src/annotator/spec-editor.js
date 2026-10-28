@@ -21,34 +21,38 @@
   const CSS = `
     :host { all: initial; }
     .back { position: fixed; inset: 0; z-index: 2147483001; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; }
-    .dlg { width: min(780px, 96vw); max-height: 88vh; display: flex; flex-direction: column; background: #111827; color: #e5e7eb;
-      border: 1px solid #374151; border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.5); font: 12.5px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-    .head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #1f2937; }
-    .head b { font-size: 13.5px; } .muted { color: #9ca3af; } .warn { color: #fbbf24; } .bad { color: #f87171; } .good { color: #86efac; }
+    .dlg { width: min(780px, 96vw); max-height: 88vh; display: flex; flex-direction: column; background: #fff; color: rgba(0,0,0,.88);
+      border: 0; border-radius: 8px; box-shadow: 0 6px 16px rgba(0,0,0,.08), 0 3px 6px -4px rgba(0,0,0,.12), 0 9px 28px 8px rgba(0,0,0,.05); font: 12.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .head { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid #f0f0f0; }
+    .head b { font-size: 14px; } .muted { color: rgba(0,0,0,.45); } .warn { color: #d46b08; } .bad { color: #cf1322; } .good { color: #389e0d; }
     .head .tools { margin-left: auto; display: flex; gap: 6px; align-items: center; }
-    button { font: inherit; font-weight: 600; border: 1px solid #374151; background: #1f2937; color: #e5e7eb; border-radius: 5px; padding: 3px 9px; cursor: pointer; }
-    button:hover:not(:disabled) { border-color: #3b82f6; background: #273449; } button:disabled { opacity: .45; cursor: default; }
-    button.primary { background: #2563eb; border-color: #2563eb; color: #fff; } button.x { border: 0; background: none; font-size: 15px; padding: 0 4px; }
+    button { font: inherit; border: 1px solid #d9d9d9; background: #fff; color: rgba(0,0,0,.88); border-radius: 6px; padding: 3px 12px; cursor: pointer; box-shadow: 0 2px 0 rgba(0,0,0,.02); }
+    button:hover:not(:disabled) { border-color: #4096ff; color: #4096ff; } button:disabled { color: rgba(0,0,0,.25); background: #f5f5f5; cursor: not-allowed; }
+    button:focus-visible { outline: 3px solid #91caff; outline-offset: 1px; }
+    button.primary { background: #1677ff; border-color: #1677ff; color: #fff; } button.primary:hover:not(:disabled) { background: #4096ff; color: #fff; }
+    button.x { border: 0; background: none; box-shadow: none; color: rgba(0,0,0,.45); font-size: 15px; padding: 0 4px; }
     .main { display: grid; grid-template-columns: 150px minmax(0, 1fr); min-height: 0; flex: 1; }
-    .nav { border-right: 1px solid #1f2937; padding: 6px; overflow-y: auto; }
-    .nav button { display: block; width: 100%; text-align: left; border: 0; background: none; font-weight: 500; padding: 5px 8px; }
-    .nav button.on { background: #1e3a8a; color: #dbeafe; } .nav hr { border: 0; border-top: 1px solid #1f2937; margin: 6px 0; }
+    .nav { border-right: 1px solid #f0f0f0; padding: 6px; overflow-y: auto; }
+    .nav button { display: block; width: 100%; text-align: left; border: 0; background: none; box-shadow: none; padding: 5px 10px; border-radius: 6px; }
+    .nav button:hover:not(:disabled) { background: rgba(0,0,0,.04); color: inherit; }
+    .nav button.on { background: #e6f4ff; color: #1677ff; } .nav hr { border: 0; border-top: 1px solid #f0f0f0; margin: 6px 0; }
     .pane { padding: 10px 14px; overflow-y: auto; display: grid; gap: 10px; align-content: start; }
     .row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
     table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    td { padding: 3px 6px 3px 0; vertical-align: middle; } th { text-align: left; font-weight: 500; color: #9ca3af; padding: 0 6px 2px 0; }
-    input, select, textarea { font: inherit; color: #e5e7eb; background: #0b1220; border: 1px solid #374151; border-radius: 5px; padding: 3px 6px; box-sizing: border-box; }
-    input.range { width: 100%; } input.num { width: 64px; } input.invalid { border-color: #ef4444; } input.off { border-color: #f59e0b; }
+    td { padding: 3px 6px 3px 0; vertical-align: middle; } th { text-align: left; font-weight: 500; color: rgba(0,0,0,.45); padding: 0 6px 2px 0; }
+    input, select, textarea { font: inherit; color: rgba(0,0,0,.88); background: #fff; border: 1px solid #d9d9d9; border-radius: 6px; padding: 3px 8px; box-sizing: border-box; }
+    input:hover, select:hover, textarea:hover { border-color: #4096ff; } input:focus, select:focus, textarea:focus { border-color: #4096ff; outline: 0; box-shadow: 0 0 0 2px rgba(5,145,255,.1); }
+    input.range { width: 100%; } input.num { width: 64px; } input.invalid { border-color: #ff4d4f; background: #fff2f0; } input.off { border-color: #faad14; background: #fffbe6; }
     textarea { width: 100%; min-height: 44px; resize: vertical; }
     label.chk { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
-    .sep { border-top: 1px solid #1f2937; padding-top: 10px; }
-    .foot { display: flex; gap: 8px; align-items: center; padding: 7px 12px; border-top: 1px solid #1f2937; min-height: 18px; }
+    .sep { border-top: 1px solid #f0f0f0; padding-top: 10px; }
+    .foot { display: flex; gap: 8px; align-items: center; padding: 10px 16px; border-top: 1px solid #f0f0f0; min-height: 18px; }
     .pairs td:last-child { width: 28px; }
     /* Màn hình hẹp: danh sách class thành một hàng cuộn ngang, cột Job ẩn (xem qua tooltip tên dòng), tiêu đề xuống dòng. */
     @media (max-width: 600px) {
       .head { flex-wrap: wrap; } .head .tools { margin-left: 0; width: 100%; } .head .tools .x { margin-left: auto; }
       .main { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-      .nav { display: flex; gap: 4px; overflow-x: auto; border-right: 0; border-bottom: 1px solid #1f2937; scrollbar-width: thin; scrollbar-color: #374151 transparent; }
+      .nav { display: flex; gap: 4px; overflow-x: auto; border-right: 0; border-bottom: 1px solid #f0f0f0; scrollbar-width: thin; scrollbar-color: #d9d9d9 transparent; }
       .nav button { width: auto; white-space: nowrap; } .nav hr { display: none; }
       .job { display: none; } th.label, td.label { width: 92px !important; } .pane { padding: 8px 10px; }
     }

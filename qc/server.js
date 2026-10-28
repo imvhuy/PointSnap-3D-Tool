@@ -22,7 +22,9 @@ const config = loadConfig();
 const store = new Store(config.home);
 const client = config.cvatToken ? new CvatClient({ url: config.cvatUrl, token: config.cvatToken }) : null;
 const PUBLIC = path.join(__dirname, 'public');
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
+const EXTENSION = path.join(__dirname, '..', 'extension');
+const ANNOTATOR_SCRIPTS = require('../extension/manifest.json').content_scripts.find((c) => c.world === 'MAIN').js;
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
 const auth = new Auth({ cvatUrl: config.cvatUrl, qcUsers: config.qcUsers, store });
 
 // ------------------------------------------------------------------ hàng đợi quét (một job một lúc)
@@ -188,6 +190,21 @@ async function ticketRoute(req, p, url, me) {
     }
     return { body: made };
   }
+  // Phiếu "thiếu vật": QC thấy vật chưa có box, ghi theo frame + vị trí, không gắn object nào. Job không hoàn thành được tới khi
+  // nghiệm thu phiếu này.
+  if (req.method === 'POST' && p === '/api/tickets/missing') {
+    const { jobId, assignee, label = '', frame, where = '', text = '' } = await readJson(req);
+    const scan = store.scan(Number(jobId));
+    if (!scan) return { status: 400, body: { error: 'Job chưa quét' } };
+    if (!assignee) return { status: 400, body: { error: 'Cần người nhận' } };
+    if (!Number.isInteger(frame) || frame < scan.job.start || frame > scan.job.stop) return { status: 400, body: { error: `Frame phải trong ${scan.job.start}–${scan.job.stop}` } };
+    const lbl = String(label).trim().slice(0, 60) || 'vật', at = String(where).trim().slice(0, 200), msg = String(text).trim().slice(0, 500);
+    const t = store.addTicket({ jobId: scan.job.id, taskId: scan.job.taskId, taskName: scan.job.taskName, objKey: null, kind: 'missing', serverId: null,
+      cvatId: null, label: lbl, frames: [frame, frame], rule: 'qc.missing', title: 'Thiếu box', where: at, message: [at, msg].filter(Boolean).join(' · '),
+      priority: 'must', assignee: String(assignee), status: 'open', createdBy: me.username, fingerprint: null,
+      thread: [note(me, `Frame ${frame}: thiếu box ${lbl}${at ? ` ở ${at}` : ''}${msg ? `. ${msg}` : ''}`, 'assign')] });
+    return { body: t };
+  }
   const m = p.match(/^\/api\/tickets\/(BUG-\d+)\/(comment|submit|accept|return)$/);
   if (req.method === 'POST' && m) {
     const [, id, act] = m, { text = '' } = await readJson(req);
@@ -197,7 +214,7 @@ async function ticketRoute(req, p, url, me) {
     if ((act === 'accept' || act === 'return') && me.role !== 'qc') return { status: 403, body: { error: 'Chỉ QC nghiệm thu' } };
     const next = { submit: 'submitted', accept: 'accepted', return: 'returned' }[act];
     // Nộp / nghiệm thu: đọc lại object trên CVAT để biết annotator có sửa thật không, và để lần quét sau không bắt duyệt lại.
-    const fp = act === 'submit' || act === 'accept' ? await liveFingerprint(t).catch(() => null) : null;
+    const fp = (act === 'submit' || act === 'accept') && t.kind !== 'missing' ? await liveFingerprint(t).catch(() => null) : null;
     const updated = store.updateTicket(id, (x) => {
       if (next) x.status = next;
       if (act === 'submit') x.unchanged = !!fp && !!x.fingerprint && fp === x.fingerprint;
@@ -223,6 +240,14 @@ async function liveFingerprint(t) {
 function cleanIssue(x) {
   return { tags: (Array.isArray(x.tags) ? x.tags : []).map((t) => String(t).slice(0, 40)).filter(Boolean).slice(0, 6),
     frame: Number.isInteger(x.frame) ? x.frame : null, text: String(x.text || '').slice(0, 500), finding: x.finding ? String(x.finding).slice(0, 200) : null };
+}
+
+/** Lần quét trước, rút gọn để so trước / sau theo object ở vòng duyệt lại: khoảng frame, số box, dấu vân tay, mục tool báo. */
+function prevView(prev) {
+  if (!prev?.objects) return null;
+  return { startedAt: prev.startedAt,
+    objects: Object.fromEntries(prev.objects.map((o) => [o.key, { first: o.first, last: o.last, boxes: o.boxes, fingerprint: o.fingerprint }])),
+    findings: prev.findings.filter((f) => f.severity !== 'info').map((f) => ({ key: f.key, objKey: f.objKey, other: f.other || null, title: f.title, short: f.short })) };
 }
 
 /** Số object đã duyệt đúng theo nội dung hiện tại. */
@@ -252,10 +277,14 @@ async function route(req, res) {
 
   // Trang dùng chung merge / diff guideline với extension.
   if (req.method === 'GET' && p === '/vendor/guideline.js') return send(res, 200, fs.readFileSync(require.resolve('../extension/src/annotator/guideline.js')), TYPES['.js']);
+  // Bảng annotator cho plugin trong CVAT: đúng các script MAIN world của extension, theo thứ tự manifest, gộp một file.
+  if (req.method === 'GET' && p === '/annotator-panel.js') return send(res, 200, ANNOTATOR_SCRIPTS.map((f) => fs.readFileSync(path.join(EXTENSION, f), 'utf8')).join(';\n'), TYPES['.js']);
   if (req.method === 'GET' && !p.startsWith('/api/')) {
     const file = path.join(PUBLIC, p === '/' ? 'index.html' : path.normalize(p).replace(/^([\\/])+/, ''));
     if (!file.startsWith(PUBLIC + path.sep) || !fs.existsSync(file)) return send(res, 404, { error: 'Không có' });
-    return send(res, 200, fs.readFileSync(file), TYPES[path.extname(file)] || 'application/octet-stream');
+    // ảnh / font tĩnh cho cache để ảnh xe của hiệu ứng khởi động nạp trước được (no-store làm trình duyệt tải lại mỗi lần)
+    const cache = /^\/(assets|fonts)\//.test(p) ? { 'Cache-Control': 'public, max-age=86400' } : {};
+    return send(res, 200, fs.readFileSync(file), TYPES[path.extname(file)] || 'application/octet-stream', cache);
   }
   // Chống trang khác gửi lệnh tới dịch vụ trên localhost: mọi lệnh ghi cần header riêng (trình duyệt không cho trang
   // khác gửi header này nếu không qua CORS, mà dịch vụ không mở CORS).
@@ -276,7 +305,11 @@ async function route(req, res) {
     }
   }
   if (req.method === 'POST' && p === '/api/logout') return send(res, 200, { ok: true }, undefined, { 'Set-Cookie': auth.close(req) });
-  const me = auth.session(req) || await auth.fromCvatSession(req);
+  // Qua nginx của CVAT (plugin trong trang CVAT): người dùng là tài khoản đang đăng nhập CVAT, không lấy phiên web QC.
+  // Cookie không phân biệt cổng, nên phiên đăng nhập web ở localhost:8766 cũng tới localhost:8080 và từng làm annotator
+  // trong CVAT bị nhận là QC đã đăng nhập web. Header giả mạo không lợi gì: danh tính vẫn do CVAT xác nhận từ sessionid.
+  const viaCvat = req.headers['x-forwarded-prefix'] === '/pointsnap-qc';
+  const me = viaCvat ? await auth.fromCvatSession(req) : auth.session(req) || await auth.fromCvatSession(req);
   if (req.method === 'GET' && p === '/api/me') return me ? send(res, 200, { username: me.username, name: me.name, role: me.role }) : send(res, 401, { error: 'Chưa đăng nhập' });
   if (p !== '/api/status' && !me) return send(res, 401, { error: 'Chưa đăng nhập' });
 
@@ -320,7 +353,8 @@ async function route(req, res) {
       // Guideline đã đổi sau lần quét thì trang nhắc quét lại.
       const specNow = now && { name: now.name, version: now.version, project: now.project };
       return send(res, 200, { run: publicRun(runs.get(jobId)), result, reviews: store.reviews(jobId), specNow,
-        objectReviews: store.objectReviews(jobId), completion: store.completion(jobId) });
+        objectReviews: store.objectReviews(jobId), completion: store.completion(jobId), prev: prevView(store.prevScan(jobId)),
+        missing: store.tickets().filter((t) => t.jobId === jobId && t.kind === 'missing') });
     }
     // Duyệt object: lưu kèm dấu vân tay lúc duyệt, để track bị sửa sau đó tự về "Chưa xem".
     if (req.method === 'POST' && action === '/objects') {
@@ -344,8 +378,8 @@ async function route(req, res) {
       if (left.length) return send(res, 409, { error: `Còn ${left.length} object chưa duyệt` });
       const unsent = result.objects.filter((o) => seen[o.key].status === 'returned' && !seen[o.key].ticket).length;
       if (unsent) return send(res, 409, { error: `Còn ${unsent} lỗi chưa gửi annotator` });
-      const pending = store.tickets().filter((t) => t.jobId === jobId && t.status !== 'accepted').length;
-      if (pending) return send(res, 409, { error: `Còn ${pending} phiếu sửa lỗi chưa nghiệm thu` });
+      const open = store.tickets().filter((t) => t.jobId === jobId && t.status !== 'accepted'), missing = open.filter((t) => t.kind === 'missing').length;
+      if (open.length) return send(res, 409, { error: `Còn ${open.length} phiếu sửa lỗi chưa nghiệm thu${missing ? ` (${missing} phiếu thiếu vật)` : ''}` });
       const done = { at: new Date().toISOString(), by: String(by).slice(0, 60), scanAt: result.startedAt, objects: result.objects.length };
       store.setCompletion(jobId, done);
       return send(res, 200, done);
@@ -409,7 +443,23 @@ async function route(req, res) {
 }
 
 const server = http.createServer((req, res) => {
-  route(req, res).catch((error) => send(res, error.status || 500, { error: error.message }));
+  route(req, res).catch((error) => {
+    try {
+      send(res, error.status || 500, { error: error.message });
+    } catch (_) {}
+  });
+});
+
+server.on('error', (err) => {
+  console.error('Server error:', err);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
 });
 
 if (require.main === module) {

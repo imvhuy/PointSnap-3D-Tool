@@ -13,6 +13,15 @@ hay đăng nhập riêng.
 |---|---|
 | QC (tài khoản trong `QC_USERS`) | Quét job, tiến độ x/N, xem lần lượt mọi object (lỗi tool báo lên đầu, kèm mục tool báo), OK / Trả lỗi / Báo nhầm (Alt+1/2/3, Alt+J bỏ qua), gửi lỗi cho người được giao job, nghiệm thu / trả lại phiếu, hoàn thành job. Trả lỗi lấy **frame đang mở trong CVAT**. QC vẫn duyệt đủ 100% object |
 | Annotator | Lỗi QC trả về của job đang mở: tới box, đọc lời QC, Nộp. Nộp bị chặn nếu còn thay đổi chưa Lưu, và có cảnh báo nếu object chưa đổi |
+| Mọi người | Bảng annotator của extension (mặt đất, kiểm box, dải track, sửa cả track, spec), không cần cài extension. Spec đọc / lưu ở dịch vụ QC theo project (cả nhóm dùng chung; chỉ QC lưu được) |
+
+Bảng annotator là đúng các script MAIN world của extension: dịch vụ gộp theo thứ tự `extension/manifest.json` ở
+`/pointsnap-qc/annotator-panel.js`, plugin nạp file đó và trả lời yêu cầu cấu hình / lưu spec của bảng thay cho
+`settings-bridge.js`. Máy nào vẫn cài extension thì chỉ một bảng chạy, và spec lấy từ dịch vụ QC.
+
+Cả bảng annotator lẫn khung QC nằm trong tab **PointSnap** (có logo) ở thanh bên phải, cạnh Objects / Labels, không nổi đè
+lên canvas. CVAT chưa có chỗ cắm plugin cho thanh bên nên plugin chèn tab cùng kiểu antd vào DOM; tab đang mở được nhớ
+trong trình duyệt.
 
 Code: [qc/public/plugin.js](../qc/public/plugin.js), [qc/public/plugin.css](../qc/public/plugin.css). Phía dịch vụ:
 `Auth.fromCvatSession` trong [qc/lib/auth.js](../qc/lib/auth.js) hỏi CVAT `/api/users/self` bằng đúng cookie phiên, nhớ 5

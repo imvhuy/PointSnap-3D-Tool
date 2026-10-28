@@ -1,7 +1,7 @@
 'use strict';
 /*
- * Trang QC theo thiết kế Figma: Duyệt Job (kết quả quét tự động) và Mọi Object & Tiến độ (QC duyệt hết mọi object, có
- * "Xem tiếp" và phím tắt). Guideline ở spec.js. Tool chỉ xếp chỗ cần xem trước; QC vẫn duyệt đủ 100% object.
+ * Trang QC (docs/qc-giao-dien-ke-hoach.md): Duyệt job (hàng đợi object + object đang xem, phím 1/2/3/J/K) và Tổng quan
+ * (phân tích, mục tool báo, bảng mọi object). Guideline ở spec.js. Tool chỉ xếp chỗ cần xem trước; QC vẫn duyệt đủ 100% object.
  */
 
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -13,7 +13,7 @@ const store = { get: (k, d) => { try { return localStorage.getItem(k) ?? d; } ca
 
 const S = { view: 'review', status: null, jobs: [], jobId: null, detail: null, poll: null, open: new Set(), evidence: new Map(),
   filter: { sev: 'real', rule: '', frame: null, text: '', page: 0 },
-  obj: { tab: 'all', label: '', text: '', page: 0, walk: null, cur: null } };
+  obj: { tab: 'all', only: '', label: '', text: '', page: 0, walk: null, cur: null } };
 
 async function api(path, options = {}) {
   const res = await fetch(path, { ...options, headers: { 'Content-Type': 'application/json', 'X-PointSnap-QC': '1', ...(options.headers || {}) } });
@@ -36,6 +36,10 @@ function paintWidths(root = document) { for (const el of root.querySelectorAll('
 const icon = (id, cls = 'ic') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${id}"/></svg>`;
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }) : '');
 const frameRange = (a, b) => (a === b ? `Frame ${a}` : `Frame ${a}–${b}`);
+/** Tên vật của phiếu; phiếu thiếu vật không gắn object nào. */
+const ticketObj = (t) => (t.kind === 'missing' ? `${t.label} · thiếu box` : `${t.label} #${t.cvatId ?? t.serverId}`);
+/** Link CVAT của phiếu; phiếu thiếu vật chỉ mở đúng frame. */
+const ticketUrl = (t, frame = t.frames[0]) => `${S.status?.cvatUrl || ''}/tasks/${t.taskId}/jobs/${t.jobId}?frame=${frame}${t.kind === 'missing' ? '' : `&type=${t.kind}&serverID=${t.serverId}`}`;
 
 function classIcon(label = '') {
   const l = label.toLowerCase();
@@ -51,17 +55,22 @@ function classIcon(label = '') {
 
 // ------------------------------------------------------------------ giao diện sáng / tối, người duyệt
 
+/** Tô mọi nút .theme (đầu trang và trang đăng nhập) theo giao diện hiện tại. */
 function paintTheme() {
   const t = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  $('#theme').classList.toggle('is-dark', t === 'dark');
-  $('#theme').setAttribute('aria-pressed', String(t === 'dark'));
+  for (const b of document.querySelectorAll('.theme')) {
+    b.classList.toggle('is-dark', t === 'dark');
+    b.setAttribute('aria-pressed', String(t === 'dark'));
+  }
 }
 function initChrome() {
   const saved = store.get('qc-theme', '');
   if (saved) document.documentElement.dataset.theme = saved;
   paintTheme();
-  $('#theme').addEventListener('click', () => {
-    const next = $('#theme').classList.contains('is-dark') ? 'light' : 'dark';
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('.theme');
+    if (!b) return;
+    const next = b.classList.contains('is-dark') ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
     store.set('qc-theme', next);
     paintTheme();
@@ -77,7 +86,7 @@ function initChrome() {
 // ------------------------------------------------------------------ đăng nhập, vai trò
 
 const TABS = {
-  qc: [['review', 'Duyệt Job'], ['objects', 'Mọi Object & Tiến độ'], ['tickets', 'Giao việc Lỗi'], ['spec', 'Guideline']],
+  qc: [['review', 'Duyệt job'], ['overview', 'Tổng quan'], ['tickets', 'Giao việc Lỗi'], ['spec', 'Guideline']],
   annotator: [['mine', 'Việc của tôi']],
 };
 
@@ -148,14 +157,15 @@ function renderJobs() {
   renderSession();
 }
 
+/** Cột trái, dưới danh sách job: thông tin của job đang chọn (guideline, lần quét, lỗi chưa gửi). */
 function renderSession() {
-  const r = S.detail?.result;
-  $('#session').innerHTML = `<h4>PHIÊN KIỂM DUYỆT</h4><dl>
-    <dt>Nguồn dữ liệu</dt><dd>LiDAR · 3D Cuboid</dd>
-    ${r ? `<dt>Chuỗi frame</dt><dd>${r.job.start}–${r.job.stop} / ${r.summary.frames} frame</dd><dt>Guideline</dt><dd>${esc(r.spec?.name || 'Mặc định')} v${r.spec?.version || 0}</dd>` : ''}
-    <dt>Chính sách QC</dt><dd>100% object</dd></dl>
-    <p>Mọi box đều quan trọng. Tool chỉ xếp chỗ cần xem trước; QC duyệt toàn bộ object trước khi hoàn thành job.</p>
-    <div class="sync"><span class="dot ok"></span>${S.status?.ok ? `Đã đồng bộ · ${new Date().toLocaleTimeString('vi-VN')}` : 'Chưa kết nối'}</div>`;
+  const r = S.detail?.result, unsent = r?.objects ? drafts().length : 0;
+  $('#session').innerHTML = `${r ? `<h4>JOB #${S.jobId}</h4><dl>
+    <dt>Guideline</dt><dd>${esc(r.spec?.name || 'Mặc định')} v${r.spec?.version || 0}</dd>
+    <dt>Lần quét cuối</dt><dd>${fmtTime(r.startedAt)}</dd>
+    <dt>Frame</dt><dd>${r.job.start}–${r.job.stop}</dd>
+    <dt>Lỗi chưa gửi</dt><dd class="${unsent ? 'c-err' : ''}">${unsent}</dd></dl>` : ''}
+    <div class="sync"><span class="dot ${S.status?.ok ? 'ok' : ''}"></span>${S.status?.ok ? `Đã đồng bộ · ${new Date().toLocaleTimeString('vi-VN')}` : 'Chưa kết nối'}</div>`;
 }
 
 // ------------------------------------------------------------------ một job
@@ -163,7 +173,7 @@ function renderSession() {
 async function openJob(jobId) {
   if (S.jobId !== jobId) {
     S.filter = { sev: 'real', rule: '', frame: null, text: '', page: 0 };
-    S.obj = { ...S.obj, tab: 'all', label: '', text: '', page: 0, walk: null, cur: null };
+    S.obj = { ...S.obj, tab: 'all', only: '', label: '', text: '', page: 0, walk: null, cur: null };
     S.open.clear();
   }
   S.jobId = jobId;
@@ -207,7 +217,7 @@ function objState(o) {
 function headActions(result, run) {
   const info = jobInfo(), running = run && ['queued', 'running'].includes(run.state);
   const cvat = info.taskId ? `${S.status.cvatUrl}/tasks/${info.taskId}/jobs/${S.jobId}` : null;
-  return `${running ? '<button class="btn" data-act="cancel">Dừng</button>' : `<button class="btn primary" data-act="scan">${result ? 'Quét lại' : 'Quét job'}</button>`}
+  return `${running ? '<button class="btn" data-act="cancel">Dừng</button>' : `<button class="btn ${result ? '' : 'primary'}" data-act="scan">${result ? 'Quét lại' : 'Quét job'}</button>`}
     ${cvat ? `<a class="btn" href="${esc(cvat)}" target="pointsnap-cvat" rel="noopener">CVAT ↗</a>` : ''}
     ${result ? `<a class="btn" href="/api/jobs/${S.jobId}/export.csv" title="Mở bằng Excel">CSV</a><a class="btn" href="/api/jobs/${S.jobId}/export.json">JSON</a>` : ''}`;
 }
@@ -282,8 +292,10 @@ function rulesHtml(result) {
   return `<div class="card"><div class="card-h"><h2>Phân bố theo quy tắc</h2><span class="right hint">${result.findings.length} phát hiện · ${rows.length} quy tắc</span></div><div class="rules">
     ${rows.map((r) => {
       const e = by(r.rule, 'error'), w = by(r.rule, 'warning'), i = by(r.rule, 'info'), wd = (x) => Math.round((x / max) * 100);
+      // Độ chính xác của luật theo kết luận của QC (PP-18): bao nhiêu mục là lỗi thật, bao nhiêu báo nhầm.
+      const v = (x) => result.findings.filter((f) => f.rule === r.rule && S.detail.reviews[f.key]?.verdict === x).length, ok = v('confirmed'), bad = v('false_alarm');
       return `<button class="rule ${S.filter.rule === r.rule ? 'sel' : ''}" data-rule="${esc(r.rule)}" title="${esc(r.rule)}">
-        <span class="t">${esc(r.title)}${twice(r.title) ? ` <span class="muted">${esc(r.rule)}</span>` : ''}</span>
+        <span class="t">${esc(r.title)}${twice(r.title) ? ` <span class="muted">${esc(r.rule)}</span>` : ''}${ok + bad ? `<span class="prec" title="Theo kết luận của QC">${ok} lỗi thật · ${bad} báo nhầm · đúng ${Math.round((ok / (ok + bad)) * 100)}%</span>` : ''}</span>
         <span class="split">${e ? `<i class="e" data-w="${wd(e)}"></i>` : ''}${w ? `<i class="w" data-w="${wd(w)}"></i>` : ''}${i ? `<i class="n" data-w="${wd(i)}"></i>` : ''}</span>
         <span class="n">${r.groups}</span></button>`;
     }).join('')}</div></div>`;
@@ -317,11 +329,10 @@ function findingsHtml(result, reviews) {
       <td><span class="obj"><span class="dot ${x.severity}"></span><span><b>${esc(x.label)} ${esc(me)}</b>${x.other ? `<span class="with">↔ ${esc(x.otherLabel || '')} ${esc(them)}</span>` : ''}</span></span></td>
       <td class="what" data-toggle="${esc(x.key)}" title="Bấm để xem chi tiết"><b>${esc(x.title)}</b> <span class="muted">· ${esc(short)}</span></td>
       <td class="num">${x.frames.length} frame<span class="two">${frameRange(x.frames[0], x.frames[x.frames.length - 1])}</span></td>
-      <td>${r === 'confirmed' ? '<span class="st ok">✓ Đúng</span>' : r === 'false_alarm' ? '<span class="st none">✕ Báo nhầm</span>' : '<span class="faint">—</span>'}</td>
+      <td>${r === 'confirmed' ? '<span class="st ret">● Lỗi thật</span>' : r === 'false_alarm' ? '<span class="st none">○ Báo nhầm</span>' : '<span class="faint">—</span>'}</td>
       <td><span class="ops"><a class="lnk" href="${esc(cvatLink(x.frames[0], x.other ? null : x))}" target="pointsnap-cvat" rel="noopener" title="${esc(openTitle)}">Mở CVAT ↗</a>
-        <button class="lnk" data-assign="${esc(x.objKey)}" data-finding="${esc(x.key)}" title="Ghi lỗi cho object này; gửi annotator một lượt ở Mọi Object">✕ Trả lỗi</button>
-        <button class="act yes ${r === 'confirmed' ? 'on' : ''}" data-verdict="confirmed" data-key="${esc(x.key)}" aria-pressed="${r === 'confirmed'}" title="Đúng: lỗi thật" aria-label="Đúng">✓</button>
-        <button class="act no ${r === 'false_alarm' ? 'on' : ''}" data-verdict="false_alarm" data-key="${esc(x.key)}" aria-pressed="${r === 'false_alarm'}" title="Báo nhầm" aria-label="Báo nhầm">✕</button></span></td></tr>`;
+        <button class="btn sm" data-assign="${esc(x.objKey)}" data-finding="${esc(x.key)}" title="Lỗi thật: ghi lỗi cho object này, gửi annotator một lượt ở bước Gửi lỗi">Trả lỗi</button>
+        <button class="btn sm ghost ${r === 'false_alarm' ? 'on' : ''}" data-verdict="false_alarm" data-key="${esc(x.key)}" aria-pressed="${r === 'false_alarm'}" title="Tool báo nhầm: không phải lỗi">Báo nhầm</button></span></td></tr>`;
     if (open) {
       html += `<tr class="more"><td></td><td colspan="4"><div class="detail">${esc(x.message)}</div>
         ${x.other ? `<div class="solo">Chỉ hiện một object: <a href="${esc(cvatLink(x.frames[0], x))}" target="pointsnap-cvat" rel="noopener">${esc(x.label)} ${esc(me)} · frame ${x.frames[0]} ↗</a>
@@ -336,7 +347,7 @@ function findingsHtml(result, reviews) {
       <button class="lnk c-err" data-sev="error">Lỗi (${count('error')})</button><button class="lnk c-warn" data-sev="warning">Cảnh báo (${count('warning')})</button>
       <button class="lnk" data-sev="real">Cả hai</button><button class="lnk muted" data-sev="info">Thông tin (${count('info')})</button>
       <span class="right tbl-tools">${ruleChip}<input type="search" data-filter="text" placeholder="Tìm mã CVAT / class…" value="${esc(f.text)}" aria-label="Tìm"></span></div>
-    <div class="tbl-wrap"><table><thead><tr><th>Đối tượng</th><th>Mô tả lỗi</th><th>Frame vi phạm</th><th>Xác minh QC</th><th>Thao tác</th></tr></thead>
+    <div class="tbl-wrap"><table><thead><tr><th>Đối tượng</th><th>Mô tả lỗi</th><th>Frame vi phạm</th><th>QC kết luận</th><th>Thao tác</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="5" class="muted">Không có mục nào.</td></tr>'}</tbody></table></div>
     ${pager(page, pages, shown.length, 'mục', 'f-page')}</div>`;
 }
@@ -349,41 +360,37 @@ function pager(page, pages, total, unit, act) {
     : `<button class="${i === page ? 'on' : ''}" data-${act}="${i}" aria-label="Trang ${i + 1}">${i + 1}</button>`)).join('') : ''}</span></div>`;
 }
 
-function renderReview() {
-  const { run, result, reviews } = S.detail, info = jobInfo();
-  const title = 'Duyệt Job', sub = result ? `${esc(result.job.taskName)} · Kết quả quét LiDAR 3D Bounding Cuboid<br>Lần quét cuối: ${fmtTime(result.startedAt)} · ${result.seconds} s · guideline ${esc(result.spec?.name || 'Mặc định')} v${result.spec?.version || 0}`
-    : `${esc(info.taskName || '')} · ${info.frames || '?'} frame`;
-  let html = pageHead('QUÉT LỖI TỰ ĐỘNG', title, sub, result, run);
-  if (!result) { $('#main').innerHTML = `${html}<div class="empty">Chưa quét. Bấm <b>Quét job</b>.</div>`; paintWidths(); return; }
-  const s = result.summary, real = result.findings.filter((x) => x.severity !== 'info');
-  const done = real.filter((x) => reviews[x.key]).length, objs = result.objects || [];
-  const okObjs = objs.filter((o) => ['ok', 'returned'].includes(objState(o))).length;
-  const [cls, label] = PRIO[s.gate.verdict];
-  html += `<div class="tiles">
-    <div class="tile prio ${cls}" title="Xếp thứ tự xem, không phải kết luận"><div class="k">Mức ưu tiên</div><div class="v">${label}</div><div class="s">${s.boxes} box / ${objs.length} object</div></div>
-    <div class="tile"><div class="k">Số lỗi</div><div class="v c-err num">${s.errorGroups}</div><div class="s">${s.errorBoxesPer100} box / 100</div></div>
-    <div class="tile"><div class="k">Cảnh báo</div><div class="v c-warn num">${s.warningGroups}</div><div class="s">${s.warningBoxesPer100} box / 100</div></div>
-    <div class="tile"><div class="k">Đã xác minh mục tool báo</div><div class="v num ${done === real.length ? 'c-ok' : ''}">${done}/${real.length}<small>${real.length ? Math.round((done / real.length) * 100) : 100}%</small></div>
-      <div class="s">Đúng / Báo nhầm cho từng mục</div><div class="bar ok"><i data-w="${real.length ? Math.round((done / real.length) * 100) : 100}"></i></div></div></div>
-    <div class="note"><span class="pill ${okObjs === objs.length ? 'ok' : 'accent'}">${okObjs}/${objs.length} object đã duyệt</span>
-      Mục tool báo chỉ là chỗ cần xem trước. Job chỉ hoàn thành khi QC duyệt đủ 100% object. <button class="lnk" data-view-go="objects">Mọi Object &amp; Tiến độ ›</button></div>`;
-  html += heatHtml(result) + `<div class="grid-2">${rulesHtml(result)}${scopeHtml(result)}</div>` + findingsHtml(result, reviews);
-  const keep = document.activeElement?.dataset?.filter;
-  $('#main').innerHTML = html;
-  paintWidths();
-  restoreFocus(keep);
+// ------------------------------------------------------------------ hàng đợi object, thanh bước (dùng chung hai màn)
+
+/** Thứ tự xem: có lỗi, có cảnh báo, tool không kiểm được, còn lại; rồi theo frame. */
+/**
+ * Lỗi / cảnh báo tool báo còn hiệu lực của object: bỏ mục QC đã ghi Báo nhầm (kết luận gắn với object + luật nên quét lại vẫn
+ * giữ), để mục báo nhầm không đẩy object lên đầu hàng đợi nữa. Tính lại khi danh sách kết luận đổi.
+ */
+function live(o) {
+  const d = S.detail;
+  if (d.liveOf !== d.reviews) {
+    d.liveOf = d.reviews;
+    d.live = new Map();
+    for (const f of d.result.findings) {
+      if (f.severity === 'info' || d.reviews[f.key]?.verdict === 'false_alarm') continue;
+      for (const k of [f.objKey, f.other].filter(Boolean)) {
+        const c = d.live.get(k) || { errors: 0, warnings: 0 };
+        c[f.severity === 'error' ? 'errors' : 'warnings'] += 1;
+        d.live.set(k, c);
+      }
+    }
+  }
+  return d.live.get(o.key) || { errors: 0, warnings: 0 };
 }
-
-// ------------------------------------------------------------------ màn Mọi Object & Tiến độ
-
-/** Hàng đợi "Xem tiếp": object chưa duyệt (hoặc bị sửa sau khi duyệt), có vấn đề trước, rồi tool không đo được, rồi theo frame. */
+const rank = (o) => { const l = live(o); return l.errors ? 0 : l.warnings ? 1 : blind(o) ? 2 : 3; };
+const byRank = (a, b) => rank(a) - rank(b) || a.first - b.first || (a.cvatId ?? 0) - (b.cvatId ?? 0);
+/** Hàng đợi duyệt: object chưa duyệt (hoặc bị sửa sau khi duyệt), theo `byRank`. */
 function queue(objs) {
-  const rank = (o) => (o.errors ? 0 : o.warnings ? 1 : blind(o) ? 2 : 3);
-  return objs.filter((o) => !['ok', 'returned', 'rescan'].includes(objState(o))).sort((a, b) => rank(a) - rank(b) || a.first - b.first || (a.cvatId ?? 0) - (b.cvatId ?? 0));
+  return objs.filter((o) => !['ok', 'returned', 'rescan'].includes(objState(o))).sort(byRank);
 }
 /** Tool không kiểm được object này: không đo được mặt đất ở quá nửa số box, hoặc có frame thiếu point cloud. */
 const blind = (o) => o.noPoints > 0 || o.noGround >= o.boxes / 2;
-const issueOf = (o) => (o.errors ? `${o.errors} lỗi` : o.warnings ? `${o.warnings} cảnh báo` : '');
 /** Frame nên mở cho object: frame đầu của mục tool báo nặng nhất, không thì frame đầu của object. */
 function focusFrame(o) {
   const f = S.detail.result.findings.find((x) => (x.objKey === o.key || x.other === o.key) && x.severity !== 'info');
@@ -396,105 +403,249 @@ function objectRows(objs) {
   const st = (x) => objState(x);
   const tabs = [
     ['all', 'Tất cả', () => true],
-    ['issues', 'Có vấn đề', (x) => x.errors || x.warnings],
-    ['blind', 'Chưa kiểm được', blind],
-    ['todo', 'Chưa xem', (x) => !['ok', 'returned'].includes(st(x))],
-    ['changed', 'Bị sửa sau khi duyệt', (x) => st(x) === 'changed'],
+    ['todo', 'Cần xem', (x) => !['ok', 'returned'].includes(st(x))],
+    ['issues', 'Có vấn đề', (x) => live(x).errors || live(x).warnings],
     ['done', 'Đã duyệt', (x) => ['ok', 'returned'].includes(st(x))],
-    ['static', 'Đứng yên chưa xem', (x) => x.static && !x.errors && !x.warnings && !['ok', 'returned'].includes(st(x))],
+    ['changed', 'Bị sửa sau khi duyệt', (x) => st(x) === 'changed'],
   ];
-  const tabFn = (tabs.find((t) => t[0] === o.tab) || tabs[0])[2];
-  const match = (x) => (!o.label || x.label === o.label) && (!o.text || `${x.label} #${x.cvatId}`.toLowerCase().includes(o.text.toLowerCase()));
+  // Bộ lọc phụ, chồng lên tab: "chưa kiểm được" và "đứng yên chưa xem" (để duyệt nhanh cả nhóm).
+  const onlys = [
+    ['blind', 'Tool chưa kiểm được', blind],
+    ['static', 'Đứng yên chưa xem', (x) => x.static && !live(x).errors && !live(x).warnings && !['ok', 'returned'].includes(st(x))],
+    ...(S.detail.prev ? [['diff', 'Đổi so với lần quét trước', (x) => S.detail.prev.objects[x.key]?.fingerprint !== x.fingerprint]] : []),
+  ];
+  const tabFn = (tabs.find((t) => t[0] === o.tab) || tabs[0])[2], onlyFn = onlys.find((t) => t[0] === o.only)?.[2] || (() => true);
+  const match = (x) => onlyFn(x) && (!o.label || x.label === o.label) && (!o.text || `${x.label} #${x.cvatId}`.toLowerCase().includes(o.text.toLowerCase()));
   return { tabs: tabs.filter(([k, , fn]) => k === 'all' || k === o.tab || objs.some(fn)).map(([k, t, fn]) => [k, t, objs.filter((x) => fn(x) && match(x)).length]),
+    onlys: onlys.filter(([k, , fn]) => k === o.only || objs.some(fn)).map(([k, t, fn]) => [k, t, objs.filter(fn).length]),
     rows: objs.filter((x) => tabFn(x) && match(x)) };
 }
 
-function renderObjects() {
-  const { run, result } = S.detail;
-  let html = pageHead('KIỂM DUYỆT TOÀN BỘ OBJECT', 'Mọi Object &amp; Tiến độ', result ? `${esc(result.job.taskName)} · ${result.summary.boxes} box · ${(result.objects || []).length} object` : '', result, run);
-  if (!result) { $('#main').innerHTML = `${html}<div class="empty">Chưa quét. Bấm <b>Quét job</b>.</div>`; paintWidths(); return; }
-  if (!result.objects) { $('#main').innerHTML = `${html}<div class="banner"><div><b>Kết quả quét cũ chưa có danh sách object</b><span class="muted">Quét lại để duyệt theo object.</span></div><button class="btn sm primary" data-act="scan">Quét lại</button></div>`; return; }
-  const objs = result.objects, reviewed = objs.filter((x) => ['ok', 'returned'].includes(objState(x))).length;
-  const rescan = objs.filter((x) => objState(x) === 'rescan').length;
-  const changed = objs.filter((x) => objState(x) === 'changed').length, pct = objs.length ? Math.round((reviewed / objs.length) * 100) : 100;
-  const comp = S.detail.completion, full = reviewed === objs.length;
-  const statics = objs.filter((x) => x.static && !x.errors && !x.warnings && !['ok', 'returned'].includes(objState(x)));
-  html += `<div class="card"><div class="prog"><div>
-      <div class="lbl"><span>TIẾN ĐỘ KIỂM DUYỆT BẮT BUỘC</span><span class="pill accent">${objs.length - reviewed} object còn lại</span></div>
-      <div class="big"><b class="num">${reviewed}/${objs.length}</b><span>object đã duyệt</span><span class="pct">(${pct}%)</span></div>
-      <div class="bar ${full ? 'ok' : ''}"><i data-w="${pct}"></i></div>
-      <div class="foot">${comp && full ? `Đã hoàn thành lúc ${fmtTime(comp.at)}${comp.by ? ` · ${esc(comp.by)}` : ''}` : 'Cần đạt 100% để hoàn thành job.'}</div></div>
-    <div class="btns">
-      <button class="btn primary wide" data-act="walk" ${reviewed === objs.length ? 'disabled' : ''}>${icon('play')} ${S.obj.walk ? 'Tiếp tục Xem tiếp' : 'Bắt đầu Xem tiếp'}</button>
-      ${full ? `<button class="btn wide ok" data-act="complete" title="Cần gửi hết lỗi và nghiệm thu hết phiếu sửa">✓ ${comp ? 'Hoàn thành lại' : 'Hoàn thành duyệt job'}</button>` : '<button class="btn wide" disabled>✕ Chưa đủ 100% (khoá hoàn thành)</button>'}
-      ${drafts().length ? `<button class="btn wide primary" data-act="send">✉ Gửi ${drafts().length} lỗi cho annotator</button>` : ''}
-      ${rescan ? `<button class="btn wide" data-act="scan" title="Bản sửa đã nghiệm thu; quét lại để tool kiểm bản mới">⟳ Quét lại để xác nhận ${rescan} object đã sửa</button>` : ''}
-      ${changed ? `<button class="btn wide warnc" data-objtab="changed">⟳ ${changed} object bị sửa (duyệt lại)</button>` : ''}
-    </div></div></div>`;
-  if (statics.length) {
-    html += `<div class="banner warn">${icon('layers')}<div><b>Có ${statics.length} vật đứng yên (hàng nón, rào chắn…) chưa xem, tool không báo gì.</b>
-      <span class="muted">Có thể duyệt cùng một lượt: lọc ra, xem trên CVAT, rồi đánh dấu OK cả nhóm.</span></div>
-      <button class="btn sm" data-objtab="static">✓ Duyệt nhanh nhóm đứng yên (${statics.length} vật)</button></div>`;
+/** Ô lọc dùng chung: tìm, class, tab trạng thái, bộ lọc phụ, nút duyệt nhanh nhóm đứng yên. */
+function filtersHtml(objs, rows, { compact = false } = {}) {
+  const { tabs, onlys } = objectRows(objs), o = S.obj, labels = [...new Set(objs.map((x) => x.label))].sort();
+  const bulk = o.only === 'static' && rows.length ? `<button class="btn sm ok" data-act="bulk-ok" title="Chỉ bấm khi đã xem nhóm này trên CVAT">✓ Đạt cả ${rows.length} vật đang hiện</button>` : '';
+  const tools = `<input type="search" data-ofilter="text" placeholder="Tìm mã CVAT / class…" value="${esc(o.text)}" aria-label="Tìm object">
+    <select data-ofilter="label" aria-label="Class"><option value="">Class: Tất cả</option>${labels.map((l) => `<option value="${esc(l)}"${l === o.label ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  const tabBtns = tabs.map(([k, t, n]) => `<button class="${compact ? `pill ${o.tab === k ? 'accent' : 'outline'}` : `subtab ${o.tab === k ? 'on' : ''}`}" data-objtab="${k}" aria-pressed="${o.tab === k}">${t} (${n})</button>`).join('');
+  const onlyBtns = onlys.map(([k, t, n]) => `<button class="pill ${o.only === k ? 'accent' : 'outline'}" data-only="${k}" aria-pressed="${o.only === k}">${t} · ${n}${o.only === k ? ' ✕' : ''}</button>`).join('');
+  return { tools, tabBtns, onlyBtns, bulk };
+}
+
+/** Đếm theo trạng thái duyệt: dùng cho thanh bước và nút chính. */
+function jobSteps(result) {
+  const objs = result.objects, st = objs.map(objState), rev = S.detail.objectReviews || {};
+  const reviewed = st.filter((s) => s === 'ok' || s === 'returned').length, full = reviewed === objs.length;
+  const missing = (S.detail.missing || []).filter((t) => t.status !== 'accepted').length;
+  const sendN = drafts().length, waiting = objs.filter((o, i) => st[i] === 'returned' && rev[o.key]?.ticket).length + missing;
+  const rescan = st.filter((s) => s === 'rescan').length, changed = st.filter((s) => s === 'changed').length, comp = S.detail.completion;
+  const anyErr = st.some((s) => s === 'returned' || s === 'rescan');
+  const cur = sendN ? 'send' : !full ? 'review' : waiting ? 'wait' : rescan ? 'rescan' : 'done';
+  return { objs, reviewed, full, sendN, waiting, rescan, changed, comp, anyErr, cur };
+}
+
+/** Thanh bước Quét → Duyệt → Gửi lỗi → Chờ sửa → Quét lại → Hoàn thành, với đúng một nút chính cho bước hiện tại. */
+function stepsHtml(result) {
+  const j = jobSteps(result), order = ['scan', 'review', 'send', 'wait', 'rescan', 'done'], at = order.indexOf(j.cur);
+  const steps = [
+    ['scan', 'Quét', fmtTime(result.startedAt)],
+    ['review', 'Duyệt', `${j.reviewed}/${j.objs.length} object`],
+    ['send', 'Gửi lỗi', j.sendN ? `${j.sendN} chờ gửi` : j.anyErr ? 'đã gửi' : 'chưa có lỗi'],
+    ['wait', 'Chờ sửa', j.waiting ? `${j.waiting} phiếu` : '—'],
+    ['rescan', 'Quét lại', j.rescan ? `${j.rescan} object đã sửa` : '—'],
+    ['done', 'Hoàn thành', j.comp ? fmtTime(j.comp.at) : ''],
+  ];
+  const state = (k, i) => (k === 'done' && j.comp ? 'done' : i < at ? 'done' : i === at ? 'cur' : 'todo');
+  const pct = j.objs.length ? Math.round((j.reviewed / j.objs.length) * 100) : 100;
+  const main = {
+    review: S.view === 'review' ? `<span class="muted">Còn ${j.objs.length - j.reviewed} object cần xem</span>` : `<button class="btn primary" data-view-go="review">${icon('play')} Duyệt object tiếp</button>`,
+    send: `<button class="btn primary" data-act="send">✉ Gửi ${j.sendN} lỗi cho annotator</button>`,
+    wait: '<button class="btn primary" data-view-go="tickets">Mở Giao việc Lỗi ›</button>',
+    rescan: `<button class="btn primary" data-act="scan" title="Bản sửa đã nghiệm thu; quét lại để tool kiểm bản mới">⟳ Quét lại ${j.rescan} object đã sửa</button>`,
+    done: j.comp ? '<button class="btn sm ghost" data-act="complete">Hoàn thành lại</button>' : '<button class="btn primary ok-bg" data-act="complete" title="Cần gửi hết lỗi và nghiệm thu hết phiếu sửa">✓ Hoàn thành duyệt job</button>',
+  }[j.cur];
+  return `<div class="steps"><ol>${steps.map(([k, t, s], i) => `<li class="${state(k, i)}"><span class="n">${state(k, i) === 'done' ? '✓' : i + 1}</span><span><b>${t}</b><small>${s}</small></span></li>`).join('')}</ol>
+    <div class="steps-act">${main}${j.changed ? `<button class="btn sm ghost warnc" data-objtab="changed">⚠ ${j.changed} object bị sửa, duyệt lại</button>` : ''}
+      <button class="btn sm ghost" data-act="missing" title="Vật chưa có box: ghi theo frame + vị trí (phím N)">+ Thiếu vật</button></div>
+    <div class="bar ${j.full ? 'ok' : ''}"><i data-w="${pct}"></i></div></div>`;
+}
+
+const noResult = (html) => { $('#main').innerHTML = `${html}<div class="empty">Chưa quét. Bấm <b>Quét job</b>.</div>`; paintWidths(); };
+const oldResult = (html) => { $('#main').innerHTML = `${html}<div class="banner"><div><b>Kết quả quét cũ chưa có danh sách object</b><span class="muted">Quét lại để duyệt theo object.</span></div><button class="btn sm primary" data-act="scan">Quét lại</button></div>`; };
+const keepSearch = () => document.activeElement?.dataset?.ofilter || document.activeElement?.dataset?.filter;
+function restoreSearch(keep) {
+  const el = keep && $(`[data-ofilter="${keep}"],[data-filter="${keep}"]`);
+  if (el && el.type === 'search') { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+}
+
+// ------------------------------------------------------------------ màn Duyệt job: hàng đợi trái, object đang xem phải
+
+const STATE_MARK = { ok: '<span class="st ok" title="Đạt">✓</span>', returned: '<span class="st ret" title="Trả lỗi">✕</span>',
+  changed: '<span class="st chg" title="Bị sửa sau khi duyệt">⚠</span>', rescan: '<span class="st ok" title="Đã nghiệm thu, chờ quét lại">⟳</span>' };
+
+function renderReview() {
+  const { run, result } = S.detail, info = jobInfo();
+  const sub = result ? `${esc(result.job.taskName)} · ${result.summary.boxes} box · ${(result.objects || []).length} object` : `${esc(info.taskName || '')} · ${info.frames || '?'} frame`;
+  const html = pageHead('DUYỆT TỪNG OBJECT', 'Duyệt job', sub, result, run);
+  if (!result) return noResult(html);
+  if (!result.objects) return oldResult(html);
+  const objs = result.objects;
+  if (!objs.some((x) => x.key === S.obj.cur)) S.obj.cur = (queue(objs)[0] || objs[0])?.key || null;
+  S.obj.walk = S.obj.walk || { history: [] }; // màn này luôn ở chế độ duyệt lần lượt (phím 1/2/3/J/K)
+  const keep = keepSearch();
+  $('#main').innerHTML = `${html}${stepsHtml(result)}<div class="rv">${queueHtml(objs)}${detailHtml(objs)}</div>`;
+  paintWidths();
+  restoreSearch(keep);
+  // Chỉ cuộn trong hàng đợi để object đang xem hiện ra; scrollIntoView sẽ cuộn cả trang.
+  const list = $('.q-list'), it = list?.querySelector('.cur');
+  if (it) {
+    const d = it.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    if (d < 0 || d > list.clientHeight - it.offsetHeight) list.scrollTop += d - list.clientHeight / 2;
   }
-  const { tabs, rows } = objectRows(objs), o = S.obj;
-  const labels = [...new Set(objs.map((x) => x.label))].sort();
+  return undefined;
+}
+
+function queueHtml(objs) {
+  const { rows } = objectRows(objs), f = filtersHtml(objs, rows, { compact: true }), cur = S.obj.cur;
+  const list = rows.slice().sort(byRank).map((x) => {
+    const l = live(x), tag = l.errors ? `<span class="pill error">${l.errors} lỗi</span>` : l.warnings ? `<span class="pill warning">${l.warnings} c.báo</span>`
+      : blind(x) ? '<span class="pill outline">chưa kiểm</span>' : x.static ? '<span class="pill outline">đứng yên</span>' : '';
+    return `<li><button class="q-it ${x.key === cur ? 'cur' : ''}" id="o-${esc(x.key.replace(':', '-'))}" data-pick="${esc(x.key)}" aria-current="${x.key === cur}">
+      ${STATE_MARK[objState(x)] || '<span class="st none" title="Chưa xem">○</span>'}${icon(classIcon(x.label))}
+      <span class="q-n"><b>${esc(x.label)} #${x.cvatId ?? x.serverId}</b><small>${frameRange(x.first, x.last)}</small></span>${tag}</button></li>`;
+  }).join('');
+  return `<aside class="card rv-q" aria-label="Hàng đợi object"><div class="q-tools">${f.tools}</div>
+    <div class="q-chips">${f.tabBtns}${f.onlyBtns}</div>${f.bulk ? `<div class="q-bulk">${f.bulk}</div>` : ''}
+    <ol class="q-list">${list || '<li class="muted">Không có object nào khớp.</li>'}</ol></aside>`;
+}
+
+const SEV_ORDER = { error: 0, warning: 1, info: 2 };
+
+function findingItem(x, o) {
+  const v = S.detail.reviews[x.key]?.verdict, open = S.open.has(x.key), mine = x.objKey === o.key;
+  const pair = x.other ? (mine ? `↔ ${esc(x.otherLabel || '')} #${x.otherCvatId ?? otherRef(x).serverId}` : `↔ ${esc(x.label)} #${x.cvatId ?? x.serverId}`) : '';
+  const short = x.other ? x.short.replace(/ (lên|với) \S+ #\S+$/, '') : x.short;
+  const me = num(x.cvatId, x.serverId), them = x.other && num(x.otherCvatId, otherRef(x).serverId);
+  return `<li class="fd ${x.severity}${v === 'false_alarm' ? ' off' : ''}">
+    <div class="fd-h"><span class="dot ${x.severity}"></span>
+      <button class="fd-t" data-toggle="${esc(x.key)}" aria-expanded="${open}"><b>${esc(x.title)}</b> <span class="muted">· ${esc(short)} ${pair}</span></button>
+      <span class="fd-fr num">${frameRange(x.frames[0], x.frames[x.frames.length - 1])}</span>
+      ${v === 'confirmed' ? '<span class="st ret">● Lỗi thật</span>' : ''}
+      ${x.severity !== 'info' ? `<button class="btn sm ghost ${v === 'false_alarm' ? 'on' : ''}" data-verdict="false_alarm" data-key="${esc(x.key)}" aria-pressed="${v === 'false_alarm'}" title="Tool báo nhầm mục này">${v === 'false_alarm' ? '✓ Báo nhầm' : 'Báo nhầm'}</button>` : ''}</div>
+    ${open ? `<div class="fd-more"><div class="detail">${esc(x.message)}</div>
+      ${x.other ? `<div class="solo">Chỉ hiện một object: <a href="${esc(cvatLink(x.frames[0], x))}" target="pointsnap-cvat" rel="noopener">${esc(x.label)} ${esc(me)} · frame ${x.frames[0]} ↗</a>
+        <a href="${esc(cvatLink(otherFrame(x), otherRef(x)))}" target="pointsnap-cvat" rel="noopener">${esc(x.otherLabel || '')} ${esc(them)} · frame ${otherFrame(x)} ↗</a></div>` : ''}
+      ${x.rule === 'track.fragment' ? evidenceHtml(x) : ''}
+      <div class="frames">${x.frames.slice(0, 120).map((fr) => `<a href="${esc(cvatLink(fr, x.other ? null : x))}" target="pointsnap-cvat" rel="noopener">${fr}</a>`).join('')}${x.frames.length > 120 ? ' …' : ''}</div></div>` : ''}</li>`;
+}
+
+/** Vòng duyệt lại (PP-17): object khác gì lần quét trước: khoảng frame, số box, mục tool hết báo / báo mới. */
+function diffHtml(o, real) {
+  const pv = S.detail.prev, po = pv?.objects[o.key];
+  if (!pv || (po && po.fingerprint === o.fingerprint)) return '';
+  const lines = [];
+  if (!po) lines.push('Object mới, lần quét trước chưa có.');
+  else {
+    if (po.first !== o.first || po.last !== o.last) lines.push(`Khoảng frame: ${frameRange(po.first, po.last)} → ${frameRange(o.first, o.last)}`);
+    if (po.boxes !== o.boxes) lines.push(`Số box: ${po.boxes} → ${o.boxes}`);
+    const was = pv.findings.filter((f) => f.objKey === o.key || f.other === o.key);
+    const gone = was.filter((f) => !real.some((x) => x.key === f.key)), added = real.filter((x) => !was.some((f) => f.key === x.key));
+    if (gone.length) lines.push(`Tool hết báo: ${gone.map((f) => f.title).join(', ')}`);
+    if (added.length) lines.push(`Tool báo mới: ${added.map((f) => f.title).join(', ')}`);
+    if (!lines.length) lines.push('Box đã đổi (vị trí, kích thước hoặc hướng); tool báo như cũ.');
+  }
+  return `<div class="rv-sec rv-diff"><h3>So với lần quét trước <span class="muted">${fmtTime(pv.startedAt)}</span></h3>
+    <ul class="notes">${lines.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>`;
+}
+
+function detailHtml(objs) {
+  const o = objs.find((x) => x.key === S.obj.cur);
+  if (!o) return '<section class="card rv-d"><div class="empty">Không có object.</div></section>';
+  const s = objState(o), r = S.detail.objectReviews?.[o.key], q = queue(objs), pos = q.findIndex((x) => x.key === o.key);
+  const mine = S.detail.result.findings.filter((x) => x.objKey === o.key || x.other === o.key).sort((a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity]);
+  const real = mine.filter((x) => x.severity !== 'info');
+  const badge = { ok: '<span class="pill ok">✓ Đạt</span>', returned: '<span class="pill error">✕ Trả lỗi</span>', changed: '<span class="pill warning">⚠ Bị sửa sau khi duyệt</span>',
+    rescan: '<span class="pill ok">✓ Đã nghiệm thu · chờ quét lại</span>' }[s] || '<span class="pill outline">○ Chưa xem</span>';
+  const issueTxt = r?.issue ? [r.issue.tags.join(', '), r.issue.frame != null ? `frame ${r.issue.frame}` : '', r.issue.text].filter(Boolean).join(' · ') : '';
+  const data = [o.far ? `Ở xa · cách xe ${Math.round(o.minRange)} m` : '',
+    o.noGround ? `${o.noGround}/${o.boxes} box tool không đo được mặt đất${o.noGround >= o.boxes / 2 ? ': hãy tự xem đáy box' : ''}` : '',
+    o.noPoints ? `Thiếu point cloud ở ${o.noPoints} frame` : '', o.static ? 'Đứng yên (theo toạ độ đã bù chuyển động xe thu)' : ''].filter(Boolean);
+  return `<section class="card rv-d" aria-label="Object đang xem">
+    <div class="rv-h"><div class="rv-t">${icon(classIcon(o.label))}<h2>${esc(o.label)} #${o.cvatId ?? o.serverId}</h2>${badge}
+        <span class="muted rv-pos">${pos >= 0 ? `${pos + 1}/${q.length} cần xem` : 'đã duyệt'}</span></div>
+      <div class="muted">${frameRange(o.first, o.last)} · ${o.boxes} box${r ? ` · ${esc(r.by || '—')} · ${fmtTime(r.at)}` : ''}</div>
+      ${s === 'returned' || s === 'rescan' ? `<div class="rv-issue"><b>Lỗi đã ghi:</b> ${esc(issueTxt || 'không ghi chi tiết')} · ${r.ticket ? esc(r.ticket) : 'chưa gửi annotator'}</div>` : ''}</div>
+    <div class="rv-sec"><h3>Tool nghi ngờ${real.length ? ` <span class="pill outline">${real.length}</span>` : ''}</h3>
+      ${mine.length ? `<ul class="fds">${mine.map((x) => findingItem(x, o)).join('')}</ul>` : '<p class="muted">Tool không báo gì ở object này. QC tự xem trên CVAT.</p>'}</div>
+    ${diffHtml(o, real)}
+    ${data.length ? `<div class="rv-sec"><h3>Lưu ý dữ liệu</h3><ul class="notes">${data.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>` : ''}
+    <div class="rv-keys">
+      <button class="btn ok-bg" data-wk="ok"><kbd>1</kbd> Đạt</button>
+      <button class="btn err-bg" data-wk="returned"><kbd>2</kbd> Trả lỗi…</button>
+      ${real.length ? '<button class="btn" data-wk="false" title="Đạt, và ghi mọi mục tool báo của object này là Báo nhầm"><kbd>3</kbd> Đạt · tool báo nhầm</button>' : ''}
+      <span class="sp"></span>
+      <button class="btn ghost" data-wk="prev" title="Object vừa xem"><kbd>K</kbd> Lùi</button>
+      <button class="btn ghost" data-wk="next" title="Bỏ qua, sang object cần xem tiếp"><kbd>J</kbd> Bỏ qua</button>
+      <a class="btn" href="${esc(objLink(o))}" target="pointsnap-cvat" rel="noopener">Mở CVAT ↗</a>
+      ${window.documentPictureInPicture ? '<button class="btn ghost" data-wk="float" title="Cửa sổ nhỏ luôn nằm trên CVAT">⧉ Bảng nổi</button>' : ''}</div></section>`;
+}
+
+// ------------------------------------------------------------------ màn Tổng quan: phân tích, mục tool báo, bảng mọi object
+
+function renderOverview() {
+  const { run, result, reviews } = S.detail, info = jobInfo();
+  const sub = result ? `${esc(result.job.taskName)} · Lần quét cuối: ${fmtTime(result.startedAt)} · ${result.seconds} s · guideline ${esc(result.spec?.name || 'Mặc định')} v${result.spec?.version || 0}`
+    : `${esc(info.taskName || '')} · ${info.frames || '?'} frame`;
+  const html = pageHead('TỔNG QUAN JOB', 'Tổng quan', sub, result, run);
+  if (!result) return noResult(html);
+  const s = result.summary, [cls, label] = PRIO[s.gate.verdict], real = result.findings.filter((x) => x.severity !== 'info');
+  const done = real.filter((x) => reviews[x.key]).length;
+  const keep = keepSearch();
+  $('#main').innerHTML = `${html}${result.objects ? stepsHtml(result) : ''}
+    <div class="sum">
+      <div class="sum-n" title="Xếp thứ tự xem, không phải kết luận"><div class="k">Ưu tiên</div><div class="v prio ${cls}">${label}</div></div>
+      <div class="sum-n"><div class="k">Lỗi</div><div class="v c-err num">${s.errorGroups}</div></div>
+      <div class="sum-n"><div class="k">Cảnh báo</div><div class="v c-warn num">${s.warningGroups}</div></div>
+      <div class="sum-n"><div class="k">Mục tool báo đã kết luận</div><div class="v num">${done}/${real.length}</div></div></div>
+    ${heatHtml(result)}<div class="grid-2">${rulesHtml(result)}${scopeHtml(result)}</div>${findingsHtml(result, reviews)}${result.objects ? objectTableHtml(result.objects) : ''}`;
+  paintWidths();
+  restoreSearch(keep);
+  return undefined;
+}
+
+function objectTableHtml(objs) {
+  const { rows } = objectRows(objs), o = S.obj, f = filtersHtml(objs, rows);
   const pages = Math.max(1, Math.ceil(rows.length / PAGE)), page = Math.min(o.page, pages - 1);
   const body = rows.slice(page * PAGE, page * PAGE + PAGE).map((x) => {
     const s = objState(x), r = S.detail.objectReviews?.[x.key];
-    const issue = x.errors ? `<span class="pill error">${x.errors} lỗi</span>` : x.warnings ? `<span class="pill warning">${x.warnings} cảnh báo</span>` : '<span class="faint">—</span>';
-    const data = [x.far ? `<span class="pill warning">Ở xa · ${Math.round(x.minRange)} m</span>` : '',
+    // Một cột "Vấn đề": lỗi tool báo, rồi các lý do tool không kiểm chắc (ở xa, thiếu điểm đất, thiếu point cloud).
+    const l = live(x), issue = [l.errors ? `<span class="pill error">${l.errors} lỗi</span>` : l.warnings ? `<span class="pill warning">${l.warnings} cảnh báo</span>` : '',
+      x.far ? `<span class="pill outline">Ở xa · ${Math.round(x.minRange)} m</span>` : '',
       // Quá nửa số box không đo được mặt đất mới là "chưa kiểm được"; ít hơn thì chỉ ghi chú nhỏ.
-      x.noGround >= x.boxes / 2 ? `<span class="pill warning" title="${x.noGround}/${x.boxes} box tool không đo được mặt đất">Thiếu điểm đất · ${x.noGround}/${x.boxes} box</span>`
+      x.noGround >= x.boxes / 2 ? `<span class="pill outline" title="${x.noGround}/${x.boxes} box tool không đo được mặt đất">Thiếu điểm đất · ${x.noGround}/${x.boxes}</span>`
         : x.noGround ? `<span class="muted" title="Box tool không đo được mặt đất">${x.noGround}/${x.boxes} box không đo đất</span>` : '',
-      x.noPoints ? `<span class="pill warning">Thiếu point cloud · ${x.noPoints} frame</span>` : ''].join(' ') || '<span class="muted">Đủ điểm đất</span>';
+      x.noPoints ? `<span class="pill outline">Thiếu point cloud · ${x.noPoints} frame</span>` : ''].filter(Boolean).join(' ') || '<span class="faint">—</span>';
     const issueTxt = r?.issue ? [r.issue.tags.join(', '), r.issue.frame != null ? `frame ${r.issue.frame}` : '', r.issue.text].filter(Boolean).join(' · ') : '';
-    const stHtml = s === 'ok' ? '<span class="st ok">✓ OK</span>' : s === 'returned'
+    const stHtml = s === 'ok' ? '<span class="st ok">✓ Đạt</span>' : s === 'returned'
       ? `<span class="st ret" title="${esc(issueTxt)}">✕ Trả lỗi</span><span class="two">${r.ticket ? esc(r.ticket) : 'chưa gửi annotator'}${issueTxt ? ` · ${esc(issueTxt.slice(0, 40))}` : ''}</span>`
       : s === 'changed' ? '<span class="st chg">⚠ Chưa xem (đã sửa)</span>'
         : s === 'rescan' ? `<span class="st ok">✓ Đã nghiệm thu</span><span class="two">${esc(r.ticket)} · quét lại để xác nhận</span>` : '<span class="st none">○ Chưa xem</span>';
-    return `<tr class="${S.obj.cur === x.key ? 'cur' : ''}" id="o-${esc(x.key.replace(':', '-'))}">
-      <td><span class="obj">${icon(classIcon(x.label))}${esc(x.label)}${x.static ? ' <span class="pill outline" title="Đứng yên theo toạ độ đã bù chuyển động xe thu">đứng yên</span>' : ''}</span></td>
+    return `<tr id="o-${esc(x.key.replace(':', '-'))}">
+      <td><button class="obj lnk-obj" data-pick="${esc(x.key)}" title="Duyệt object này">${icon(classIcon(x.label))}${esc(x.label)}${x.static ? ' <span class="pill outline" title="Đứng yên theo toạ độ đã bù chuyển động xe thu">đứng yên</span>' : ''}</button></td>
       <td><span class="cid">#${x.cvatId ?? x.serverId}</span></td>
       <td class="num">${frameRange(x.first, x.last)}<span class="two">${x.boxes} box</span></td>
-      <td>${issue}</td><td>${data}</td><td>${stHtml}</td>
-      <td class="who-cell">${r ? `${esc(r.by || '—')}<small>${s === 'changed' ? 'Track đã sửa sau lần duyệt · ' : ''}${fmtTime(r.at)}</small>` : '<span class="faint">—</span><small>Chưa xem</small>'}</td>
+      <td><span class="iss">${issue}</span></td>
+      <td>${stHtml}${r ? `<span class="two">${esc(r.by || '—')} · ${fmtTime(r.at)}</span>` : ''}</td>
       <td><span class="ops"><a class="lnk" href="${esc(objLink(x))}" target="pointsnap-cvat" rel="noopener" title="Mở object trong CVAT">↗ CVAT</a>
-        <button class="act yes ${s === 'ok' ? 'on' : ''}" data-obj="ok" data-key="${esc(x.key)}" aria-pressed="${s === 'ok'}" title="OK / Đạt" aria-label="OK">✓</button>
+        <button class="act yes ${s === 'ok' ? 'on' : ''}" data-obj="ok" data-key="${esc(x.key)}" aria-pressed="${s === 'ok'}" title="Đạt" aria-label="Đạt">✓</button>
         <button class="act no ${s === 'returned' ? 'on' : ''}" data-obj="returned" data-key="${esc(x.key)}" aria-pressed="${s === 'returned'}" title="Trả lỗi về annotator" aria-label="Trả lỗi">✕</button></span></td></tr>`;
   }).join('');
-  const bulk = o.tab === 'static' && rows.length ? `<button class="btn sm ok" data-act="bulk-ok">✓ Đánh dấu OK ${rows.length} vật đang hiện</button>` : '';
-  html += `<div class="card"><div class="card-h"><h2>Danh sách object</h2><span class="pill outline">${objs.length}</span>
-      <span class="right tbl-tools">${bulk}<select data-ofilter="label" aria-label="Class"><option value="">Class: Tất cả</option>${labels.map((l) => `<option value="${esc(l)}"${l === o.label ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
-      <input type="search" data-ofilter="text" placeholder="Tìm mã CVAT / class…" value="${esc(o.text)}" aria-label="Tìm object"></span></div>
-    <div class="subtabs">${tabs.map(([k, t, n]) => `<button class="subtab ${o.tab === k ? 'on' : ''}" data-objtab="${k}">${t} (${n})</button>`).join('')}</div>
-    <div class="tbl-note">${reviewed} đã duyệt + ${objs.length - reviewed} chưa xem = ${objs.length} object. "Có vấn đề" và "Chưa kiểm được" có thể giao nhau.</div>
-    <div class="tbl-wrap"><table><thead><tr><th>Class</th><th>Mã CVAT</th><th>Khoảng frame</th><th>Lỗi tool báo</th><th>Xa / thiếu điểm đất</th><th>Trạng thái duyệt</th><th>Người duyệt &amp; thời gian</th><th>Thao tác</th></tr></thead>
-    <tbody>${body || '<tr><td colspan="8" class="muted">Không có object nào khớp.</td></tr>'}</tbody></table></div>
+  return `<div class="card"><div class="card-h"><h2>Mọi object</h2><span class="pill outline">${objs.length}</span>
+      <span class="right tbl-tools">${f.bulk}${f.tools}</span></div>
+    <div class="subtabs">${f.tabBtns}${f.onlyBtns ? `<span class="onlys">${f.onlyBtns}</span>` : ''}</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Class</th><th>Mã CVAT</th><th>Khoảng frame</th><th>Vấn đề</th><th>Trạng thái duyệt</th><th>Thao tác</th></tr></thead>
+    <tbody>${body || '<tr><td colspan="6" class="muted">Không có object nào khớp.</td></tr>'}</tbody></table></div>
     ${pager(page, pages, rows.length, 'object', 'o-page')}</div>`;
-  html += walkHtml(objs);
-  const keep = document.activeElement?.dataset?.ofilter;
-  $('#main').innerHTML = html;
-  paintWidths();
-  if (keep) { const el = $(`[data-ofilter="${keep}"]`); if (el && el.type === 'search') { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
-}
-
-function walkHtml(objs) {
-  const w = S.obj.walk;
-  if (!w) return '';
-  const o = objs.find((x) => x.key === S.obj.cur);
-  if (!o) return '';
-  const q = queue(objs), pos = q.findIndex((x) => x.key === o.key);
-  return `<div class="walk" role="region" aria-label="Xem tiếp">
-    <span class="now">Đang xem ${pos >= 0 ? `${pos + 1}/${q.length} còn lại` : 'object'}: ${esc(o.label)} #${o.cvatId ?? o.serverId} (${frameRange(o.first, o.last)})${issueOf(o) ? `<span class="c-err">· ${issueOf(o)} tool báo</span>` : ''}</span>
-    <span class="keys">
-      <button class="k ok" data-wk="ok"><kbd>[1]</kbd>OK / Đạt</button>
-      <button class="k ret" data-wk="returned"><kbd>[2]</kbd>Trả lỗi</button>
-      <button class="k" data-wk="false" title="OK, và ghi mục tool báo của object này là Báo nhầm"><kbd>[3]</kbd>Báo nhầm</button>
-      <button class="k" data-wk="prev"><kbd>[K]</kbd>Lùi</button>
-      <button class="k" data-wk="next"><kbd>[J]</kbd>Tiếp</button>
-      <a class="k" href="${esc(objLink(o))}" target="pointsnap-cvat" rel="noopener">Mở CVAT ↗</a>
-      ${window.documentPictureInPicture ? '<button class="k" data-wk="float" title="Cửa sổ nhỏ luôn nằm trên CVAT">⧉ Bảng nổi trên CVAT</button>' : ''}</span>
-    <span class="tag">XEM TIẾP ĐANG BẬT</span><button class="exit" data-wk="exit">✕ Thoát (Esc)</button></div>`;
 }
 
 /** Đưa object vào khung nhìn (đúng trang của bảng) và mở trong cửa sổ CVAT dùng chung. */
@@ -503,11 +654,11 @@ function focusObject(key, { open = true } = {}) {
   S.obj.cur = key;
   if (!key) return render();
   const o = objs.find((x) => x.key === key);
-  if (S.obj.tab !== 'all' && !objectRows(objs).rows.some((x) => x.key === key)) S.obj.tab = 'all';
+  if ((S.obj.tab !== 'all' || S.obj.only) && !objectRows(objs).rows.some((x) => x.key === key)) { S.obj.tab = 'all'; S.obj.only = ''; }
   const idx = objectRows(objs).rows.findIndex((x) => x.key === key);
   if (idx >= 0) S.obj.page = Math.floor(idx / PAGE);
   render();
-  $(`#o-${key.replace(':', '-')}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  if (S.view === 'overview') $(`#o-${key.replace(':', '-')}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   if (open && o) window.open(objLink(o), 'pointsnap-cvat');
   return undefined;
 }
@@ -544,7 +695,7 @@ async function walkStep(kind) {
     }
     S.obj.walk.history.push(cur);
     const next = queue(objs)[0];
-    if (!next) { S.obj.walk = null; S.obj.cur = null; toast('Đã duyệt hết object'); return render(); }
+    if (!next) { toast('Đã duyệt hết object'); return render(); }
     return focusObject(next.key);
   }
   if (kind === 'next') {
@@ -589,14 +740,9 @@ function evidenceHtml(x) {
 
 function render() {
   if (S.view === 'spec' || !S.detail) return;
-  if (S.view === 'objects') renderObjects(); else renderReview();
+  if (S.view === 'overview') renderOverview(); else renderReview();
   renderSession();
   paintFloat();
-}
-function restoreFocus(keep) {
-  if (!keep) return;
-  const el = $(`[data-filter="${keep}"]`);
-  if (el) { el.focus(); el.setSelectionRange?.(el.value.length, el.value.length); }
 }
 
 function setView(view) {
@@ -631,16 +777,34 @@ document.addEventListener('click', async (e) => {
     return S.view === 'tickets' ? window.QCTickets.open(S.jobId) : undefined;
   }
   if (S.view === 'tickets') return undefined;
+  const pick = e.target.closest('[data-pick]');
+  if (pick) {
+    const key = pick.dataset.pick;
+    if (S.obj.cur && S.obj.cur !== key) (S.obj.walk ||= { history: [] }).history.push(S.obj.cur);
+    if (S.view !== 'review') { S.obj.cur = key; await setView('review'); }
+    return focusObject(key);
+  }
   const t = e.target.closest('[data-act],[data-verdict],[data-obj],[data-wk],[data-evidence],[data-assign]');
   try {
     const act = t?.dataset.act;
     if (t?.dataset.assign) {
-      if (await returnObject(t.dataset.assign, t.dataset.finding || null)) { toast('Đã ghi lỗi · gửi annotator ở Mọi Object'); loadJobs(); render(); }
+      if (await returnObject(t.dataset.assign, t.dataset.finding || null)) {
+        // Trả lỗi từ một mục tool báo nghĩa là mục đó là lỗi thật: ghi luôn, khỏi bấm thêm.
+        const fk = t.dataset.finding;
+        if (fk && S.detail.reviews[fk]?.verdict !== 'confirmed') S.detail.reviews = await api(`/api/jobs/${S.jobId}/reviews`, { method: 'POST', body: JSON.stringify({ key: fk, verdict: 'confirmed' }) });
+        toast('Đã ghi lỗi · gửi annotator ở bước Gửi lỗi'); loadJobs(); render();
+      }
       return undefined;
     }
     if (act === 'send') {
       const made = await window.QCTickets.send(S.jobId, drafts());
       if (made) { toast(`Đã gửi ${made.length} lỗi cho annotator`); S.detail = await api(`/api/jobs/${S.jobId}`); window.QCTickets.badge(); loadJobs(); render(); }
+      return undefined;
+    }
+    if (act === 'missing') {
+      const cur = S.detail.result.objects?.find((x) => x.key === S.obj.cur);
+      const made = await window.QCTickets.missingForm({ frame: cur ? focusFrame(cur) : S.detail.result.job.start });
+      if (made) { toast(`Đã tạo ${made.id} · thiếu box ${made.label}`); S.detail = await api(`/api/jobs/${S.jobId}`); window.QCTickets.badge(); render(); }
       return undefined;
     }
     if (act === 'scan') { await api(`/api/jobs/${S.jobId}/scan`, { method: 'POST' }); return refreshJob(); }
@@ -651,17 +815,12 @@ document.addEventListener('click', async (e) => {
       loadJobs();
       return render();
     }
-    if (act === 'walk') {
-      const next = S.obj.cur && queue(S.detail.result.objects).some((x) => x.key === S.obj.cur) ? S.obj.cur : queue(S.detail.result.objects)[0]?.key;
-      if (!next) return toast('Không còn object chưa duyệt');
-      S.obj.walk = S.obj.walk || { history: [] };
-      return focusObject(next);
-    }
     if (act === 'bulk-ok') {
       const keys = objectRows(S.detail.result.objects).rows.map((x) => x.key);
-      if (!confirm(`Đánh dấu OK ${keys.length} vật đứng yên (tool không báo gì)? Hãy chắc đã xem chúng trên CVAT.`)) return undefined;
+      if (!confirm(`Đánh dấu Đạt ${keys.length} vật đứng yên (tool không báo gì)? Hãy chắc đã xem chúng trên CVAT.`)) return undefined;
       await setObjects(keys, 'ok');
       S.obj.tab = 'all';
+      S.obj.only = '';
       loadJobs();
       return render();
     }
@@ -700,7 +859,9 @@ document.addEventListener('click', async (e) => {
   const rule = e.target.closest('[data-rule]');
   if (rule) { S.filter.rule = S.filter.rule === rule.dataset.rule ? '' : rule.dataset.rule; S.filter.page = 0; return render(); }
   const gotoBlind = e.target.closest('[data-goto]');
-  if (gotoBlind) { S.obj.tab = gotoBlind.dataset.goto; S.obj.page = 0; return setView('objects'); }
+  if (gotoBlind) { S.obj.tab = 'all'; S.obj.only = gotoBlind.dataset.goto; S.obj.page = 0; return setView('review'); }
+  const only = e.target.closest('[data-only]');
+  if (only) { S.obj.only = S.obj.only === only.dataset.only ? '' : only.dataset.only; S.obj.page = 0; return render(); }
   const otab = e.target.closest('[data-objtab]');
   if (otab) { S.obj.tab = otab.dataset.objtab; S.obj.page = 0; return render(); }
   const fp = e.target.closest('[data-f-page]');
@@ -724,8 +885,9 @@ document.addEventListener('input', (e) => {
 });
 /** Phím tắt Xem tiếp, ở trang chính hoặc bảng nổi (`doc`). */
 function walkKey(e, doc) {
-  if (!S.obj.walk || S.view !== 'objects' || !doc.querySelector('#modal').hidden || /INPUT|TEXTAREA|SELECT/.test(doc.activeElement?.tagName || '')) return;
-  const map = { 1: 'ok', 2: 'returned', 3: 'false', j: 'next', k: 'prev', Escape: 'exit' };
+  if (!S.obj.walk || S.view !== 'review' || !doc.querySelector('#modal').hidden || /INPUT|TEXTAREA|SELECT/.test(doc.activeElement?.tagName || '')) return;
+  if (doc === document && e.key.toLowerCase?.() === 'n') { e.preventDefault(); $('[data-act="missing"]')?.click(); return; }
+  const map = { 1: 'ok', 2: 'returned', 3: 'false', j: 'next', k: 'prev' };
   const kind = map[e.key] || map[e.key.toLowerCase?.()];
   if (kind) { e.preventDefault(); walkStep(kind).then(() => loadJobs()).catch((error) => toast(error.message)); }
 }
@@ -735,7 +897,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ------------------------------------------------------------------ bảng nổi trên CVAT
-// Cửa sổ nhỏ luôn nằm trên (Document Picture-in-Picture, Edge / Chrome ≥ 116): QC nhìn box trên CVAT và bấm OK / Trả lỗi /
+// Cửa sổ nhỏ luôn nằm trên (Document Picture-in-Picture, Edge / Chrome ≥ 116): QC nhìn box trên CVAT và bấm Đạt / Trả lỗi /
 // Tiếp ngay đó, không phải chuyển tab. Trình duyệt không hỗ trợ thì đặt hai cửa sổ cạnh nhau.
 
 async function openFloat() {
@@ -762,18 +924,18 @@ function paintFloat(msg) {
   if (!fl) return;
   if (msg !== undefined) { const m = fl.querySelector('.fl-msg'); if (m) m.textContent = msg; return; }
   const objs = S.detail?.result?.objects || [], o = objs.find((x) => x.key === S.obj.cur);
-  if (!S.obj.walk || !o) { fl.innerHTML = '<div class="fl-h">Xem tiếp đã tắt.</div><div class="muted">Bật lại ở trang QC (Mọi Object).</div>'; return; }
+  if (!S.obj.walk || !o) { fl.innerHTML = '<div class="fl-h">Chưa chọn object.</div><div class="muted">Mở tab Duyệt job ở trang QC.</div>'; return; }
   const q = queue(objs), done = objs.filter((x) => ['ok', 'returned'].includes(objState(x))).length;
   const tool = S.detail.result.findings.filter((x) => (x.objKey === o.key || x.other === o.key) && x.severity !== 'info');
   fl.innerHTML = `<div class="fl-h">${icon(classIcon(o.label))}<b>${esc(o.label)} #${o.cvatId ?? o.serverId}</b><span class="muted">${frameRange(o.first, o.last)}</span><span class="right muted num">${done}/${objs.length}</span></div>
     <div class="fl-tool">${tool.length ? tool.map((x) => `<span class="pill ${x.severity === 'error' ? 'error' : 'warning'}">${esc(x.title)}</span>`).join('') : '<span class="muted">Tool không báo gì: QC tự xem.</span>'}</div>
-    <div class="fl-k"><button class="k ok" data-wk="ok"><kbd>1</kbd> OK</button><button class="k ret" data-wk="returned"><kbd>2</kbd> Trả lỗi</button>
+    <div class="fl-k"><button class="k ok" data-wk="ok"><kbd>1</kbd> Đạt</button><button class="k ret" data-wk="returned"><kbd>2</kbd> Trả lỗi</button>
       <button class="k" data-wk="false"><kbd>3</kbd> Báo nhầm</button><button class="k" data-wk="prev"><kbd>K</kbd> Lùi</button><button class="k" data-wk="next"><kbd>J</kbd> Tiếp</button>
       <button class="k" data-wk="reopen">↗ Mở lại CVAT</button></div>
     <div class="fl-msg muted">${q.length} chưa xem · ${drafts().length} lỗi chưa gửi</div>`;
 }
 
-window.QC = { S, api, esc, toast, paintWidths, $, icon, classIcon, fmtTime, frameRange, start, setBadge, loadJobs, openJob, PAGE };
+window.QC = { S, api, esc, toast, paintWidths, $, icon, classIcon, fmtTime, frameRange, ticketObj, ticketUrl, start, setBadge, loadJobs, openJob, paintTheme, PAGE };
 
 (async () => {
   initChrome();

@@ -4,11 +4,10 @@
  * danh sách phiếu, trao đổi, nghiệm thu đạt / trả lại sửa tiếp. Theo Figma "Chi tiết Job" và "Giao việc sửa lỗi nhãn".
  */
 (function () {
-  const { api, esc, toast, $, fmtTime, frameRange } = window.QC;
+  const { api, esc, toast, $, fmtTime, frameRange, ticketObj, ticketUrl: cvatUrl } = window.QC;
   const STATUS = { open: ['Chờ sửa', 'warning'], submitted: ['Đã nộp lại', 'accent'], accepted: ['Đã duyệt đạt', 'ok'], returned: ['Trả lại sửa tiếp', 'error'] };
   const T = { list: [], cur: null, users: null };
 
-  const cvatUrl = (t, frame = t.frames[0]) => `${window.QC.S.status.cvatUrl}/tasks/${t.taskId}/jobs/${t.jobId}?frame=${frame}&type=${t.kind}&serverID=${t.serverId}`;
   const status = (t) => `<span class="pill ${STATUS[t.status][1]}">${STATUS[t.status][0]}</span>`;
   const prio = (t) => (t.priority === 'must' ? '<span class="pill error">Lỗi bắt buộc sửa</span>' : '<span class="pill warning">Cảnh báo</span>');
 
@@ -31,7 +30,10 @@
     el.querySelector(focus)?.focus();
     return new Promise((resolve) => {
       const close = (v) => { el.hidden = true; el.innerHTML = ''; doc.removeEventListener('keydown', onKey); resolve(v); };
-      const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(null); } };
+      const onKey = (e) => {
+        if (e.key === 'Escape') { e.stopPropagation(); close(null); }
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); el.querySelector('form')?.requestSubmit(); } // lưu nhanh khi đang gõ ghi chú
+      };
       doc.addEventListener('keydown', onKey);
       el.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => close(null)));
       // Gắn vào form (mới mỗi lần mở), không gắn vào #modal: #modal dùng lại nên trình nghe sẽ cộng dồn.
@@ -51,14 +53,14 @@
     const tags = [...new Set([...tool.map((x) => x.title), ...COMMON])];
     const on = new Set(f ? [f.title] : tool.length === 1 ? [tool[0].title] : []);
     const html = `<form class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
-      <div class="m-h"><div><h2 id="m-title">Trả lỗi · ${esc(obj.label)} #${obj.cvatId ?? obj.serverId}</h2><div class="muted">${frameRange(obj.first, obj.last)} · gom lại, gửi annotator một lượt</div></div>
+      <div class="m-h"><div><h2 id="m-title">Trả lỗi · ${esc(ticketObj(obj))}</h2><div class="muted">${frameRange(obj.first, obj.last)} · gom lại, gửi annotator một lượt</div></div>
         <button type="button" class="act" data-close aria-label="Đóng">✕</button></div>
       <div class="m-body">
         <div><div class="muted small">Lỗi gì${tool.length ? ' (đầu danh sách: tool báo)' : ''}</div><div class="chips tags">${tags.map((t) => `<button type="button" class="tagb" data-tag="${esc(t)}" aria-pressed="${on.has(t)}">${esc(t)}</button>`).join('')}</div></div>
         <label>Frame thấy lỗi<input name="frame" type="number" min="${obj.first}" max="${obj.last}" value="${f ? f.frames[0] : frame}"></label>
         <label>Ghi chú cho annotator<textarea name="text" rows="2" maxlength="500" placeholder="Ví dụ: đáy box cao hơn mặt đường ~30 cm">${esc(f ? f.message : '')}</textarea></label>
         <div class="err" id="m-err" role="alert"></div></div>
-      <div class="m-f"><span class="muted small">Enter trong ô frame để lưu · Esc huỷ</span><button type="button" class="btn" data-close>Huỷ</button><button class="btn primary" type="submit">✕ Trả lỗi</button></div></form>`;
+      <div class="m-f"><span class="muted small">Ctrl+Enter để lưu · Esc huỷ</span><button type="button" class="btn" data-close>Huỷ</button><button class="btn primary" type="submit">✕ Trả lỗi</button></div></form>`;
     return dialog(html, (form) => {
       const picked = [...form.querySelectorAll('[data-tag][aria-pressed="true"]')].map((b) => b.dataset.tag), text = form.text.value.trim();
       if (!picked.length && !text) throw new Error('Chọn ít nhất một lỗi hoặc ghi chú');
@@ -78,7 +80,7 @@
         <button type="button" class="act" data-close aria-label="Đóng">✕</button></div>
       <div class="m-body">
         <div class="send-list">${objs.map((o) => `<label class="check"><input type="checkbox" name="k" value="${esc(o.key)}" checked>
-          <span><b>${esc(o.label)} #${o.cvatId ?? o.serverId}</b> <span class="muted">${esc(line(o))}</span></span></label>`).join('')}</div>
+          <span><b>${esc(ticketObj(o))}</b> <span class="muted">${esc(line(o))}</span></span></label>`).join('')}</div>
         <label>Giao cho *<select name="assignee" required>${annotators.map((u) => `<option value="${esc(u.username)}"${u.username === assignee ? ' selected' : ''}>${esc(u.name)} · ${esc(u.username)}</option>`).join('')
           || '<option value="">Không có tài khoản annotator nào</option>'}</select></label>
         <div class="muted small">${assignee ? `Người làm job trên CVAT: ${esc(assignee)}` : 'Job chưa giao ai trên CVAT'} · annotator sửa trên CVAT, nộp lại, QC nghiệm thu.</div>
@@ -90,6 +92,31 @@
       if (!form.assignee.value) throw new Error('Chưa có annotator để giao');
       return api('/api/tickets/batch', { method: 'POST', body: JSON.stringify({ jobId, assignee: form.assignee.value, keys }) });
     }, 'select');
+  }
+
+  /** QC ghi "thiếu vật" (vật chưa có box) theo frame + vị trí; phiếu gửi annotator ngay. Trả về phiếu hoặc null. */
+  async function missingForm({ frame, doc = document }) {
+    const r = window.QC.S.detail.result, job = r.job;
+    if (!T.users) T.users = await api('/api/users').catch(() => []);
+    const annotators = T.users.filter((u) => u.role !== 'qc'), labels = [...new Set((r.objects || []).map((o) => o.label))].sort();
+    const html = `<form class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
+      <div class="m-h"><div><h2 id="m-title">Thiếu vật · Job #${job.id}</h2><div class="muted">Vật chưa có box. Job không hoàn thành được tới khi nghiệm thu phiếu này.</div></div>
+        <button type="button" class="act" data-close aria-label="Đóng">✕</button></div>
+      <div class="m-body">
+        <label>Class *<input name="label" list="m-labels" maxlength="60" placeholder="vd: pedestrian" required><datalist id="m-labels">${labels.map((l) => `<option value="${esc(l)}">`).join('')}</datalist></label>
+        <label>Frame thấy thiếu *<input name="frame" type="number" min="${job.start}" max="${job.stop}" value="${frame}" required></label>
+        <label>Vị trí<input name="where" maxlength="200" placeholder="vd: vỉa hè bên phải, cách xe ~12 m"></label>
+        <label>Ghi chú cho annotator<textarea name="text" rows="2" maxlength="500" placeholder="vd: có ở frame 4–12, bị che một phần"></textarea></label>
+        <label>Giao cho *<select name="assignee" required>${annotators.map((u) => `<option value="${esc(u.username)}"${u.username === job.assignee ? ' selected' : ''}>${esc(u.name)} · ${esc(u.username)}</option>`).join('')
+          || '<option value="">Không có tài khoản annotator nào</option>'}</select></label>
+        <div class="err" id="m-err" role="alert"></div></div>
+      <div class="m-f"><span class="muted small">Ctrl+Enter để lưu · Esc huỷ</span><button type="button" class="btn" data-close>Huỷ</button><button class="btn primary" type="submit">Tạo phiếu thiếu vật</button></div></form>`;
+    return dialog(html, (form) => {
+      if (!form.label.value.trim()) throw new Error('Nhập class của vật bị thiếu');
+      if (!form.assignee.value) throw new Error('Chưa có annotator để giao');
+      return api('/api/tickets/missing', { method: 'POST', body: JSON.stringify({ jobId: job.id, assignee: form.assignee.value, label: form.label.value,
+        frame: Number.parseInt(form.frame.value, 10), where: form.where.value, text: form.text.value }) });
+    }, '[name=label]', doc);
   }
 
   // ---------------------------------------------------------------- màn Giao việc Lỗi
@@ -122,16 +149,16 @@
         <div class="tile"><div class="k">CHỜ QC NGHIỆM THU</div><div class="v c-acc num">${n('submitted')}</div><div class="s">annotator đã nộp lại</div></div>
         <div class="tile"><div class="k">HOÀN THÀNH</div><div class="v c-ok num">${n('accepted')}</div><div class="s">đã duyệt đạt</div></div></div>`;
     if (!list.length) {
-      $('#main').innerHTML = `${html}<div class="card"><div class="empty">Chưa có phiếu nào. Trả lỗi object khi duyệt (✕ hoặc phím 2), rồi bấm "Gửi lỗi cho annotator" ở Mọi Object.</div></div>`;
+      $('#main').innerHTML = `${html}<div class="card"><div class="empty">Chưa có phiếu nào. Trả lỗi object khi duyệt (phím 2), rồi bấm "Gửi lỗi cho annotator" ở bước Gửi lỗi.</div></div>`;
       return;
     }
     html += `<div class="t-grid"><div class="card t-list"><div class="card-h"><h2>Phiếu trong job #${jobId}</h2><span class="pill outline">${list.length}</span></div>
       ${list.map((x) => `<button class="tcard ${x.id === T.cur ? 'on' : ''}" data-tid="${x.id}">
         <span class="tc-h"><b>#${x.id}</b>${prio(x)}<span class="right">${status(x)}</span></span>
-        <span>${esc(x.label)} #${x.cvatId ?? x.serverId}</span><span class="muted">${frameRange(x.frames[0], x.frames[1])} · ${esc(x.assignee)}</span>
+        <span>${esc(ticketObj(x))}</span><span class="muted">${frameRange(x.frames[0], x.frames[1])} · ${esc(x.assignee)}</span>
         <span class="${x.priority === 'must' ? 'c-err' : 'c-warn'}">${esc(x.title)}</span></button>`).join('')}</div>`;
     html += t ? `<div class="card t-thread"><div class="card-h"><h2>Trao đổi</h2><span class="pill outline">#${t.id}</span><span class="right">${status(t)}</span></div>
-      <div class="facts"><div><span class="muted">VẬT THỂ</span><b>${esc(t.label)} #${t.cvatId ?? t.serverId}</b></div><div><span class="muted">FRAME</span><b>${t.frames[0]}–${t.frames[1]}</b></div>
+      <div class="facts"><div><span class="muted">VẬT THỂ</span><b>${esc(ticketObj(t))}</b></div><div><span class="muted">FRAME</span><b>${t.frames[0]}–${t.frames[1]}</b></div>
         <div><span class="muted">TAG LỖI</span><b class="${t.priority === 'must' ? 'c-err' : 'c-warn'}">${esc(t.title)}</b></div><div><span class="muted">NGƯỜI SỬA</span><b>${esc(t.assignee)}</b></div></div>
       <div class="msgs">${thread(t)}</div>
       <textarea id="t-text" rows="2" placeholder="Ghi chú cho annotator (tuỳ chọn)…" aria-label="Ghi chú"></textarea>
@@ -161,5 +188,5 @@
     } catch (error) { toast(error.message); }
   });
 
-  window.QCTickets = { returnForm, send, open, badge };
+  window.QCTickets = { returnForm, missingForm, send, open, badge };
 }());

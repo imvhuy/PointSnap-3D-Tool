@@ -3,7 +3,7 @@
  * và báo lại thao tác qua `onAction(name, data)`; không tự đọc CVAT.
  * Bố cục: thanh tiêu đề (chấm trạng thái + box đang chọn, luôn hiện kể cả khi thu gọn) → checklist từng khía cạnh,
  * mỗi dòng có nút sửa đúng vấn đề của nó → dải track một ô mỗi keyframe, bấm ô để tới frame → bản xem trước.
- * Nền tối cho hợp với canvas 3D của CVAT; màu một nghĩa: xanh lá ổn, cam cần xem, đỏ lỗi.
+ * Nền sáng như thanh bên của CVAT; màu một nghĩa: xanh lá ổn, cam cần xem, đỏ lỗi.
  */
 (function (root) {
   'use strict';
@@ -14,56 +14,74 @@
   const ICON = { ok: '✓', warning: '!', error: '✕', na: '–', muted: '–' };
   const LEVEL_TEXT = { ok: 'Ổn', warning: 'Cần xem', error: 'Lỗi', na: 'Chưa đo được', muted: 'Đã bỏ qua' };
 
+  // Logo PointSnap (qc/public/logo.svg), nét theo màu chữ.
+  const LOGO = '<svg class="logo" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path opacity=".4" d="M3.5 44.3H18.7M37.3 44.3H52.5"/><path d="M28 44.3 11.7 35V16.3L28 7l16.3 9.3V35L28 44.3Zm16.3-28L28 25.7m0 0L11.7 16.3M28 25.7v18.6"/><circle cx="28" cy="44.3" r="5.25" fill="#1677ff" stroke="none"/></svg>';
+
+  /* Theo kiểu Ant Design của CVAT: nền trắng như thanh bên của CVAT, viền #d9d9d9, xanh #1677ff. */
   const CSS = `
     :host { all: initial; }
-    .panel { position: fixed; z-index: 2147483000; width: 288px; display: flex; flex-direction: column;
-      background: #111827; color: #e5e7eb; border: 1px solid #374151; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.35);
-      font: 12px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; overflow-wrap: anywhere; }
-    .head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: #0b1220; border-bottom: 1px solid #1f2937; cursor: move; user-select: none; }
+    .panel { position: fixed; z-index: 2147483000; width: 300px; display: flex; flex-direction: column;
+      background: #fff; color: rgba(0,0,0,.88); border: 1px solid #d9d9d9; border-radius: 8px;
+      box-shadow: 0 6px 16px rgba(0,0,0,.08), 0 3px 6px -4px rgba(0,0,0,.12), 0 9px 28px 8px rgba(0,0,0,.05);
+      font: 12.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; overflow: hidden; overflow-wrap: anywhere; }
+    .head { display: flex; align-items: center; gap: 6px; padding: 7px 8px 7px 10px; background: #fafafa; border-bottom: 1px solid #f0f0f0; cursor: move; user-select: none; }
+    .collapsed .head { border-bottom: 0; }
+    .logo { flex: none; width: 20px; height: 20px; color: #1f1f1f; }
     .head .title { font-weight: 600; margin-right: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .head .title small { font-weight: 400; color: #9ca3af; }
+    .head .title small { font-weight: 400; color: rgba(0,0,0,.45); }
     .head > .muted, .head .count { flex: none; white-space: nowrap; }
-    .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #4b5563; }
-    .dot.ok { background: #22c55e; } .dot.warning { background: #f59e0b; } .dot.error { background: #ef4444; }
-    .count { font-weight: 700; font-size: 11px; padding: 0 6px; border-radius: 9px; background: #78350f; color: #fde68a; }
-    .count.error { background: #7f1d1d; color: #fecaca; }
-    .muted { color: #9ca3af; }
-    .body { overflow-y: auto; overflow-x: hidden; padding: 6px 8px 8px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #d9d9d9; }
+    .dot.ok { background: #52c41a; } .dot.warning { background: #faad14; } .dot.error { background: #ff4d4f; }
+    .count { font-weight: 600; font-size: 11px; line-height: 18px; padding: 0 6px; border-radius: 9px; background: #fff7e6; color: #d46b08; border: 1px solid #ffd591; }
+    .count.error { background: #fff1f0; color: #cf1322; border-color: #ffa39e; }
+    .muted { color: rgba(0,0,0,.45); }
+    .body { overflow-y: auto; overflow-x: hidden; padding: 8px 10px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
     .collapsed .body { display: none; }
-    button { font: inherit; font-weight: 600; border: 1px solid #374151; background: #1f2937; color: #e5e7eb; border-radius: 5px; padding: 2px 7px; cursor: pointer; white-space: nowrap; }
-    button:hover:not(:disabled) { background: #273449; border-color: #3b82f6; }
-    button:disabled { opacity: .45; cursor: default; }
-    button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
-    button.on { background: #1e3a8a; border-color: #3b82f6; }
-    .head button { background: transparent; border-color: transparent; padding: 0 4px; font-size: 13px; color: #cbd5e1; }
-    .head button.on { background: #1e3a8a; }
-    kbd { font: 10px ui-monospace, Consolas, monospace; color: #9ca3af; border: 1px solid #4b5563; border-radius: 3px; padding: 0 3px; margin-left: 4px; }
-    .notice { padding: 4px 7px; border-radius: 5px; background: #172554; color: #bfdbfe; }
-    .notice.error { background: #450a0a; color: #fecaca; } .notice.ok { background: #052e16; color: #bbf7d0; }
-    .checks { display: grid; grid-template-columns: minmax(0, 1fr); border: 1px solid #1f2937; border-radius: 7px; overflow: hidden; }
-    .check { display: grid; grid-template-columns: 16px 66px minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 4px 7px; border-top: 1px solid #1f2937; }
+    button { font: inherit; border: 1px solid #d9d9d9; background: #fff; color: rgba(0,0,0,.88); border-radius: 6px; padding: 1px 8px; cursor: pointer; white-space: nowrap;
+      box-shadow: 0 2px 0 rgba(0,0,0,.02); transition: color .2s, border-color .2s, background .2s; }
+    button:hover:not(:disabled) { color: #4096ff; border-color: #4096ff; }
+    button:focus-visible { outline: 3px solid #91caff; outline-offset: 1px; }
+    button:disabled { color: rgba(0,0,0,.25); background: #f5f5f5; cursor: not-allowed; box-shadow: none; }
+    button.primary { background: #1677ff; border-color: #1677ff; color: #fff; box-shadow: 0 2px 0 rgba(5,145,255,.1); }
+    button.primary:hover:not(:disabled) { background: #4096ff; color: #fff; }
+    button.on { background: #e6f4ff; border-color: #91caff; color: #1677ff; }
+    .head button { background: transparent; border-color: transparent; box-shadow: none; padding: 0 5px; font-size: 13px; line-height: 22px; color: rgba(0,0,0,.65); }
+    .head button:hover:not(:disabled) { background: rgba(0,0,0,.06); border-color: transparent; color: rgba(0,0,0,.88); }
+    .head button.on { background: #e6f4ff; color: #1677ff; }
+    kbd { font: 10px ui-monospace, Consolas, monospace; color: rgba(0,0,0,.45); background: #fafafa; border: 1px solid #d9d9d9; border-bottom-width: 2px; border-radius: 3px; padding: 0 3px; margin-left: 4px; }
+    .notice { padding: 5px 9px; border-radius: 6px; background: #e6f4ff; border: 1px solid #91caff; }
+    .notice.error { background: #fff2f0; border-color: #ffccc7; } .notice.ok { background: #f6ffed; border-color: #b7eb8f; }
+    .checks { display: grid; grid-template-columns: minmax(0, 1fr); border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; }
+    .check { display: grid; grid-template-columns: 16px 66px minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 5px 8px; border-top: 1px solid #f0f0f0; }
     .check:first-child { border-top: 0; }
-    .check i { font-style: normal; font-weight: 800; text-align: center; border-radius: 50%; width: 15px; height: 15px; line-height: 15px; font-size: 10px; }
-    .check.ok i { background: #14532d; color: #86efac; } .check.warning i { background: #78350f; color: #fde68a; }
-    .check.error i { background: #7f1d1d; color: #fecaca; } .check.na i, .check.muted i { background: #374151; color: #9ca3af; }
-    .check.muted .text { color: #6b7280; }
+    .check:hover { background: #fafafa; }
+    .check i { font-style: normal; font-weight: 700; text-align: center; border-radius: 50%; width: 16px; height: 16px; line-height: 16px; font-size: 10px; }
+    .check.ok i { background: #f6ffed; color: #389e0d; } .check.warning i { background: #fff7e6; color: #d46b08; }
+    .check.error i { background: #fff1f0; color: #cf1322; } .check.na i, .check.muted i { background: #f5f5f5; color: rgba(0,0,0,.45); }
+    .check.muted .text { color: rgba(0,0,0,.25); }
     .check .acts { display: flex; gap: 3px; align-items: center; }
-    .check .acts .x { border: 0; background: none; color: #6b7280; padding: 0 3px; font-size: 12px; }
-    .check .acts .x:hover { color: #e5e7eb; background: none; }
-    .check .name { color: #9ca3af; }
+    .check .acts .x { border: 0; background: none; box-shadow: none; color: rgba(0,0,0,.25); padding: 0 3px; font-size: 12px; }
+    .check .acts .x:hover { color: rgba(0,0,0,.65); background: none; }
+    .check .name { color: rgba(0,0,0,.45); }
     .check .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .check.warning .text { color: #fbbf24; } .check.error .text { color: #f87171; }
+    .check.warning .text { color: #d46b08; } .check.error .text { color: #cf1322; }
     .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 6px; }
     .strip { display: grid; gap: 1px; height: 16px; }
-    .strip button { padding: 0; border: 0; border-radius: 2px; background: #374151; min-width: 0; }
-    .strip button.warning { background: #f59e0b; } .strip button.here { outline: 2px solid #e5e7eb; outline-offset: -1px; }
-    .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px; }
-    .plan, .spec { background: #0b1220; border: 1px solid #1f2937; border-radius: 7px; padding: 6px 7px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; }
-    .plan .ghost { color: #93c5fd; }
-    .spec ul { margin: 0; padding-left: 14px; color: #cbd5e1; }
-    .warn { color: #fbbf24; } .bad { color: #f87171; }
-    .link { border: 0; background: none; padding: 0; color: #93c5fd; font-weight: 600; }
-    .link:hover:not(:disabled) { background: none; text-decoration: underline; }
+    .strip button { padding: 0; border: 0; border-radius: 2px; background: #d9d9d9; min-width: 0; box-shadow: none; }
+    .strip button:hover:not(:disabled) { background: #91caff; }
+    .strip button.warning { background: #faad14; } .strip button.here { outline: 2px solid #1677ff; outline-offset: -1px; }
+    .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
+    .plan, .spec { background: #fafafa; border: 1px solid #f0f0f0; border-radius: 8px; padding: 8px 9px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .plan { background: #f0f7ff; border-color: #bae0ff; }
+    .plan .ghost { color: #1677ff; }
+    .spec ul { margin: 0; padding-left: 16px; color: rgba(0,0,0,.65); }
+    .warn { color: #d46b08; } .bad { color: #cf1322; }
+    .link { border: 0; background: none; box-shadow: none; padding: 0; color: #1677ff; }
+    .link:hover:not(:disabled) { background: none; color: #4096ff; }
+    /* Gắn vào tab PointSnap trong thanh bên của CVAT (plugin trong CVAT): nằm trong luồng, không nổi, không kéo / thu gọn. */
+    :host([docked]) .panel { position: static; width: auto; max-height: none !important; border: 0; border-radius: 0; box-shadow: none; }
+    :host([docked]) .head { cursor: default; } :host([docked]) .logo, :host([docked]) [data-action="collapse"] { display: none; }
+    :host([docked]) .collapsed .body { display: grid; }
   `;
 
   function create(onAction) {
@@ -72,14 +90,22 @@
     const shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML = `<style>${CSS}</style><div class="panel" role="complementary" aria-label="PointSnap annotator"></div>`;
     const panel = shadow.querySelector('.panel');
-    document.documentElement.appendChild(host);
+    // Plugin trong CVAT có tab PointSnap ở thanh bên (`.ps-pane`): gắn vào đó; không có (extension) thì nổi trên trang.
+    const dock = document.querySelector('.ps-pane');
+    if (dock) host.setAttribute('docked', '');
+    // Có plugin nhưng thanh bên chưa dựng xong (CVAT đang tải job): ẩn tới khi plugin gắn bảng vào tab, không nổi giữa trang.
+    // (style, không dùng `hidden`: `:host { all: initial }` của shadow đè thuộc tính hidden.)
+    else if (document.documentElement.dataset.pointsnapPlugin) host.style.display = 'none';
+    if (dock) dock.prepend(host); else document.documentElement.appendChild(host);
 
     const saved = readPosition();
     let collapsed = !!saved.collapsed, lastHtml = '';
     place(saved.left, saved.top);
 
     function place(left, top) {
-      const x = Number.isFinite(left) ? left : window.innerWidth - 308, y = Number.isFinite(top) ? top : 90;
+      // Mặc định: sát bên trái danh sách object của CVAT, không che danh sách.
+      const sidebarLeft = document.querySelector('.cvat-objects-sidebar')?.getBoundingClientRect().left || window.innerWidth;
+      const x = Number.isFinite(left) ? left : sidebarLeft - 312, y = Number.isFinite(top) ? top : 90;
       panel.style.left = `${Math.max(0, Math.min(x, window.innerWidth - 80))}px`;
       const clampedTop = Math.max(0, Math.min(y, window.innerHeight - 30));
       panel.style.top = `${clampedTop}px`;
@@ -103,7 +129,7 @@
       onAction(el.dataset.action, { ...el.dataset });
     });
     panel.addEventListener('mousedown', (event) => {
-      if (!event.target.closest('.head') || event.target.closest('button') || event.button !== 0) return;
+      if (host.hasAttribute('docked') || !event.target.closest('.head') || event.target.closest('button') || event.button !== 0) return;
       const rect = panel.getBoundingClientRect(), dx = event.clientX - rect.left, dy = event.clientY - rect.top;
       const move = (e) => place(e.clientX - dx, e.clientY - dy);
       const up = () => {
@@ -150,7 +176,7 @@
         + '<button data-action="next-undone" aria-label="Track chưa xong kế tiếp" title="Chọn track chưa xong kế tiếp trong frame">⏭</button>'
         + '<button data-action="open-spec" aria-label="Spec của project" title="Spec của project: ngưỡng theo class / thuộc tính">⚙</button>'
       : '';
-    return `<div class="head" title="${esc(SHORTCUTS)}">${status}<span class="title">${title}</span>${count}${progress}${tools}`
+    return `<div class="head" title="${esc(SHORTCUTS)}">${LOGO}${status}<span class="title">${title}</span>${count}${progress}${tools}`
       + `<button data-action="collapse" aria-label="${collapsed ? 'Mở rộng' : 'Thu gọn'}">${collapsed ? '▾' : '▴'}</button></div>`;
   }
 
