@@ -81,10 +81,12 @@
       <div class="obj">${icon(classIcon(t.label))}<div><b>${esc(ticketObj(t))}</b><div class="muted">Frame ${t.frames[0]}–${t.frames[1]}</div></div></div>
       <div class="chips"><span class="pill ${t.priority === 'must' ? 'error' : 'warning'}">${esc(t.title)}</span><span class="pill ${STATUS[t.status][1]}">${STATUS[t.status][0]}</span>
         <span class="pill outline">${t.priority === 'must' ? 'Ưu tiên cao' : 'Cảnh báo'}</span></div>
+      ${t.issues?.length ? `<div class="a-k">TỪNG LỖI TOOL BÁO</div><ul class="a-issues">${t.issues.map((x) => `<li class="${x.severity === 'error' ? 'c-err' : 'c-warn'}">${esc(x.title)}: ${esc(x.short)}
+        <a class="lnk" href="${esc(cvatUrl(t, x.frames[0]))}" target="pointsnap-cvat" rel="noopener">frame ${x.frames[0]}${x.frames[1] !== x.frames[0] ? `–${x.frames[1]}` : ''} ↗</a>${x.other ? ` <span class="muted">↔ ${esc(x.otherLabel || '')} #${x.otherCvatId ?? x.otherServerId}</span>` : ''}</li>`).join('')}</ul>` : ''}
       <div class="a-k">TRAO ĐỔI VỚI QC</div>
       <div class="msgs">${t.thread.map((m) => `<div class="msg ${m.role}"><div class="msg-h"><b>${m.role === 'bot' ? 'Tool' : esc(m.name)}</b><span class="right muted">${fmtTime(m.at)}</span></div><div>${esc(m.text) || '<span class="muted">—</span>'}</div></div>`).join('')}</div>
       ${t.status === 'accepted' ? '<div class="muted small">QC đã nghiệm thu đạt.</div>' : `<textarea id="a-text" rows="2" maxlength="1000" placeholder="Đã sửa gì, ở frame nào…" aria-label="Phản hồi cho QC"></textarea>
-      <div class="actions"><button class="btn primary" data-aact="submit" ${canSubmit(t) ? '' : 'disabled'}>Nộp lại</button><button class="btn ghost" data-aact="comment">Gửi ghi chú</button></div>`}</div>` : '';
+      <div class="actions"><button class="btn primary" data-aact="submit">Nộp lại</button>${t.status === 'submitted' ? '<button class="btn" data-aact="withdraw" title="QC chưa xử lý: rút về Chưa nộp để sửa tiếp">Rút lại để sửa</button>' : ''}<button class="btn ghost" data-aact="comment">Gửi ghi chú</button></div>`}</div>` : '';
     const counts = [['open', 'Cần sửa'], ['returned', 'Trả lại'], ['submitted', 'Đã nộp'], ['accepted', 'Đạt']];
     const filter = `<div class="card"><div class="card-h"><h2>Bộ lọc trạng thái</h2></div><div class="a-filter">
       ${counts.map(([s, l]) => `<label class="check"><input type="checkbox" data-astatus="${s}"${A.status.has(s) ? ' checked' : ''}> ${l}<span class="right muted num">${n(s)}</span></label>`).join('')}</div></div>`;
@@ -102,7 +104,7 @@
   async function act(id, kind, text = '') {
     try {
       const t = await api(`/api/tickets/${id}/${kind}`, { method: 'POST', body: JSON.stringify({ text }) });
-      toast(kind !== 'submit' ? 'Đã gửi ghi chú' : t.unchanged ? 'Đã nộp, nhưng object trên CVAT chưa đổi: bạn đã Lưu (Ctrl+S) chưa?' : 'Đã nộp lại cho QC');
+      toast(kind === 'withdraw' ? 'Đã rút về Chưa nộp' : kind !== 'submit' ? 'Đã gửi ghi chú' : t.unchanged ? 'Đã nộp, nhưng object trên CVAT chưa đổi: bạn đã Lưu (Ctrl+S) chưa?' : 'Đã nộp lại cho QC');
       await open();
     } catch (error) { toast(error.message); }
   }

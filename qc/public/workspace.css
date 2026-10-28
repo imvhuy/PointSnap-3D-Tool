@@ -221,6 +221,7 @@
 .a-grid .card .msgs { margin: 8px 0 10px; max-height: 260px; }
 .a-grid .card textarea { margin-bottom: 10px; }
 .a-filter { display: grid; gap: 10px; }
+.a-issues { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 12px; }
 .a-row { display: flex; align-items: center; gap: 8px; }
 .pager .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; color: var(--text); }
 .pager .btn:disabled { color: var(--faint); }

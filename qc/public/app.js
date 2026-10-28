@@ -39,7 +39,7 @@ const frameRange = (a, b) => (a === b ? `Frame ${a}` : `Frame ${a}–${b}`);
 /** Tên vật của phiếu; phiếu thiếu vật không gắn object nào. */
 const ticketObj = (t) => (t.kind === 'missing' ? `${t.label} · thiếu box` : `${t.label} #${t.cvatId ?? t.serverId}`);
 /** Link CVAT của phiếu; phiếu thiếu vật chỉ mở đúng frame. */
-const ticketUrl = (t, frame = t.frames[0]) => `${S.status?.cvatUrl || ''}/tasks/${t.taskId}/jobs/${t.jobId}?frame=${frame}${t.kind === 'missing' ? '' : `&type=${t.kind}&serverID=${t.serverId}`}`;
+const ticketUrl = (t, frame = t.frames[0]) => `${S.status?.cvatUrl || ''}/tasks/${t.taskId}/jobs/${t.jobId}?frame=${frame}${t.kind === 'missing' || t.other ? '' : `&type=${t.kind}&serverID=${t.serverId}`}`;
 
 function classIcon(label = '') {
   const l = label.toLowerCase();
@@ -396,7 +396,8 @@ function focusFrame(o) {
   const f = S.detail.result.findings.find((x) => (x.objKey === o.key || x.other === o.key) && x.severity !== 'info');
   return f ? f.frames[0] : o.first;
 }
-const objLink = (o) => cvatLink(focusFrame(o), o);
+// Lỗi theo cặp (chồng lấn, đổi ID, đứt track, vẽ trùng) cần thấy cả vật kia: không lọc chỉ một object.
+const objLink = (o) => cvatLink(focusFrame(o), S.detail.result.findings.some((x) => x.other && (x.objKey === o.key || x.other === o.key)) ? null : o);
 
 function objectRows(objs) {
   const o = S.obj;
