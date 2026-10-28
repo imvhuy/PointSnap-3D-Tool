@@ -14,7 +14,8 @@
   const TAGS = ['Lơ lửng / lún', 'Kích thước', 'Hướng (yaw)', 'Lệch vị trí', 'Sai class', 'Thiếu thuộc tính', 'Đứt / đổi ID', 'Thiếu box ở frame'];
   // Logo PointSnap (public/logo.svg), nét theo màu chữ.
   const LOGO = '<svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path opacity=".4" d="M3.5 44.3H18.7M37.3 44.3H52.5"/><path d="M28 44.3 11.7 35V16.3L28 7l16.3 9.3V35L28 44.3Zm16.3-28L28 25.7m0 0L11.7 16.3M28 25.7v18.6"/><circle cx="28" cy="44.3" r="5.25" fill="#1677ff" stroke="none"/></svg>';
-  const P = { ctx: null, me: null, jobId: null, data: null, tickets: [], cur: null, busy: false, open: true, el: null };
+  const P = { ctx: null, me: null, jobId: null, data: null, tickets: [], cur: null, busy: false, open: true, el: null, annTab: null, qcTab: null };
+  const ANN_TAB_KEY = 'pointsnap.qc.annTab', QC_TAB_KEY = 'pointsnap.qc.qcTab';
 
   async function api(path, opts = {}) {
     const res = await fetch(BASE + path, { ...opts, credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-PointSnap-QC': '1', ...(opts.headers || {}) } });
@@ -35,6 +36,8 @@
   /** Tới frame rồi chọn box serverId; phiếu thiếu vật (serverId null) chỉ tới frame. */
   async function goTo(serverId, frame) {
     const { dispatch, actionCreators } = P.ctx;
+    // Trang mở từ link lọc một object (serverID) thì bỏ lọc: cần thấy box xung quanh, nhất là lỗi theo cặp (chồng lấn…).
+    if (JSON.stringify(state().annotations.filters || []).includes('serverID')) dispatch({ type: 'CHANGE_ANNOTATIONS_FILTERS', payload: { filters: [] } });
     if (state().player.frame.number !== frame) dispatch(actionCreators.changeFrameAsync(frame));
     if (serverId == null) return true;
     for (let i = 0; i < 40; i += 1) {
@@ -83,14 +86,24 @@
     if (P.data?.run && ['queued', 'running'].includes(P.data.run.state)) { box.append(h('div', { class: 'ps-muted', text: `Đang quét… ${P.data.run.progress?.done || 0}/${P.data.run.progress?.total || '?'} frame` })); setTimeout(refresh, 1500); return; }
     if (!r?.objects) { box.append(h('button', { class: 'ps-btn ps-pri', text: 'Quét job này', on: { click: () => run(async () => { await api(`/api/jobs/${P.jobId}/scan`, { method: 'POST' }); }) } })); return; }
     const objs = r.objects, done = objs.filter(reviewed).length, drafts = objs.filter((o) => { const v = P.data.objectReviews?.[o.key]; return v?.status === 'returned' && !v.ticket; });
-    const waiting = P.tickets.filter((t) => t.status === 'submitted');
+    const sentT = P.tickets.filter((t) => t.status !== 'accepted'), accepted = P.tickets.length - sentT.length;
+    const assignee = state().job.instance?.assignee?.username;
     box.append(h('div', { class: 'ps-row' }, h('b', { text: `${done}/${objs.length} object đã duyệt` }), h('span', { class: 'ps-muted', text: ` · quét ${new Date(r.startedAt).toLocaleTimeString('vi-VN')}` }),
       h('button', { class: 'ps-btn ps-sm', text: 'Quét lại', on: { click: () => run(() => api(`/api/jobs/${P.jobId}/scan`, { method: 'POST' })) } })));
+    // Tab con như phía annotator: duyệt; lỗi đã trả mà chưa gửi (còn sửa / bỏ được, rồi mới bấm Gửi); phiếu đã gửi.
+    if (!P.qcTab) { try { P.qcTab = localStorage.getItem(QC_TAB_KEY) || 'review'; } catch (_) { P.qcTab = 'review'; } }
+    box.append(seg([['review', 'Duyệt', queue().length], ['drafts', 'Chưa gửi', drafts.length], ['sent', 'Đã gửi', sentT.length]], P.qcTab, (k) => { P.qcTab = k; try { localStorage.setItem(QC_TAB_KEY, k); } catch (_) { /* bỏ qua */ } }));
+    if (P.qcTab === 'drafts') return draftsView(box, drafts, assignee);
+    if (P.qcTab === 'sent') return sentView(box, sentT, accepted);
     const o = objs.find((x) => x.key === P.cur);
     if (o) {
       const card = h('div', { class: 'ps-card' }, h('div', { class: 'ps-row' }, h('b', { text: `${o.label} #${o.cvatId ?? o.serverId}` }), h('span', { class: 'ps-muted', text: ` frame ${o.first}–${o.last} · còn ${queue().length} chưa xem` })));
       const tool = toolFor(o);
-      card.append(tool.length ? h('ul', { class: 'ps-list' }, tool.map((f) => h('li', { class: f.severity === 'error' ? 'ps-err' : 'ps-warn', text: `${f.title}: ${f.short} (frame ${f.frames[0]}${f.frames.length > 1 ? `–${f.frames.at(-1)}` : ''})` })))
+      // Lỗi theo cặp: nút tới vật kia (cùng frame) để so hai box.
+      const partner = (f) => { const k = f.objKey === o.key ? f.other : f.objKey; return { serverId: Number(k.split(':')[1]), name: `#${(f.objKey === o.key ? f.otherCvatId : f.cvatId) ?? k.split(':')[1]}` }; };
+      card.append(tool.length ? h('ul', { class: 'ps-list' }, tool.map((f) => h('li', { class: f.severity === 'error' ? 'ps-err' : 'ps-warn' },
+        h('span', { text: `${f.title}: ${f.short} (frame ${f.frames[0]}${f.frames.length > 1 ? `–${f.frames.at(-1)}` : ''}) ` }),
+        f.other ? h('button', { class: 'ps-btn ps-sm', text: `Xem ${partner(f).name}`, on: { click: () => goTo(partner(f).serverId, f.frames[0]) } }) : null)))
         : h('div', { class: 'ps-muted', text: 'Tool không báo gì: QC tự xem.' }));
       card.append(h('div', { class: 'ps-row' },
         h('button', { class: 'ps-btn ps-ok', text: 'Đạt (Alt+1)', on: { click: () => run(() => qcAct('ok')) } }),
@@ -100,21 +113,55 @@
         h('button', { class: 'ps-btn', text: 'Bỏ qua (Alt+J)', on: { click: () => skip() } })));
       box.append(card);
     } else box.append(h('div', { class: 'ps-ok-text', text: 'Đã duyệt hết object.' }));
-    const assignee = state().job.instance?.assignee?.username;
+    if (drafts.length) box.append(h('div', { class: 'ps-muted', text: `${drafts.length} lỗi đã trả, chưa gửi: xem lại ở tab "Chưa gửi" rồi bấm Gửi.` }));
+    const missBtn = h('button', { class: 'ps-btn', text: '+ Thiếu vật ở frame này', on: { click: () => missingForm(box, missBtn, assignee) } });
+    box.append(missBtn);
+    box.append(h('button', { class: 'ps-btn', text: 'Hoàn thành duyệt job', on: { click: () => run(() => api(`/api/jobs/${P.jobId}/complete`, { method: 'POST', body: '{}' }).then(() => alert('Đã hoàn thành duyệt job'))) } }));
+  }
+
+  /** Lỗi QC đã trả mà chưa gửi: sửa lại (nhãn, frame, ghi chú) hoặc bỏ trả lỗi; cuối cùng mới Gửi cho annotator. */
+  function draftsView(box, drafts, assignee) {
+    if (!drafts.length) box.append(h('div', { class: 'ps-muted', text: 'Không có lỗi nào chờ gửi. Trả lỗi ở tab "Duyệt".' }));
+    for (const o of drafts) {
+      const is = P.data.objectReviews[o.key].issue || { tags: [], frame: null, text: '' };
+      const card = h('div', { class: 'ps-card' },
+        h('div', { class: 'ps-row' }, h('b', { text: `${o.label} #${o.cvatId ?? o.serverId}` }), h('span', { class: 'ps-muted', text: is.frame != null ? ` frame ${is.frame}` : ` frame ${o.first}–${o.last}` })),
+        is.tags.length ? h('div', { class: 'ps-err', text: is.tags.join(' · ') }) : null, is.text ? h('div', { text: is.text }) : null);
+      card.append(h('div', { class: 'ps-row' },
+        h('button', { class: 'ps-btn', text: 'Tới box', on: { click: () => goTo(o.serverId, is.frame ?? focusFrame(o)) } }),
+        h('button', { class: 'ps-btn', text: 'Sửa', on: { click: () => returnForm(card, o, is) } }),
+        h('button', { class: 'ps-btn', text: 'Bỏ trả lỗi', on: { click: () => run(() => api(`/api/jobs/${P.jobId}/objects`, { method: 'POST', body: JSON.stringify({ keys: [o.key], status: null }) })) } })));
+      box.append(card);
+    }
     if (drafts.length) box.append(h('button', { class: 'ps-btn ps-pri', text: `Gửi ${drafts.length} lỗi cho ${assignee || 'annotator'}`, on: { click: () => run(async () => {
       if (!assignee) throw new Error('Job chưa giao annotator trên CVAT');
       await api('/api/tickets/batch', { method: 'POST', body: JSON.stringify({ jobId: P.jobId, assignee, keys: drafts.map((d) => d.key) }) });
     }) } }));
-    const missBtn = h('button', { class: 'ps-btn', text: '+ Thiếu vật ở frame này', on: { click: () => missingForm(box, missBtn, assignee) } });
-    box.append(missBtn);
-    for (const t of waiting) {
-      box.append(h('div', { class: 'ps-card' }, h('div', { class: 'ps-row' }, h('b', { text: `${t.id} · ${who(t)}` }), h('span', { class: 'ps-muted', text: ' đã nộp lại' })),
-        t.unchanged ? h('div', { class: 'ps-warn', text: 'Object trên CVAT chưa đổi so với lúc trả lỗi.' }) : null,
+  }
+
+  /** Phiếu đã gửi: annotator chưa đụng tới thì thu hồi được để sửa; đã nộp thì nghiệm thu / trả lại. */
+  function sentView(box, list, accepted) {
+    const LABEL = { open: ['Chờ annotator sửa', 'ps-muted'], returned: ['Đã trả lại, annotator sửa tiếp', 'ps-err'], submitted: ['Annotator đã nộp, chờ nghiệm thu', 'ps-warn'] };
+    if (!list.length) box.append(h('div', { class: 'ps-muted', text: 'Chưa có phiếu nào đang mở.' }));
+    for (const t of list) {
+      const qcNote = [...t.thread].reverse().find((m) => m.role === 'qc' && m.text)?.text || '';
+      const fresh = t.status === 'open' && t.kind !== 'missing' && !t.thread.some((m) => m.role === 'annotator');
+      box.append(h('div', { class: 'ps-card' }, h('div', { class: 'ps-row' }, h('b', { text: `${t.id} · ${who(t)}` }), h('span', { class: (LABEL[t.status] || LABEL.open)[1], text: ` ${(LABEL[t.status] || LABEL.open)[0]}` })),
+        h('div', { class: 'ps-err', text: t.title }), issueList(t), qcNote ? h('div', { text: qcNote }) : null,
+        t.status === 'submitted' && t.unchanged ? h('div', { class: 'ps-warn', text: 'Object trên CVAT chưa đổi so với lúc trả lỗi.' }) : null,
         h('div', { class: 'ps-row' }, h('button', { class: 'ps-btn', text: 'Xem', on: { click: () => goTo(t.serverId, t.frames[0]) } }),
-          h('button', { class: 'ps-btn ps-ok', text: 'Nghiệm thu', on: { click: () => run(() => api(`/api/tickets/${t.id}/accept`, { method: 'POST', body: '{}' })) } }),
-          h('button', { class: 'ps-btn ps-bad', text: 'Trả lại', on: { click: () => { const text = prompt('Lý do trả lại'); if (text) run(() => api(`/api/tickets/${t.id}/return`, { method: 'POST', body: JSON.stringify({ text }) })); } } }))));
+          fresh ? h('button', { class: 'ps-btn', text: 'Thu hồi để sửa', title: 'Annotator chưa bắt đầu: đưa về tab Chưa gửi', on: { click: () => run(() => api(`/api/tickets/${t.id}/recall`, { method: 'POST', body: '{}' })) } }) : null,
+          t.status === 'submitted' ? h('button', { class: 'ps-btn ps-ok', text: 'Nghiệm thu', on: { click: () => run(() => api(`/api/tickets/${t.id}/accept`, { method: 'POST', body: '{}' })) } }) : null,
+          t.status === 'submitted' ? h('button', { class: 'ps-btn ps-bad', text: 'Trả lại', on: { click: () => { const text = prompt('Lý do trả lại'); if (text) run(() => api(`/api/tickets/${t.id}/return`, { method: 'POST', body: JSON.stringify({ text }) })); } } }) : null,
+          h('button', { class: 'ps-btn', text: 'Ghi chú', on: { click: () => { const text = prompt('Ghi chú thêm cho annotator'); if (text) run(() => api(`/api/tickets/${t.id}/comment`, { method: 'POST', body: JSON.stringify({ text }) })); } } }))));
     }
-    box.append(h('button', { class: 'ps-btn', text: 'Hoàn thành duyệt job', on: { click: () => run(() => api(`/api/jobs/${P.jobId}/complete`, { method: 'POST', body: '{}' }).then(() => alert('Đã hoàn thành duyệt job'))) } }));
+    if (accepted) box.append(h('div', { class: 'ps-ok-text', text: `${accepted} phiếu đã nghiệm thu.` }));
+  }
+
+  /** Tab con kiểu Segmented (dùng cho QC và annotator). */
+  function seg(tabs, cur, pick) {
+    return h('div', { class: 'ps-seg', role: 'tablist' }, tabs.map(([k, label, n]) => h('button', { class: `ps-seg-i${cur === k ? ' on' : ''}`, role: 'tab', 'aria-selected': String(cur === k), text: `${label} (${n})`,
+      on: { click: () => { pick(k); render(); } } })));
   }
 
   function skip() {
@@ -123,18 +170,25 @@
     P.cur = next.key; render(); goTo(next.serverId, focusFrame(next));
   }
 
-  function returnForm(card, o) {
+  /** Form trả lỗi; `prev` là lỗi đã ghi (sửa lỗi chưa gửi): điền sẵn nhãn, frame, ghi chú và lưu tại chỗ. */
+  function returnForm(card, o, prev = null) {
     card.querySelector('.ps-form')?.remove();
-    const picked = new Set(toolFor(o).slice(0, 1).map((f) => f.title));
-    const tags = [...new Set([...toolFor(o).map((f) => f.title), ...TAGS])];
+    const picked = new Set(prev ? prev.tags : toolFor(o).map((f) => f.title)); // mới: chọn sẵn mọi lỗi tool báo; QC bỏ tick lỗi báo nhầm
+    const tags = [...new Set([...toolFor(o).map((f) => f.title), ...TAGS, ...picked])];
     const note = h('textarea', { rows: '2', placeholder: 'Ghi chú cho annotator', class: 'ps-in' });
-    const frame = state().player.frame.number;
+    note.value = prev?.text || '';
+    let frame = prev?.frame ?? state().player.frame.number;
+    const frameText = h('span', { class: 'ps-muted', text: `Frame thấy lỗi: ${frame}` });
+    const useCur = h('button', { class: 'ps-btn ps-sm', text: 'Lấy frame đang mở', on: { click: () => { frame = state().player.frame.number; frameText.textContent = `Frame thấy lỗi: ${frame}`; } } });
     const form = h('div', { class: 'ps-form' },
       h('div', { class: 'ps-row ps-wrap' }, tags.map((t) => { const b = h('button', { class: `ps-tag${picked.has(t) ? ' on' : ''}`, text: t }); b.addEventListener('click', () => { if (picked.has(t)) picked.delete(t); else picked.add(t); b.classList.toggle('on'); }); return b; })),
-      h('div', { class: 'ps-muted', text: `Frame thấy lỗi: ${frame} (frame đang mở trong CVAT)` }), note,
-      h('div', { class: 'ps-row' }, h('button', { class: 'ps-btn ps-bad', text: 'Trả lỗi', on: { click: () => {
+      h('div', { class: 'ps-row' }, frameText, useCur), note,
+      h('div', { class: 'ps-row' }, h('button', { class: 'ps-btn ps-bad', text: prev ? 'Lưu' : 'Trả lỗi', on: { click: () => {
         if (!picked.size && !note.value.trim()) { note.placeholder = 'Chọn ít nhất một lỗi hoặc ghi chú'; return; }
-        run(() => qcAct('return', { tags: [...picked], frame, text: note.value.trim(), finding: toolFor(o)[0]?.key || null }));
+        const keep = toolFor(o).filter((f) => picked.has(f.title)).map((f) => f.key);
+        const issue = { tags: [...picked], frame, text: note.value.trim(), finding: keep[0] || null, findings: keep };
+        if (prev) run(() => api(`/api/jobs/${P.jobId}/objects`, { method: 'POST', body: JSON.stringify({ keys: [o.key], status: 'returned', issue }) }));
+        else run(() => qcAct('return', issue));
       } } }), h('button', { class: 'ps-btn', text: 'Huỷ', on: { click: () => form.remove() } })));
     card.append(form);
     note.focus();
@@ -163,22 +217,58 @@
 
   async function loadAnn() { P.tickets = (await api('/api/tickets')).filter((t) => t.jobId === P.jobId); }
 
+  /** Từng lỗi tool báo trong phiếu: tới frame của lỗi đó, lỗi theo cặp thì tới cả vật kia. */
+  const issueList = (t) => (t.issues?.length ? h('ul', { class: 'ps-list' }, t.issues.map((x) => h('li', { class: x.severity === 'error' ? 'ps-err' : 'ps-warn' },
+    h('span', { text: `${x.title}: ${x.short} ` }),
+    h('button', { class: 'ps-btn ps-sm', text: x.frames[0] === x.frames[1] ? `Frame ${x.frames[0]}` : `Frame ${x.frames[0]}–${x.frames[1]}`, on: { click: () => goTo(t.serverId, x.frames[0]) } }),
+    x.other ? h('button', { class: 'ps-btn ps-sm', text: `Xem ${x.otherLabel || ''} #${x.otherCvatId ?? x.otherServerId}`, on: { click: () => goTo(x.otherServerId, x.frames[0]) } }) : null))) : null);
+
+  /** Nộp (hoặc nộp lại để sửa ghi chú): chặn khi CVAT còn thay đổi chưa Lưu. */
+  const submit = (t, text) => run(async () => {
+    const job = state().job.instance;
+    if (job?.annotations?.hasUnsavedChanges && await job.annotations.hasUnsavedChanges()) throw new Error('Còn thay đổi chưa Lưu: bấm Save (Ctrl+S) của CVAT trước');
+    const r = await api(`/api/tickets/${t.id}/submit`, { method: 'POST', body: JSON.stringify({ text }) });
+    if (r.unchanged) alert('Đã nộp, nhưng object trên CVAT chưa đổi so với lúc QC trả lỗi.');
+  });
+
   function annView(box) {
-    const todo = P.tickets.filter((t) => t.status === 'open' || t.status === 'returned');
-    box.append(h('b', { text: todo.length ? `${todo.length} lỗi QC trả về cần sửa` : 'Không có lỗi nào cần sửa ở job này.' }));
-    for (const t of todo) {
-      const qcNote = [...t.thread].reverse().find((m) => m.role === 'qc' && m.text)?.text || t.message || '';
-      const reply = h('textarea', { rows: '1', placeholder: 'Đã sửa gì (tuỳ chọn)', class: 'ps-in' });
+    const todo = P.tickets.filter((t) => t.status === 'open' || t.status === 'returned'), sent = P.tickets.filter((t) => t.status === 'submitted');
+    const done = P.tickets.filter((t) => t.status === 'accepted');
+    const goBtn = (t) => [h('button', { class: 'ps-btn', text: t.kind === 'missing' ? `Tới frame ${t.frames[0]}` : 'Tới box', on: { click: () => goTo(t.serverId, t.frames[0]) } }),
+      t.other && !t.issues?.length ? h('button', { class: 'ps-btn', text: `Xem ${t.otherLabel || ''} #${t.otherCvatId ?? t.otherServerId} (vật kia)`, on: { click: () => goTo(t.otherServerId, t.frames[0]) } }) : null];
+    // Tab con thay cho cuộn dài. Mở job: còn lỗi chưa nộp thì vào "Chưa nộp", không thì tab chọn lần trước.
+    if (!P.annTab) { try { P.annTab = localStorage.getItem(ANN_TAB_KEY); } catch (_) { /* bộ nhớ trang bị chặn */ } if (todo.length || !P.annTab) P.annTab = 'todo'; }
+    box.append(seg([['todo', 'Chưa nộp', todo.length], ['sent', 'Đã nộp', sent.length], ['done', 'Đã nghiệm thu', done.length]], P.annTab,
+      (k) => { P.annTab = k; try { localStorage.setItem(ANN_TAB_KEY, k); } catch (_) { /* bỏ qua */ } }));
+    if (P.annTab === 'done') {
+      if (!done.length) box.append(h('div', { class: 'ps-muted', text: 'Chưa có lỗi nào được QC nghiệm thu.' }));
+      for (const t of done) box.append(h('div', { class: 'ps-card' }, h('div', { class: 'ps-row' }, h('b', { text: `${t.id} · ${who(t)}` }), h('span', { class: 'ps-ok-text', text: ' đã nghiệm thu (khoá)' })),
+        h('div', { class: 'ps-muted', text: t.title }), h('div', { class: 'ps-row' }, goBtn(t))));
+      return;
+    }
+    if (P.annTab === 'todo') {
+      if (!todo.length) box.append(h('div', { class: 'ps-muted', text: 'Không còn lỗi nào cần sửa ở job này.' }));
+      for (const t of todo) {
+        const qcNote = [...t.thread].reverse().find((m) => m.role === 'qc' && m.text)?.text || t.message || '';
+        const reply = h('textarea', { rows: '1', placeholder: 'Đã sửa gì (tuỳ chọn)', class: 'ps-in' });
+        box.append(h('div', { class: 'ps-card' },
+          h('div', { class: 'ps-row' }, h('b', { text: `${t.id} · ${who(t)}` }), h('span', { class: t.status === 'returned' ? 'ps-err' : 'ps-muted', text: t.status === 'returned' ? ' QC trả lại' : ` frame ${t.frames[0]}` })),
+          h('div', { class: 'ps-err', text: t.title }), issueList(t), h('div', { text: qcNote }), reply,
+          h('div', { class: 'ps-row' }, goBtn(t), h('button', { class: 'ps-btn ps-pri', text: 'Nộp', on: { click: () => submit(t, reply.value) } }))));
+      }
+      return;
+    }
+    // Đã nộp mà QC chưa xử lý: còn sửa ghi chú / nộp lại sau khi sửa thêm, hoặc rút về "Chưa nộp".
+    if (!sent.length) box.append(h('div', { class: 'ps-muted', text: 'Không có bài nào đang chờ QC.' }));
+    for (const t of sent) {
+      const mine = [...t.thread].reverse().find((m) => m.role !== 'qc' && m.role !== 'bot' && m.kind === 'submit');
+      const reply = h('textarea', { rows: '1', placeholder: 'Ghi chú khi nộp', class: 'ps-in' });
+      reply.value = mine?.text || '';
       box.append(h('div', { class: 'ps-card' },
-        h('div', { class: 'ps-row' }, h('b', { text: `${t.id} · ${who(t)}` }), h('span', { class: t.status === 'returned' ? 'ps-err' : 'ps-muted', text: t.status === 'returned' ? ' QC trả lại' : ` frame ${t.frames[0]}` })),
-        h('div', { class: 'ps-err', text: t.title }), h('div', { text: qcNote }), reply,
-        h('div', { class: 'ps-row' }, h('button', { class: 'ps-btn', text: t.kind === 'missing' ? `Tới frame ${t.frames[0]}` : 'Tới box', on: { click: () => goTo(t.serverId, t.frames[0]) } }),
-          h('button', { class: 'ps-btn ps-pri', text: 'Nộp', on: { click: () => run(async () => {
-            const job = state().job.instance;
-            if (job?.annotations?.hasUnsavedChanges && await job.annotations.hasUnsavedChanges()) throw new Error('Còn thay đổi chưa Lưu: bấm Save (Ctrl+S) của CVAT trước');
-            const r = await api(`/api/tickets/${t.id}/submit`, { method: 'POST', body: JSON.stringify({ text: reply.value }) });
-            if (r.unchanged) alert('Đã nộp, nhưng object trên CVAT chưa đổi so với lúc QC trả lỗi.');
-          }) } }))));
+        h('div', { class: 'ps-row' }, h('b', { text: `${t.id} · ${who(t)}` }), h('span', { class: 'ps-muted', text: mine ? ` nộp ${new Date(mine.at).toLocaleTimeString('vi-VN')}` : '' })),
+        h('div', { class: 'ps-err', text: t.title }), issueList(t), t.unchanged ? h('div', { class: 'ps-warn', text: 'Object trên CVAT chưa đổi so với lúc QC trả lỗi.' }) : null, reply,
+        h('div', { class: 'ps-row' }, goBtn(t), h('button', { class: 'ps-btn', text: 'Nộp lại', on: { click: () => submit(t, reply.value) } }),
+          h('button', { class: 'ps-btn', text: 'Rút lại để sửa', on: { click: () => run(() => api(`/api/tickets/${t.id}/withdraw`, { method: 'POST', body: '{}' })) } }))));
     }
   }
 
@@ -245,7 +335,7 @@
     if (!list) return;
     let tab = list.querySelector('.ps-sidebar-tab'), pane = tabs.querySelector('.ps-pane');
     if (!tab) {
-      const btn = h('div', { class: 'ant-tabs-tab-btn', role: 'tab', tabindex: '0', title: 'PointSnap: đo box, sửa track, QC' });
+      const btn = h('div', { class: 'ant-tabs-tab-btn', role: 'tab', tabindex: '0', title: 'PointSnap: QC và phiếu sửa lỗi' });
       btn.innerHTML = `${LOGO}<span>PointSnap</span>`;
       tab = h('div', { class: 'ant-tabs-tab ps-sidebar-tab', on: { click: () => setTab(true), keydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTab(true); } } } }, btn);
       list.insertBefore(tab, list.querySelector('.ant-tabs-ink-bar'));
@@ -255,9 +345,6 @@
     if (!pane) { pane = h('div', { class: 'ps-pane', role: 'tabpanel', 'aria-label': 'PointSnap' }); tabs.querySelector('.ant-tabs-content-holder').after(pane); }
     tabs.classList.toggle('ps-tab-on', tabOn);
     tab.firstChild.setAttribute('aria-selected', String(tabOn));
-    const host = document.getElementById('pointsnap-annotator');
-    // Bảng đo box ở trên, khung QC ở dưới.
-    if (host && pane.firstChild !== host) { host.setAttribute('docked', ''); host.style.display = ''; pane.prepend(host); }
     if (P.el && P.el.parentNode !== pane) pane.append(P.el);
   }
   setInterval(ensureTab, 400);
@@ -298,11 +385,11 @@
   function watch() {
     const job = state()?.job?.instance;
     const id = job && /\/jobs\/\d+/.test(location.pathname) ? job.id : null;
-    if (id !== P.jobId) { P.jobId = id; P.cur = null; P.data = null; refresh(); }
+    if (id !== P.jobId) { P.jobId = id; P.cur = null; P.data = null; P.annTab = null; refresh(); }
   }
 
   document.addEventListener('keydown', (e) => {
-    if (!e.altKey || !P.jobId || P.me?.role !== 'qc' || /INPUT|TEXTAREA/.test(document.activeElement?.tagName || '')) return;
+    if (!e.altKey || !P.jobId || P.me?.role !== 'qc' || P.qcTab !== 'review' || /INPUT|TEXTAREA/.test(document.activeElement?.tagName || '')) return;
     const o = P.data?.result?.objects.find((x) => x.key === P.cur);
     const act = { 1: () => run(() => qcAct('ok')), 2: () => o && returnForm(P.el.querySelector('.ps-card'), o), 3: () => run(() => qcAct('false')), j: skip }[e.key.toLowerCase()];
     if (act) { e.preventDefault(); e.stopPropagation(); act(); }

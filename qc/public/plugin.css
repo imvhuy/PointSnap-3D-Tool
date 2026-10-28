@@ -32,6 +32,12 @@
 #pointsnap-plugin .ps-muted { color: rgba(0, 0, 0, .45); } #pointsnap-plugin .ps-err { color: #cf1322; } #pointsnap-plugin .ps-warn { color: #d48806; } #pointsnap-plugin .ps-ok-text { color: #389e0d; }
 #pointsnap-plugin .ps-msg:empty { display: none; }
 #pointsnap-plugin .ps-wrap { gap: 4px; }
+/* Tab con của annotator: kiểu Segmented của Ant Design. */
+#pointsnap-plugin .ps-seg { display: flex; gap: 2px; padding: 2px; border-radius: 6px; background: #f5f5f5; position: sticky; top: 0; z-index: 1; }
+#pointsnap-plugin .ps-seg-i { flex: 1; min-width: 0; height: 26px; padding: 0 6px; border: 0; border-radius: 4px; background: none; color: rgba(0, 0, 0, .65); cursor: pointer; font: inherit; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#pointsnap-plugin .ps-seg-i:hover { color: rgba(0, 0, 0, .88); background: rgba(0, 0, 0, .06); }
+#pointsnap-plugin .ps-seg-i.on { background: #fff; color: rgba(0, 0, 0, .88); box-shadow: 0 1px 2px rgba(0, 0, 0, .03), 0 1px 6px -1px rgba(0, 0, 0, .02), 0 2px 4px rgba(0, 0, 0, .02); }
+#pointsnap-plugin .ps-seg-i:focus-visible { outline: 3px solid #91caff; outline-offset: 1px; }
 
 /* Tab PointSnap trong thanh bên của CVAT (cạnh Objects / Labels), cùng kiểu tab card của CVAT. */
 .cvat-objects-sidebar-tabs .ps-sidebar-tab .ant-tabs-tab-btn { display: inline-flex; align-items: center; gap: 6px; }
@@ -44,7 +50,7 @@
 .cvat-objects-sidebar-tabs.ps-tab-on > .ant-tabs-content-holder { display: none !important; }
 .cvat-objects-sidebar-tabs:not(.ps-tab-on) > .ps-pane { display: none !important; }
 .cvat-objects-sidebar-tabs > .ps-pane { display: block !important; flex: 1 1 auto; min-height: 0; overflow-y: auto; background: #fff; }
-/* Khung QC trong tab: nằm dưới bảng annotator, không nổi. */
+/* Khung QC trong tab: không nổi. */
 .ps-pane #pointsnap-plugin { position: static; width: auto; max-height: none; overflow: visible; border: 0; border-top: 1px solid #f0f0f0; border-radius: 0; box-shadow: none; }
 .ps-pane #pointsnap-plugin .ps-head { position: static; }
 .ps-pane #pointsnap-plugin .ps-logo, .ps-pane #pointsnap-plugin .ps-head > b { display: none; }

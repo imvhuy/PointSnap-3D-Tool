@@ -47,7 +47,9 @@ test('đăng nhập CVAT, vai trò, phiếu giao việc QC → annotator → QC'
   const store = new Store(home);
   const fp0 = fingerprint(TRACK);
   store.saveScan(7, { job: { id: 7, taskId: 3, taskName: 'T', start: 0, stop: 10 }, startedAt: new Date().toISOString(),
-    findings: [{ key: 'f1', rule: 'ground.gap', title: 'Lơ lửng', message: 'Box lơ lửng 0.3 m', frames: [2, 3], severity: 'error', objKey: 'track:9' }],
+    findings: [{ key: 'f1', rule: 'ground.gap', title: 'Lơ lửng', message: 'Box lơ lửng 0.3 m', frames: [2, 3], severity: 'error', objKey: 'track:9' },
+      { key: 'f2', rule: 'overlap', title: 'Chồng lấn', message: 'Chồng 20%', frames: [4, 5], severity: 'error', objKey: 'track:10', other: 'track:11' },
+      { key: 'f3', rule: 'size.class_range', title: 'Kích thước', short: 'dài 6 m', message: 'Dài 6 m ngoài khoảng', frames: [7, 9], severity: 'warning', objKey: 'track:11' }],
     objects: [{ key: 'track:9', kind: 'track', serverId: 9, cvatId: 5, label: 'car', first: 0, last: 10, fingerprint: fp0 },
       { key: 'track:10', kind: 'track', serverId: 10, cvatId: 6, label: 'car', first: 0, last: 10, fingerprint: 'x10' },
       { key: 'track:11', kind: 'track', serverId: 11, cvatId: 7, label: 'pedestrian', first: 0, last: 10, fingerprint: 'x11' }] });
@@ -91,21 +93,36 @@ test('đăng nhập CVAT, vai trò, phiếu giao việc QC → annotator → QC'
   // QC duyệt từng object: trả lỗi hai cái (ghi lỗi, chưa gửi ai), OK một cái.
   const mark = (keys, status, issue) => call('POST', '/api/jobs/7/objects', { cookie: qc.cookie, body: { keys, status, issue } });
   await mark(['track:9'], 'returned', { tags: ['Lơ lửng'], frame: 3, text: 'Hạ đáy box', finding: 'f1' });
-  await mark(['track:11'], 'returned', { tags: ['Sai class'] });
+  // Một cuboid hai lỗi tool báo: phiếu giữ cả hai, mỗi lỗi một khoảng frame, lỗi theo cặp có vật kia.
+  await mark(['track:11'], 'returned', { tags: ['Chồng lấn', 'Kích thước'], findings: ['f2', 'f3'] });
   await mark(['track:10'], 'ok');
   assert.match((await call('POST', '/api/jobs/7/complete', { cookie: qc.cookie, body: {} })).body.error, /2 lỗi chưa gửi/);
 
   // Gửi một lượt: mỗi object một phiếu; gửi lại không tạo trùng.
   assert.equal((await call('POST', '/api/tickets/batch', { cookie: ann.cookie, body: { jobId: 7, assignee: 'ann', keys: ['track:9'] } })).status, 403);
   const sent = await call('POST', '/api/tickets/batch', { cookie: qc.cookie, body: { jobId: 7, assignee: 'ann', keys: ['track:9', 'track:11', 'track:10'] } });
-  assert.deepEqual(sent.body.map((x) => [x.objKey, x.title, x.status]), [['track:9', 'Lơ lửng', 'open'], ['track:11', 'Sai class', 'open']]);
-  const [t9, t11] = sent.body;
+  assert.deepEqual(sent.body.map((x) => [x.objKey, x.title, x.status]), [['track:9', 'Lơ lửng', 'open'], ['track:11', 'Chồng lấn · Kích thước', 'open']]);
+  let [t9, t11] = sent.body;
+  assert.deepEqual([t11.other, t11.otherServerId, t11.otherCvatId], ['track:10', 10, 6], 'lỗi theo cặp: phiếu ghi cả vật kia');
+  assert.deepEqual(t11.issues.map((x) => [x.key, x.frames, x.other || null]), [['f2', [4, 5], 'track:10'], ['f3', [7, 9], null]]);
+  assert.deepEqual(t11.frames, [4, 9], 'khoảng frame phủ mọi lỗi');
+  assert.deepEqual(t11.thread.map((m) => m.role), ['bot', 'bot', 'qc'], 'lời tool báo của từng lỗi');
+  assert.equal(t9.other, undefined);
   assert.deepEqual(t9.frames, [3, 3]);
   assert.deepEqual(t9.thread.map((m) => m.role), ['bot', 'qc'], 'kèm lời tool báo và ghi chú của QC');
   assert.match(t9.thread[1].text, /^Frame 3: Hạ đáy box/);
   assert.equal(new Store(home).objectReviews(7)['track:9'].ticket, t9.id);
   assert.equal((await call('POST', '/api/tickets/batch', { cookie: qc.cookie, body: { jobId: 7, assignee: 'ann', keys: ['track:9'] } })).body.length, 0);
 
+  // QC thu hồi phiếu annotator chưa đụng tới: phiếu bỏ, object về "Chưa gửi" với đúng lỗi đã ghi; sửa xong gửi lại.
+  assert.equal((await call('POST', `/api/tickets/${t11.id}/recall`, { cookie: ann.cookie, body: {} })).status, 403, 'annotator không thu hồi được');
+  assert.equal((await call('POST', `/api/tickets/${t11.id}/recall`, { cookie: qc.cookie, body: {} })).status, 200);
+  const r11 = new Store(home).objectReviews(7)['track:11'];
+  assert.deepEqual([r11.status, r11.ticket, r11.issue.findings], ['returned', undefined, ['f2', 'f3']], 'về Chưa gửi, giữ lỗi QC ghi');
+  assert.equal((await call('GET', '/api/tickets', { cookie: ann.cookie })).body.length, 1, 'annotator không còn thấy phiếu đã thu hồi');
+  await mark(['track:11'], 'returned', { tags: ['Chồng lấn', 'Kích thước'], text: 'Thu nhỏ đuôi xe', findings: ['f2', 'f3'] });
+  [t11] = (await call('POST', '/api/tickets/batch', { cookie: qc.cookie, body: { jobId: 7, assignee: 'ann', keys: ['track:11'] } })).body;
+  assert.match(t11.thread.at(-1).text, /Thu nhỏ đuôi xe/);
   assert.equal((await call('GET', '/api/tickets', { cookie: ann.cookie })).body.length, 2);
   assert.equal((await call('GET', '/api/tickets', { cookie: bob.cookie })).body.length, 0, 'chỉ thấy phiếu của mình');
   assert.equal((await call('POST', `/api/tickets/${t9.id}/submit`, { cookie: bob.cookie, body: {} })).status, 403);
@@ -113,6 +130,14 @@ test('đăng nhập CVAT, vai trò, phiếu giao việc QC → annotator → QC'
 
   // Nộp khi chưa sửa / chưa Lưu trên CVAT: phiếu ghi "chưa đổi" để QC thấy.
   assert.equal((await call('POST', `/api/tickets/${t9.id}/submit`, { cookie: ann.cookie, body: { text: 'Xong' } })).body.unchanged, true);
+  // QC chưa xử lý thì annotator còn nộp lại (sửa ghi chú) hoặc rút về để sửa tiếp; có ghi lại trong trao đổi.
+  assert.equal((await call('POST', `/api/tickets/${t9.id}/submit`, { cookie: ann.cookie, body: { text: 'Xong, đã hạ đáy' } })).body.thread.at(-1).text, 'Xong, đã hạ đáy');
+  assert.equal((await call('POST', `/api/tickets/${t9.id}/withdraw`, { cookie: bob.cookie, body: {} })).status, 403);
+  assert.equal((await call('POST', `/api/tickets/${t9.id}/recall`, { cookie: qc.cookie, body: {} })).status, 409, 'annotator đã nộp thì QC không thu hồi được');
+  const back = (await call('POST', `/api/tickets/${t9.id}/withdraw`, { cookie: ann.cookie, body: { text: 'Sửa thêm' } })).body;
+  assert.deepEqual([back.status, back.thread.at(-1).kind], ['open', 'withdraw'], 'rút về đúng trạng thái trước khi nộp');
+  assert.equal((await call('POST', `/api/tickets/${t9.id}/withdraw`, { cookie: ann.cookie, body: {} })).status, 409, 'chỉ rút được khi đang chờ QC');
+  await call('POST', `/api/tickets/${t9.id}/submit`, { cookie: ann.cookie, body: { text: 'Xong' } });
   assert.equal((await call('POST', `/api/tickets/${t9.id}/return`, { cookie: qc.cookie, body: { text: 'Chưa thấy sửa' } })).body.status, 'returned');
   ANN.tracks = [{ ...TRACK, shapes: [{ ...TRACK.shapes[0], points: [0, 0, -0.3, 0, 0, 0, 4, 2, 1.5] }] }];
   const sub = await call('POST', `/api/tickets/${t9.id}/submit`, { cookie: ann.cookie, body: { text: 'Đã hạ đáy' } });
@@ -123,6 +148,8 @@ test('đăng nhập CVAT, vai trò, phiếu giao việc QC → annotator → QC'
 
   // Nghiệm thu: object OK theo bản đã sửa trên CVAT (quét lại không bắt duyệt lần nữa).
   assert.equal((await call('POST', `/api/tickets/${t9.id}/accept`, { cookie: qc.cookie, body: {} })).body.status, 'accepted');
+  assert.equal((await call('POST', `/api/tickets/${t9.id}/submit`, { cookie: ann.cookie, body: {} })).status, 409, 'đã nghiệm thu thì khoá');
+  assert.equal((await call('POST', `/api/tickets/${t9.id}/withdraw`, { cookie: ann.cookie, body: {} })).status, 409);
   const r9 = new Store(home).objectReviews(7)['track:9'];
   assert.equal(r9.status, 'ok');
   assert.equal(r9.fingerprint, fingerprint(ANN.tracks[0]));
@@ -148,7 +175,7 @@ test('đăng nhập CVAT, vai trò, phiếu giao việc QC → annotator → QC'
   const again = new Store(home), old = again.scan(7);
   again.saveScan(7, { ...old, startedAt: new Date().toISOString(), findings: [], objects: old.objects.map((o) => (o.key === 'track:9' ? { ...o, last: 8, fingerprint: 'moi' } : o)) });
   const prev = (await call('GET', '/api/jobs/7', { cookie: qc.cookie })).body.prev;
-  assert.deepEqual([prev.objects['track:9'].last, prev.objects['track:9'].fingerprint, prev.findings.map((f) => f.key)], [10, fp0, ['f1']]);
+  assert.deepEqual([prev.objects['track:9'].last, prev.objects['track:9'].fingerprint, prev.findings.map((f) => f.key)], [10, fp0, ['f1', 'f2', 'f3']]);
 
   // Token cho extension: tạo từ trang QC, mang vai trò người tạo, không tự đẻ token, xoá là mất quyền.
   const qt = (await call('POST', '/api/ext-tokens', { cookie: qc.cookie, body: { label: 'Edge' } })).body;
