@@ -665,7 +665,7 @@
 
   function saveSpec(guidelineJson, guidelineName) {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { window.removeEventListener('message', onSaved); reject(staleError('extension không trả lời')); }, 4000);
+      const timer = setTimeout(() => { window.removeEventListener('message', onSaved); reject(staleError('không nhận được phản hồi khi lưu')); }, 4000);
       function onSaved(event) {
         if (event.source !== window || event.data?.type !== 'POINTSNAP_SPEC_SAVED') return;
         clearTimeout(timer);

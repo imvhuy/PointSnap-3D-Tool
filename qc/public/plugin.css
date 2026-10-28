@@ -1,0 +1,50 @@
+/* Khung PointSnap trong trang CVAT (plugin.js). Theo kiểu Ant Design của CVAT (nền trắng, viền #d9d9d9, xanh #1677ff).
+ * Mọi lớp có tiền tố ps- để không đụng CSS của CVAT. */
+#pointsnap-plugin { position: fixed; left: 12px; bottom: 12px; z-index: 1000; width: 360px; max-height: 70vh; overflow: auto;
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: rgba(0, 0, 0, .88); background: #fff; border: 1px solid #d9d9d9; border-radius: 8px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .08), 0 3px 6px -4px rgba(0, 0, 0, .12), 0 9px 28px 8px rgba(0, 0, 0, .05); }
+#pointsnap-plugin[hidden] { display: none; }
+#pointsnap-plugin .ps-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #f0f0f0; position: sticky; top: 0; background: #fafafa; z-index: 1; }
+#pointsnap-plugin .ps-logo { display: inline-flex; width: 22px; height: 22px; color: #1f1f1f; flex: none; }
+#pointsnap-plugin .ps-logo svg { width: 100%; height: 100%; }
+#pointsnap-plugin .ps-role { padding: 0 7px; border: 1px solid #91caff; border-radius: 4px; background: #e6f4ff; color: #1677ff; font-size: 12px; line-height: 20px; }
+#pointsnap-plugin .ps-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#pointsnap-plugin .ps-head .ps-btn { margin-left: auto; }
+#pointsnap-plugin .ps-body { display: grid; gap: 10px; padding: 12px; }
+#pointsnap-plugin .ps-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+#pointsnap-plugin .ps-card { display: grid; gap: 8px; padding: 10px; border: 1px solid #f0f0f0; border-radius: 8px; background: #fafafa; }
+#pointsnap-plugin .ps-list { margin: 0; padding-left: 18px; }
+#pointsnap-plugin .ps-btn { height: 28px; padding: 0 12px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; color: rgba(0, 0, 0, .88); cursor: pointer; font: inherit;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, .02); transition: color .2s, border-color .2s, background .2s; }
+#pointsnap-plugin .ps-btn:hover { color: #4096ff; border-color: #4096ff; }
+#pointsnap-plugin .ps-btn:focus-visible, #pointsnap-plugin .ps-tag:focus-visible { outline: 3px solid #91caff; outline-offset: 1px; }
+#pointsnap-plugin .ps-sm { height: 24px; padding: 0 8px; font-size: 12px; border-radius: 4px; }
+#pointsnap-plugin .ps-pri { background: #1677ff; border-color: #1677ff; color: #fff; box-shadow: 0 2px 0 rgba(5, 145, 255, .1); }
+#pointsnap-plugin .ps-pri:hover { background: #4096ff; border-color: #4096ff; color: #fff; }
+#pointsnap-plugin .ps-ok { color: #389e0d; border-color: #b7eb8f; } #pointsnap-plugin .ps-ok:hover { color: #52c41a; border-color: #52c41a; }
+#pointsnap-plugin .ps-bad { color: #cf1322; border-color: #ffa39e; } #pointsnap-plugin .ps-bad:hover { color: #ff4d4f; border-color: #ff4d4f; }
+#pointsnap-plugin .ps-tag { padding: 1px 8px; border: 1px solid #d9d9d9; border-radius: 4px; background: #fafafa; color: inherit; cursor: pointer; font-size: 12px; }
+#pointsnap-plugin .ps-tag.on { border-color: #ffa39e; color: #cf1322; background: #fff1f0; }
+#pointsnap-plugin .ps-in { width: 100%; box-sizing: border-box; padding: 4px 11px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; color: inherit; font: inherit; resize: vertical; }
+#pointsnap-plugin .ps-in:hover, #pointsnap-plugin .ps-in:focus { border-color: #4096ff; outline: 0; }
+#pointsnap-plugin .ps-in:focus { box-shadow: 0 0 0 2px rgba(5, 145, 255, .1); }
+#pointsnap-plugin .ps-muted { color: rgba(0, 0, 0, .45); } #pointsnap-plugin .ps-err { color: #cf1322; } #pointsnap-plugin .ps-warn { color: #d48806; } #pointsnap-plugin .ps-ok-text { color: #389e0d; }
+#pointsnap-plugin .ps-msg:empty { display: none; }
+#pointsnap-plugin .ps-wrap { gap: 4px; }
+
+/* Tab PointSnap trong thanh bên của CVAT (cạnh Objects / Labels), cùng kiểu tab card của CVAT. */
+.cvat-objects-sidebar-tabs .ps-sidebar-tab .ant-tabs-tab-btn { display: inline-flex; align-items: center; gap: 6px; }
+.cvat-objects-sidebar-tabs .ps-sidebar-tab svg { width: 16px; height: 16px; flex: none; }
+.cvat-objects-sidebar-tabs.ps-tab-on .ant-tabs-tab-active { background: transparent !important; }
+.cvat-objects-sidebar-tabs.ps-tab-on .ant-tabs-tab-active .ant-tabs-tab-btn { text-shadow: none; }
+.cvat-objects-sidebar-tabs.ps-tab-on .ps-sidebar-tab { background: rgb(190, 190, 190) !important; }
+.cvat-objects-sidebar-tabs.ps-tab-on .ps-sidebar-tab .ant-tabs-tab-btn { text-shadow: 0 0 .25px currentColor; }
+/* CVAT đặt display cho khung nội dung với độ ưu tiên cao hơn: cần !important. */
+.cvat-objects-sidebar-tabs.ps-tab-on > .ant-tabs-content-holder { display: none !important; }
+.cvat-objects-sidebar-tabs:not(.ps-tab-on) > .ps-pane { display: none !important; }
+.cvat-objects-sidebar-tabs > .ps-pane { display: block !important; flex: 1 1 auto; min-height: 0; overflow-y: auto; background: #fff; }
+/* Khung QC trong tab: nằm dưới bảng annotator, không nổi. */
+.ps-pane #pointsnap-plugin { position: static; width: auto; max-height: none; overflow: visible; border: 0; border-top: 1px solid #f0f0f0; border-radius: 0; box-shadow: none; }
+.ps-pane #pointsnap-plugin .ps-head { position: static; }
+.ps-pane #pointsnap-plugin .ps-logo, .ps-pane #pointsnap-plugin .ps-head > b { display: none; }

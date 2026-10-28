@@ -47,7 +47,7 @@ khác thì xin phép chủ hệ thống trước.
 - **Dải track**: một ô mỗi keyframe, ô vàng là keyframe lệch (rê chuột xem lý do), ô viền trắng là frame đang đứng;
   bấm ô để tới frame. **Sửa cả track** mở 4 thao tác.
 - **Xem trước**: trước khi Áp dụng, box sau khi sửa ở frame này được vẽ **nét đứt xanh dương** chồng lên box hiện tại.
-- Nền tối cho hợp canvas 3D; đường mặt đất trên canvas màu xanh dương để không lẫn với màu "ổn".
+- Nền sáng như thanh bên của CVAT, có logo PointSnap; đường mặt đất trên canvas màu xanh dương để không lẫn với màu "ổn".
 
 ## Tính năng
 

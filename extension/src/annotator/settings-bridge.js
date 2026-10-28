@@ -7,6 +7,8 @@
 (function () {
   'use strict';
 
+  // CVAT đã có plugin PointSnap (qc/public/plugin.js): plugin trả lời cấu hình từ dịch vụ QC, bridge này đứng ngoài.
+  if (document.documentElement.dataset.pointsnapPlugin) return;
   const Hosts = globalThis.PointSnapHosts;
   const SETTINGS = 'POINTSNAP_ANNOTATOR_SETTINGS';
   const REQUEST = 'POINTSNAP_ANNOTATOR_SETTINGS_REQUEST';
