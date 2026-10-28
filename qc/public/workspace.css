@@ -1,0 +1,163 @@
+/* PointSnap QC — đăng nhập, hiệu ứng khởi động, giao việc lỗi, màn annotator (Figma "Đăng nhập", "Annotator Workspace"). Dùng token của style.css. */
+[hidden] { display: none !important; } /* .top / .layout / .modal-bg tự đặt display nên phải thắng ở đây */
+
+/* ---------------------------------------------------------------- đăng nhập (login.js) */
+.small { font-size: 12px; } .center { text-align: center; }
+.err { color: var(--err); font-size: 12px; }
+.eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: 1.2px; }
+.login { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(360px, 1fr); min-height: 100vh; }
+.login[hidden] { display: none; }
+.login-art { display: flex; flex-direction: column; gap: 22px; padding: 32px 40px; background: var(--panel); border-right: 1px solid var(--line); min-width: 0; }
+.login-brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; }
+.login-brand .logo { width: 30px; height: 30px; color: var(--text); }
+.login-brand span, .i-name span { color: var(--accent); }
+.login-copy h1 { margin: 10px 0 8px; font-size: 38px; line-height: 1.15; letter-spacing: -.8px; font-weight: 700; }
+.login-copy p { margin: 0; color: var(--muted); font-size: 15px; max-width: 460px; }
+.login-visual { flex: 1; min-height: 240px; margin: 0; border-radius: 20px; background: url("img/login-light.png") center / cover no-repeat; }
+.login-foot { color: var(--faint); font-size: 11px; letter-spacing: .6px; }
+.login-form-wrap { display: grid; place-items: center; padding: 32px 24px; }
+.login-form { width: 100%; max-width: 380px; display: grid; gap: 14px; padding: 32px; background: var(--panel); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); }
+.login-form h2 { margin: 0; font-size: 26px; letter-spacing: -.4px; }
+.login-form p { margin: 0; }
+.login-form .pill { justify-self: start; }
+.login-form label, .modal label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.login-form input:not([type=checkbox]), .modal select, .modal textarea, .card textarea {
+  width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--raise); color: var(--text); font-weight: 400; }
+.login-form input:not([type=checkbox]) { height: 42px; }
+.modal textarea, .card textarea { resize: vertical; }
+.pw { position: relative; display: block; }
+.pw input { padding-right: 56px; }
+.pw .lnk { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); }
+.login-form .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.login-form .check, .check { display: flex; align-items: center; gap: 8px; font-weight: 400; color: var(--text); cursor: pointer; }
+.check input { accent-color: var(--accent); margin: 0; }
+.btn.big { height: 44px; font-size: 14px; border-radius: 12px; }
+
+/* hiệu ứng khởi động */
+.intro { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; overflow: hidden; color: #e7ecf2;
+  background: radial-gradient(ellipse at 50% 120%, #10233f 0%, #070b11 60%); transition: opacity .35s; }
+.intro[hidden] { display: none; }
+.intro.out { opacity: 0; }
+.i-stage { position: absolute; display: grid; justify-items: center; gap: 12px; padding: 0 16px; text-align: center; opacity: 0; animation: stage .9s ease both; }
+.i-stage h2 { margin: 0; font-size: 28px; letter-spacing: -.4px; }
+.i-stage .muted { color: #95a3b5; }
+.i-stage.s2 { animation-delay: .85s; }
+.i-stage.s3 { animation: stage-in .6s 1.7s ease forwards; }
+@keyframes stage { 0% { opacity: 0; transform: translateY(10px); } 20%, 80% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(-8px); } }
+@keyframes stage-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.i-logo { width: 72px; height: 72px; color: #3d86ff; }
+.i-logo path { stroke-dasharray: 90; stroke-dashoffset: 90; animation: draw .8s ease forwards; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.lights { position: absolute; top: -70px; display: flex; gap: 120px; pointer-events: none; }
+.lights i { width: 160px; height: 160px; border-radius: 50%; background: radial-gradient(circle, rgba(140, 190, 255, .55), transparent 70%); animation: glow .8s ease both; }
+@keyframes glow { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
+.i-name { font-size: 34px; font-weight: 700; letter-spacing: -.6px; }
+.rail { width: 260px; max-width: 70vw; height: 4px; border-radius: 999px; background: #1b2944; overflow: hidden; }
+.rail i { display: block; height: 100%; width: 0; background: #3d86ff; animation: rail .7s .95s ease forwards; }
+@keyframes rail { to { width: 100%; } }
+
+/* ---------------------------------------------------------------- tài khoản, số trên tab */
+.tab .badge { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; }
+.tab .badge[hidden] { display: none; }
+.acct { position: relative; }
+.menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 220px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .15); z-index: 20; }
+.menu[hidden] { display: none; }
+.menu-h { padding: 8px 10px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.menu button { width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 8px; background: none; cursor: pointer; }
+.menu button:hover { background: var(--raise); }
+
+/* ---------------------------------------------------------------- hộp thoại giao việc */
+.modal-bg { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; background: rgba(8, 12, 18, .5); }
+.modal-bg[hidden] { display: none; }
+.modal { width: 100%; max-width: 520px; max-height: calc(100vh - 32px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 20px 50px rgba(0, 0, 0, .3); }
+.m-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+.m-h h2 { margin: 0 0 2px; font-size: 17px; }
+.m-body { display: grid; gap: 12px; padding: 18px 20px; }
+.m-f { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--line); }
+.tags { margin-top: 6px; }
+.tagb { padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); cursor: pointer; font-size: 12px; }
+.tagb[aria-pressed="true"] { background: var(--err-soft); border-color: var(--err); color: var(--err); font-weight: 600; }
+.m-f .small { margin-right: auto; align-self: center; }
+.send-list { display: grid; gap: 8px; max-height: 300px; overflow: auto; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--raise); }
+.send-list .check { align-items: flex-start; }
+.send-list .check input { margin-top: 3px; }
+.modal input[type=number] { width: 120px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--raise); color: var(--text); }
+.tok { display: block; padding: 8px 10px; font-size: 12px; word-break: break-all; user-select: all; }
+.tok-list { display: grid; gap: 8px; }
+.tok-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.modal input:not([type=checkbox]):not([type=number]) { width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--raise); color: var(--text); font-weight: 400; }
+.ro { display: grid; gap: 4px; padding: 12px; border-radius: 12px; background: var(--raise); border: 1px solid var(--line); }
+.ro-h { display: flex; justify-content: space-between; font-size: 11px; }
+
+/* ---------------------------------------------------------------- phiếu giao việc (tickets.js) + trao đổi */
+.t-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 16px; align-items: start; }
+.t-list { display: grid; gap: 8px; align-content: start; }
+.t-list .card-h { margin-bottom: 4px; }
+.tcard { display: grid; gap: 3px; width: 100%; text-align: left; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); cursor: pointer; }
+.tcard:hover { border-color: var(--line-strong); }
+.tcard.on { border-color: var(--accent); background: var(--accent-soft); }
+.tc-h { display: flex; align-items: center; gap: 8px; }
+.tc-h .right, .msg-h .right, .a-row .right, .check .right { margin-left: auto; }
+.t-thread { display: grid; gap: 12px; }
+.facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 12px; border-radius: 12px; background: var(--raise); }
+.facts span { display: block; font-size: 10px; letter-spacing: .4px; }
+.msgs { display: grid; gap: 8px; max-height: 420px; overflow: auto; }
+.msg { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--raise); overflow-wrap: anywhere; }
+.msg.qc { border-left: 3px solid var(--accent); }
+.msg.annotator { border-left: 3px solid var(--ok); }
+.msg.bot { border-left: 3px solid var(--warn); }
+.card > .msg + .msg { margin-top: 8px; }
+.msg-h { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 12px; }
+.ava { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 9px; font-weight: 700; }
+
+/* ---------------------------------------------------------------- annotator (annotator.js) */
+.a-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.a-grid > div { min-width: 0; }
+.search.grow { flex: 1; min-width: 200px; height: 34px; }
+.tbl-tools .search input { width: auto; height: auto; padding: 0; border: 0; border-radius: 0; background: none; }
+.a-grid .tbl-tools { margin-bottom: 12px; }
+.a-tbl { min-width: 760px; }
+.a-tbl tbody tr { cursor: pointer; }
+.a-id { display: grid; font-size: 12px; max-width: 150px; }
+.a-id b { font-size: 11px; color: var(--muted); font-weight: 600; }
+.a-note { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a-k { margin-top: 12px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .5px; }
+.a-grid .card .obj { margin-bottom: 10px; white-space: normal; }
+.a-grid .card .msgs { margin: 8px 0 10px; max-height: 260px; }
+.a-grid .card textarea { margin-bottom: 10px; }
+.a-filter { display: grid; gap: 10px; }
+.a-row { display: flex; align-items: center; gap: 8px; }
+.pager .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; color: var(--text); }
+.pager .btn:disabled { color: var(--faint); }
+
+/* ---------------------------------------------------------------- bảng nổi trên CVAT (Document Picture-in-Picture) */
+.fl { display: grid; gap: 10px; padding: 12px; }
+.fl-h { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.fl-h svg { width: 18px; height: 18px; color: var(--muted); flex: none; }
+.fl-h .right { margin-left: auto; }
+.fl-tool { display: flex; flex-wrap: wrap; gap: 6px; }
+.fl-k { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.fl-k .k { height: 34px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); cursor: pointer; font-weight: 600; }
+.fl-k .k:hover { border-color: var(--line-strong); }
+.fl-k .k.ok { color: var(--ok); border-color: var(--ok); } .fl-k .k.ret { color: var(--err); border-color: var(--err); }
+.fl-k kbd { font: 11px Inter, system-ui, sans-serif; color: var(--faint); margin-right: 2px; }
+.fl-msg { font-size: 12px; }
+.fl ~ .modal-bg { padding: 6px; }
+.fl ~ .modal-bg .modal { border-radius: 12px; }
+.fl ~ .modal-bg .m-h, .fl ~ .modal-bg .m-body, .fl ~ .modal-bg .m-f { padding: 10px 12px; }
+
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .login-visual { background-image: url("img/login-dark.png"); } }
+:root[data-theme="dark"] .login-visual { background-image: url("img/login-dark.png"); }
+@media (max-width: 1180px) {
+  .a-grid, .t-grid { grid-template-columns: 1fr; }
+  .facts { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 860px) {
+  .login { grid-template-columns: 1fr; }
+  .login-art { border-right: 0; border-bottom: 1px solid var(--line); padding: 24px 16px; }
+  .login-copy h1 { font-size: 28px; }
+  .login-visual { min-height: 180px; }
+  .login-form-wrap { padding: 24px 16px; }
+  .login-form { padding: 24px 18px; }
+}
+@media (prefers-reduced-motion: reduce) { .intro, .i-stage, .i-logo path, .rail i, .lights i { animation: none; transition: none; } }
