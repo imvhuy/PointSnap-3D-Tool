@@ -1,4 +1,5 @@
 'use strict';
+const crypto = require('node:crypto');
 /*
  * Quét cả một job: mọi box ở mọi frame chạy qua đúng bộ luật của bảng annotator (extension/src/annotator/measure.js +
  * checks.js), cộng luật cấp track: hướng nhảy (như dải track của annotator) và luật chỉ QC ở trackrules.js (box nhảy,
@@ -85,6 +86,47 @@ async function junctionEvidence(hits, { client, jobId, start, chunkSize, frames,
   return { hits: out, rejected: rejected.size };
 }
 
+/** Dấu vân tay nội dung một track / shape: đổi khi annotator sửa bất kỳ keyframe, thuộc tính hay label nào. */
+function fingerprint(item) {
+  const strip = ({ id, ...rest }) => rest;
+  return crypto.createHash('sha1').update(JSON.stringify({ ...strip(item), shapes: (item.shapes || []).map(strip) })).digest('hex').slice(0, 16);
+}
+
+/**
+ * Mọi object của job (kể cả object tool không báo gì), cho QC duyệt hết: khoảng frame, số box, số mục tool báo, số box tool
+ * không đo được (không đo được mặt đất, frame thiếu point cloud), khoảng cách gần nhất, đứng yên hay không, dấu vân tay.
+ */
+function objectSummary({ annotations, frames, cvatIds, findings, noGround, noPoints, poses, g }) {
+  const src = new Map([...(annotations.shapes || []).map((x) => [`shape:${x.id}`, x]), ...(annotations.tracks || []).map((x) => [`track:${x.id}`, x])]);
+  const out = new Map();
+  for (const [f, objs] of frames) {
+    for (const o of objs) {
+      if (!out.has(o.key)) out.set(o.key, { key: o.key, kind: o.kind, serverId: o.serverId, cvatId: cvatIds.get(o.key) ?? null, label: o.label,
+        first: f, last: f, boxes: 0, minRange: Infinity, noGround: noGround.get(o.key) || 0, noPoints: 0, errors: 0, warnings: 0, infos: 0, world: [], len: o.box.dims[0] });
+      const r = out.get(o.key);
+      r.first = Math.min(r.first, f); r.last = Math.max(r.last, f); r.boxes += 1;
+      r.minRange = Math.min(r.minRange, Math.hypot(o.box.center[0], o.box.center[1]));
+      if (noPoints.has(f)) r.noPoints += 1;
+      if (poses?.has(f)) r.world.push(Icp.apply(poses.get(f), o.box.center[0], o.box.center[1]));
+    }
+  }
+  for (const x of findings) {
+    for (const k of [x.objKey, x.other].filter(Boolean)) {
+      const r = out.get(k);
+      if (r) r[`${x.severity === 'error' ? 'error' : x.severity === 'warning' ? 'warning' : 'info'}s`] += 1;
+    }
+  }
+  return [...out.values()].map(({ world, len, ...r }) => {
+    // Đứng yên: theo toạ độ đã bù chuyển động xe thu, tâm box không đi xa hơn ¼ chiều dài vật (tối thiểu 0,5 m).
+    const mx = world.reduce((s0, p) => s0 + p[0], 0) / (world.length || 1), my = world.reduce((s0, p) => s0 + p[1], 0) / (world.length || 1);
+    const spread = world.length ? Math.max(...world.map((p) => Math.hypot(p[0] - mx, p[1] - my))) : Infinity;
+    return { ...r, minRange: Number.isFinite(r.minRange) ? Math.round(r.minRange * 10) / 10 : null,
+      far: Number.isFinite(r.minRange) && r.minRange > g.ground.maxRangeM,
+      static: world.length >= 2 && spread <= Math.max(0.5, len / 4),
+      fingerprint: src.has(r.key) ? fingerprint(src.get(r.key)) : null };
+  });
+}
+
 /**
  * `client`: CvatClient; `guideline`: bộ ngưỡng đã resolve; `onProgress({ done, total, phase })`; `signal`: AbortSignal.
  * `qc`: ngưỡng luật chỉ QC + luật tắt (rules.js). `gate`: { maxWarningsPer100 }. Trả về kết quả quét (JSON được).
@@ -107,6 +149,7 @@ async function scanJob({ client, jobId, guideline: g, qc: q = QC_FULL_DEFAULTS, 
   const hits = []; // { objKey, frame, keyframe, issue }
   const coverage = { framesWithoutPoints: [], boxesWithoutGround: 0, chunkErrors: [] };
   let boxes = 0, done = 0;
+  const noGround = new Map(); // object → số box không đo được mặt đất
   // Chuyển động xe thu từng bước (khớp point cloud frame này vào frame trước), null khi không khớp được.
   const steps = new Map();
   let prevStructure = null, prevFrame = null, guess = null;
@@ -150,7 +193,7 @@ async function scanJob({ client, jobId, guideline: g, qc: q = QC_FULL_DEFAULTS, 
         const trackDims = track ? track.keyframes.filter((k) => !k.outside && k.box && k.frame !== f).map((k) => k.box.dims) : null;
         const m = Measure.measureBox(frameData,
           { box: o.box, label: o.label, attributes: o.attributes, occluded: o.occluded, clientId: o.key }, others, trackDims, g);
-        if (!m.contact) coverage.boxesWithoutGround += 1;
+        if (!m.contact) { coverage.boxesWithoutGround += 1; noGround.set(o.key, (noGround.get(o.key) || 0) + 1); }
         // "Không đo được mặt đất" không phải lỗi của nhãn: chỉ đếm vào coverage, không thành mục cho QC duyệt.
         for (const issue of m.issues) if (issue.rule !== 'ground.no_evidence') hits.push({ objKey: o.key, frame: f, keyframe: o.keyframe, issue });
       }
@@ -227,7 +270,8 @@ async function scanJob({ client, jobId, guideline: g, qc: q = QC_FULL_DEFAULTS, 
       disabledRules: [...off],
     },
     findings,
+    objects: objectSummary({ annotations, frames, cvatIds, findings, noGround, noPoints: new Set(coverage.framesWithoutPoints), poses, g }),
   };
 }
 
-module.exports = { scanJob, groupKey, trackFindings };
+module.exports = { scanJob, groupKey, trackFindings, fingerprint };

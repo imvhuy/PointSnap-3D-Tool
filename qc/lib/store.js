@@ -3,6 +3,7 @@
  * Lưu trên đĩa (thư mục QC_HOME), file JSON nhỏ, ghi qua file tạm rồi đổi tên để không hỏng khi tắt giữa chừng:
  * - scans/job-<id>.json: kết quả lần quét mới nhất của job;
  * - reviews/job-<id>.json: kết luận Đúng / Báo nhầm theo khoá mục (object + luật), giữ qua các lần quét lại;
+ * - objects/job-<id>.json: QC đã duyệt object nào (kèm dấu vân tay track lúc duyệt), job-<id>-done.json: lần hoàn thành;
  * - specs/<project-id | default>.json: các phiên bản guideline của project (ghi đè cùng định dạng file Export của trình
  *   sửa spec trong extension, thêm nhánh `qc` cho luật chỉ QC).
  */
@@ -12,7 +13,7 @@ const path = require('node:path');
 class Store {
   constructor(home) {
     this.home = home;
-    for (const dir of ['scans', 'reviews', 'specs']) fs.mkdirSync(path.join(home, dir), { recursive: true });
+    for (const dir of ['scans', 'reviews', 'specs', 'objects', 'tickets']) fs.mkdirSync(path.join(home, dir), { recursive: true });
   }
 
   file(kind, name) {
@@ -47,6 +48,51 @@ class Store {
     this.write('reviews', `job-${jobId}`, all);
     return all;
   }
+
+  /** Duyệt từng object: { [objKey]: { status: 'ok' | 'returned', by, at, fingerprint } }. */
+  objectReviews(jobId) { return this.read('objects', `job-${jobId}`, {}); }
+
+  /** `items`: [{ key, fingerprint, issue?, ticket? }] (issue: lỗi QC ghi khi trả, ticket: phiếu đã gửi); `status` null thì xoá. */
+  setObjectReviews(jobId, items, status, by = '') {
+    const all = this.objectReviews(jobId), at = new Date().toISOString();
+    for (const { key, fingerprint, ...extra } of items) {
+      if (status) all[key] = { status, by: String(by).slice(0, 60), at, fingerprint, ...extra };
+      else delete all[key];
+    }
+    this.write('objects', `job-${jobId}`, all);
+    return all;
+  }
+
+  /**
+   * Phiếu giao việc sửa lỗi (QC → annotator): [{ id: 'BUG-101', jobId, taskId, objKey, kind, serverId, cvatId, label, frames,
+   * rule, title, message, priority: 'must' | 'warn', assignee, status: 'open' | 'submitted' | 'accepted' | 'returned',
+   * thread: [{ by, name, role, at, text, kind }], createdBy, createdAt, updatedAt }].
+   */
+  tickets() { return this.read('tickets', 'all', []); }
+
+  saveTickets(list) { this.write('tickets', 'all', list); }
+
+  /** `fn(ticket)` sửa một phiếu theo id; trả về phiếu sau khi sửa (null nếu không có). */
+  updateTicket(id, fn) {
+    const all = this.tickets(), t = all.find((x) => x.id === id);
+    if (!t) return null;
+    fn(t);
+    t.updatedAt = new Date().toISOString();
+    this.saveTickets(all);
+    return t;
+  }
+
+  addTicket(fields) {
+    const all = this.tickets(), n = all.reduce((m, t) => Math.max(m, Number(t.id.split('-')[1]) || 100), 100) + 1;
+    const now = new Date().toISOString(), t = { id: `BUG-${n}`, ...fields, createdAt: now, updatedAt: now };
+    all.push(t);
+    this.saveTickets(all);
+    return t;
+  }
+
+  /** Lần QC bấm hoàn thành job: { at, by, scanAt } hoặc null. */
+  completion(jobId) { return this.read('objects', `job-${jobId}-done`); }
+  setCompletion(jobId, value) { this.write('objects', `job-${jobId}-done`, value); }
 
   /**
    * Guideline theo project, có lịch sử: { versions: [{ v, name, note, at, override }] }, phiên bản cuối là đang dùng.

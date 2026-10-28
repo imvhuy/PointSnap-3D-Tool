@@ -1,7 +1,9 @@
 # Tool scan QC — phân tích hiện trạng và thiết kế lại
 
 *Ngày 25/10/2026. Phân tích dựa trên mã trong `pointsnap/` (backend Python ~18 000 dòng) và kiểm tra trực tiếp trên CVAT
-2.75.1 local. Tài liệu đi cùng: [pain point và giải pháp](pain-points-va-giai-phap.md) (phần annotator).*
+2.75.1 local. Ngày 28/10/2026 backend Python đã gỡ khỏi repo (thay bằng `qc/` và `extension/`); mã cũ xem trong lịch sử
+git trước commit "Remove legacy Python backend". Tài liệu đi cùng: [pain point và giải pháp](pain-points-va-giai-phap.md)
+(phần annotator).*
 
 > **Cập nhật 26/10/2026.** Mentor cho phép chạy dịch vụ QC trên máy trong mạng công ty, nên tầng C được làm trước tầng B,
 > dưới dạng dịch vụ Node `qc/` dùng lại nguyên bộ luật JS của extension (không qua backend Python). Đã làm gì và kết quả

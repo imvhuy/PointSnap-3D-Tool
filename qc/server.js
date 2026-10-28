@@ -9,8 +9,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { loadConfig } = require('./lib/config');
 const { CvatClient } = require('./lib/cvat');
+const { Auth } = require('./lib/auth');
 const { Store } = require('./lib/store');
-const { scanJob } = require('./lib/scan');
+const { scanJob, fingerprint } = require('./lib/scan');
 const Tracks = require('./lib/tracks');
 const Box = require('../extension/src/annotator/box.js');
 const { toCsv } = require('./lib/export');
@@ -21,7 +22,8 @@ const config = loadConfig();
 const store = new Store(config.home);
 const client = config.cvatToken ? new CvatClient({ url: config.cvatUrl, token: config.cvatToken }) : null;
 const PUBLIC = path.join(__dirname, 'public');
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
+const auth = new Auth({ cvatUrl: config.cvatUrl, qcUsers: config.qcUsers });
 
 // ------------------------------------------------------------------ hàng đợi quét (một job một lúc)
 
@@ -73,10 +75,10 @@ const publicRun = (run) => run && { state: run.state, progress: run.progress, er
 
 // ------------------------------------------------------------------ HTTP
 
-function send(res, status, body, type = 'application/json; charset=utf-8') {
+function send(res, status, body, type = 'application/json; charset=utf-8', extra = {}) {
   const data = typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body);
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
-    'Content-Security-Policy': "default-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'" });
+    'Content-Security-Policy': "default-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'", ...extra });
   res.end(data);
 }
 
@@ -130,6 +132,99 @@ async function evidenceView(cvat, scan, finding) {
   return { frames: out, verdict: finding.evidence?.verdict || null };
 }
 
+// Chặn dò mật khẩu: 8 lần sai trong 10 phút theo tên đăng nhập + địa chỉ.
+const failures = new Map();
+const failKey = (u, req) => `${String(u).toLowerCase()}|${req.socket?.remoteAddress || ''}`;
+function loginBlocked(u, req) {
+  const f = failures.get(failKey(u, req));
+  return !!f && f.n >= 8 && Date.now() - f.at < 10 * 60 * 1000;
+}
+function loginFailed(u, req) {
+  const k = failKey(u, req), f = failures.get(k);
+  failures.set(k, f && Date.now() - f.at < 10 * 60 * 1000 ? { n: f.n + 1, at: f.at } : { n: 1, at: Date.now() });
+}
+
+const note = (me, text, kind = 'comment') => ({ by: me.username, name: me.name, role: me.role, at: new Date().toISOString(), text: String(text || '').slice(0, 1000), kind });
+
+/** API phiếu: QC tạo / nghiệm thu / trả lại; annotator xem phiếu của mình, trả lời, nộp lại. */
+async function ticketRoute(req, p, url, me) {
+  if (req.method === 'GET' && p === '/api/users') {
+    const users = await client.all('/api/users');
+    return { body: users.filter((u) => u.is_active !== false).map((u) => ({ username: u.username, name: [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username, role: auth.roleOf(u) })) };
+  }
+  if (req.method === 'GET' && p === '/api/tickets') {
+    const job = Number(url.searchParams.get('job')) || null;
+    const list = store.tickets().filter((t) => (me.role === 'qc' ? !job || t.jobId === job : t.assignee === me.username));
+    return { body: list.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) };
+  }
+  // Gửi một lượt: mọi object QC đã trả lỗi (kèm lỗi ghi lúc duyệt) thành phiếu cho một annotator.
+  if (req.method === 'POST' && p === '/api/tickets/batch') {
+    const { jobId, assignee, keys = [] } = await readJson(req);
+    const scan = store.scan(Number(jobId)), seen = store.objectReviews(Number(jobId));
+    if (!scan?.objects) return { status: 400, body: { error: 'Job chưa quét' } };
+    if (!assignee || !Array.isArray(keys)) return { status: 400, body: { error: 'Cần người nhận' } };
+    const live = new Set(store.tickets().filter((t) => t.jobId === scan.job.id && t.status !== 'accepted').map((t) => t.objKey));
+    const made = [];
+    for (const key of keys) {
+      const obj = scan.objects.find((o) => o.key === key), r = seen[key];
+      if (!obj || r?.status !== 'returned' || live.has(key)) continue;
+      const is = r.issue || { tags: [], frame: null, text: '' };
+      const f = is.finding ? scan.findings.find((x) => x.key === is.finding) : null;
+      const t = store.addTicket({ jobId: scan.job.id, taskId: scan.job.taskId, taskName: scan.job.taskName, objKey: key, kind: obj.kind, serverId: obj.serverId,
+        cvatId: obj.cvatId, label: obj.label, frames: is.frame != null ? [is.frame, is.frame] : f ? [f.frames[0], f.frames[f.frames.length - 1]] : [obj.first, obj.last],
+        rule: f ? f.rule : 'qc.manual', title: is.tags.join(' · ') || f?.title || 'QC trả lỗi', message: is.text || f?.message || '',
+        priority: !is.tags.length && f && f.severity !== 'error' ? 'warn' : 'must', assignee: String(assignee), status: 'open', createdBy: me.username,
+        fingerprint: obj.fingerprint,
+        thread: [...(f ? [{ by: 'tool', name: 'Tool', role: 'bot', at: scan.startedAt, text: f.message, kind: 'tool' }] : []),
+          { ...note({ username: r.by, name: r.by, role: 'qc' }, `${is.frame != null ? `Frame ${is.frame}: ` : ''}${is.text || is.tags.join(', ') || 'Xem lại object này'}`, 'assign'), at: r.at }] });
+      store.setObjectReviews(scan.job.id, [{ key, fingerprint: r.fingerprint, issue: r.issue, ticket: t.id }], 'returned', r.by);
+      made.push(t);
+    }
+    return { body: made };
+  }
+  const m = p.match(/^\/api\/tickets\/(BUG-\d+)\/(comment|submit|accept|return)$/);
+  if (req.method === 'POST' && m) {
+    const [, id, act] = m, { text = '' } = await readJson(req);
+    const t = store.tickets().find((x) => x.id === id);
+    if (!t) return { status: 404, body: { error: 'Không có phiếu này' } };
+    if (me.role !== 'qc' && t.assignee !== me.username) return { status: 403, body: { error: 'Phiếu này không giao cho bạn' } };
+    if ((act === 'accept' || act === 'return') && me.role !== 'qc') return { status: 403, body: { error: 'Chỉ QC nghiệm thu' } };
+    const next = { submit: 'submitted', accept: 'accepted', return: 'returned' }[act];
+    // Nộp / nghiệm thu: đọc lại object trên CVAT để biết annotator có sửa thật không, và để lần quét sau không bắt duyệt lại.
+    const fp = act === 'submit' || act === 'accept' ? await liveFingerprint(t).catch(() => null) : null;
+    const updated = store.updateTicket(id, (x) => {
+      if (next) x.status = next;
+      if (act === 'submit') x.unchanged = !!fp && !!x.fingerprint && fp === x.fingerprint;
+      if (String(text).trim() || act !== 'comment') x.thread.push(note(me, text, act));
+    });
+    if (act === 'accept') {
+      const obj = store.scan(t.jobId)?.objects?.find((o) => o.key === t.objKey);
+      if (fp || obj) store.setObjectReviews(t.jobId, [{ key: t.objKey, fingerprint: fp || obj.fingerprint, ticket: t.id }], 'ok', me.name);
+    }
+    return { body: updated };
+  }
+  return { status: 404, body: { error: 'Không có' } };
+}
+
+/** Dấu vân tay hiện tại của object của phiếu, đọc thẳng từ CVAT ('deleted' nếu object đã bị xoá). */
+async function liveFingerprint(t) {
+  const ann = await client.annotations(t.jobId);
+  const item = ((t.kind === 'track' ? ann.tracks : ann.shapes) || []).find((x) => x.id === t.serverId);
+  return item ? fingerprint(item) : 'deleted';
+}
+
+/** Lỗi QC ghi khi trả object: nhãn lỗi, frame thấy lỗi, ghi chú, mục tool báo liên quan. */
+function cleanIssue(x) {
+  return { tags: (Array.isArray(x.tags) ? x.tags : []).map((t) => String(t).slice(0, 40)).filter(Boolean).slice(0, 6),
+    frame: Number.isInteger(x.frame) ? x.frame : null, text: String(x.text || '').slice(0, 500), finding: x.finding ? String(x.finding).slice(0, 200) : null };
+}
+
+/** Số object đã duyệt đúng theo nội dung hiện tại. */
+function reviewedCount(jobId, scan) {
+  const seen = store.objectReviews(jobId);
+  return (scan.objects || []).filter((o) => seen[o.key] && seen[o.key].fingerprint === o.fingerprint).length;
+}
+
 /** Danh sách job 3D, kèm tên task và tóm tắt lần quét gần nhất. */
 async function listJobs() {
   const [jobs, tasks] = await Promise.all([client.jobs(), client.all('/api/tasks?dimension=3d')]);
@@ -140,7 +235,8 @@ async function listJobs() {
       frames: j.stop_frame - j.start_frame + 1, stage: j.stage, state: j.state, assignee: j.assignee?.username || null,
       run: publicRun(runs.get(j.id)),
       last: scan && { startedAt: scan.startedAt, gate: scan.summary.gate.verdict, errors: scan.summary.errorGroups,
-        warnings: scan.summary.warningGroups, boxes: scan.summary.boxes } };
+        warnings: scan.summary.warningGroups, boxes: scan.summary.boxes, tracks: scan.summary.tracks, objects: (scan.objects || []).length,
+        reviewed: reviewedCount(j.id, scan), done: !!store.completion(j.id) && reviewedCount(j.id, scan) === (scan.objects || []).length } };
   }).sort((a, b) => b.id - a.id);
 }
 
@@ -160,6 +256,34 @@ async function route(req, res) {
   if (req.method !== 'GET' && req.headers['x-pointsnap-qc'] !== '1') return send(res, 403, { error: 'Thiếu header X-PointSnap-QC' });
   if (!client && p !== '/api/status') return send(res, 503, { error: 'Chưa cấu hình CVAT_TOKEN' });
 
+  // Đăng nhập bằng tài khoản CVAT; mọi API khác cần phiên.
+  if (req.method === 'POST' && p === '/api/login') {
+    const { username = '', password = '', remember = false } = await readJson(req);
+    if (loginBlocked(username, req)) return send(res, 429, { error: 'Sai quá nhiều lần, thử lại sau 10 phút' });
+    try {
+      const user = await auth.verify(String(username).trim(), String(password));
+      const { cookie } = auth.open(user, !!remember);
+      return send(res, 200, user, undefined, { 'Set-Cookie': cookie });
+    } catch (error) {
+      if (error.status === 401) loginFailed(username, req);
+      return send(res, error.status || 500, { error: error.message });
+    }
+  }
+  if (req.method === 'POST' && p === '/api/logout') return send(res, 200, { ok: true }, undefined, { 'Set-Cookie': auth.close(req) });
+  const me = auth.session(req);
+  if (req.method === 'GET' && p === '/api/me') return me ? send(res, 200, { username: me.username, name: me.name, role: me.role }) : send(res, 401, { error: 'Chưa đăng nhập' });
+  if (p !== '/api/status' && !me) return send(res, 401, { error: 'Chưa đăng nhập' });
+  // Annotator chỉ xem / trả lời phiếu của mình và xem guideline; còn lại là việc của QC.
+  const annotatorMay = (req.method === 'GET' && (p === '/api/tickets' || p.startsWith('/api/specs/') || p === '/api/status'))
+    || (req.method === 'POST' && /^\/api\/tickets\/BUG-\d+\/(comment|submit)$/.test(p));
+  if (me && me.role !== 'qc' && !annotatorMay) return send(res, 403, { error: 'Chỉ QC làm được việc này' });
+
+  // Phiếu giao việc sửa lỗi.
+  if (p === '/api/tickets' || p.startsWith('/api/tickets/') || p === '/api/users') {
+    const r = await ticketRoute(req, p, url, me);
+    return send(res, r.status || 200, r.body);
+  }
+
   if (req.method === 'GET' && p === '/api/status') {
     if (!client) return send(res, 200, { ok: false, cvatUrl: config.cvatUrl, error: 'Chưa cấu hình CVAT_TOKEN (xem qc/README.md)' });
     try {
@@ -178,7 +302,36 @@ async function route(req, res) {
       const result = store.scan(jobId), now = result && guidelineFor(result.job.projectId);
       // Guideline đã đổi sau lần quét thì trang nhắc quét lại.
       const specNow = now && { name: now.name, version: now.version, project: now.project };
-      return send(res, 200, { run: publicRun(runs.get(jobId)), result, reviews: store.reviews(jobId), specNow });
+      return send(res, 200, { run: publicRun(runs.get(jobId)), result, reviews: store.reviews(jobId), specNow,
+        objectReviews: store.objectReviews(jobId), completion: store.completion(jobId) });
+    }
+    // Duyệt object: lưu kèm dấu vân tay lúc duyệt, để track bị sửa sau đó tự về "Chưa xem".
+    if (req.method === 'POST' && action === '/objects') {
+      const { keys, status = null, issue = null } = await readJson(req), by = me.name;
+      const result = store.scan(jobId);
+      if (!result) return send(res, 404, { error: 'Job chưa quét' });
+      if (!Array.isArray(keys) || ![null, 'ok', 'returned'].includes(status)) return send(res, 400, { error: 'keys / status sai' });
+      const known = new Map((result.objects || []).map((o) => [o.key, o.fingerprint])), prev = store.objectReviews(jobId);
+      // Trả lỗi lại object đã có phiếu thì giữ liên kết phiếu (không tạo phiếu trùng).
+      const items = keys.filter((k) => known.has(k)).map((key) => ({ key, fingerprint: known.get(key),
+        ...(status === 'returned' && issue && { issue: cleanIssue(issue) }), ...(status === 'returned' && prev[key]?.ticket && { ticket: prev[key].ticket }) }));
+      return send(res, 200, store.setObjectReviews(jobId, items, status, by));
+    }
+    // Hoàn thành duyệt: chỉ khi mọi object đã duyệt theo đúng nội dung hiện tại.
+    if (req.method === 'POST' && action === '/complete') {
+      await readJson(req);
+      const by = me.name;
+      const result = store.scan(jobId), seen = store.objectReviews(jobId);
+      if (!result) return send(res, 404, { error: 'Job chưa quét' });
+      const left = (result.objects || []).filter((o) => !seen[o.key] || seen[o.key].fingerprint !== o.fingerprint);
+      if (left.length) return send(res, 409, { error: `Còn ${left.length} object chưa duyệt` });
+      const unsent = result.objects.filter((o) => seen[o.key].status === 'returned' && !seen[o.key].ticket).length;
+      if (unsent) return send(res, 409, { error: `Còn ${unsent} lỗi chưa gửi annotator` });
+      const pending = store.tickets().filter((t) => t.jobId === jobId && t.status !== 'accepted').length;
+      if (pending) return send(res, 409, { error: `Còn ${pending} phiếu sửa lỗi chưa nghiệm thu` });
+      const done = { at: new Date().toISOString(), by: String(by).slice(0, 60), scanAt: result.startedAt, objects: result.objects.length };
+      store.setCompletion(jobId, done);
+      return send(res, 200, done);
     }
     if (req.method === 'GET' && action === '/evidence') {
       const scan = store.scan(jobId), finding = scan?.findings.find((f) => f.key === url.searchParams.get('key'));

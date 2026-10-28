@@ -145,6 +145,10 @@ test('scan: gói frame lỗi thì ghi vào coverage, không dừng cả job', as
   const result = await scanJob({ client, jobId: 5, guideline: G.DEFAULT_GUIDELINE });
   assert.deepEqual(result.coverage.framesWithoutPoints, [3, 4, 5]);
   assert.match(result.coverage.chunkErrors[0], /frame 3–5: CVAT 500/);
+  // Mọi object đều có trong danh sách duyệt, kể cả box ở frame thiếu point cloud.
+  assert.deepEqual(result.objects.map((o) => o.key).sort(), ['shape:1', 'shape:2', 'track:9']);
+  assert.equal(result.objects.find((o) => o.key === 'track:9').noPoints, 3);
+  assert.ok(result.objects.every((o) => /^[0-9a-f]{16}$/.test(o.fingerprint)));
 });
 
 test('server: lệnh ghi thiếu header riêng bị từ chối; file tĩnh không thoát khỏi thư mục public', async () => {
@@ -205,6 +209,10 @@ test('guideline: lưu phiên bản, khôi phục, đọc file kiểu cũ; ghi đ
   assert.equal(guideline.maxDistanceM, 60);
   assert.ok(Rules.resolveSpec({ qc: { jump: { posM: 'x' } } }).errors.length);
   assert.ok(Rules.resolveSpec({ ground: { warningM: 1, errorM: 0.5 } }).errors.length);
+  const seen = store.setObjectReviews(5, [{ key: 'track:1', fingerprint: 'abc' }], 'ok', 'QC A');
+  assert.equal(seen['track:1'].status, 'ok');
+  assert.equal(seen['track:1'].by, 'QC A');
+  assert.deepEqual(store.setObjectReviews(5, [{ key: 'track:1', fingerprint: 'abc' }], null), {});
 });
 
 test('icp: tìm lại chuyển động xe thu từ nền tĩnh (tường, cột), bỏ điểm trong box', () => {
