@@ -37,7 +37,13 @@ class Store {
   }
 
   scan(jobId) { return this.read('scans', `job-${jobId}`); }
-  saveScan(jobId, result) { this.write('scans', `job-${jobId}`, result); }
+  /** Lần quét ngay trước lần hiện tại (để vòng duyệt lại so trước / sau), hoặc null. */
+  prevScan(jobId) { return this.read('scans', `job-${jobId}-prev`); }
+  saveScan(jobId, result) {
+    const old = this.scan(jobId);
+    if (old) this.write('scans', `job-${jobId}-prev`, old);
+    this.write('scans', `job-${jobId}`, result);
+  }
   reviews(jobId) { return this.read('reviews', `job-${jobId}`, {}); }
 
   /** `verdict`: 'confirmed' | 'false_alarm' | null (xoá kết luận). */

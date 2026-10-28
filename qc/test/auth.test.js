@@ -46,7 +46,7 @@ test('đăng nhập CVAT, vai trò, phiếu giao việc QC → annotator → QC'
   const home = path.join(os.tmpdir(), `pointsnap-qc-auth-${process.pid}`);
   const store = new Store(home);
   const fp0 = fingerprint(TRACK);
-  store.saveScan(7, { job: { id: 7, taskId: 3, taskName: 'T' }, startedAt: new Date().toISOString(),
+  store.saveScan(7, { job: { id: 7, taskId: 3, taskName: 'T', start: 0, stop: 10 }, startedAt: new Date().toISOString(),
     findings: [{ key: 'f1', rule: 'ground.gap', title: 'Lơ lửng', message: 'Box lơ lửng 0.3 m', frames: [2, 3], severity: 'error', objKey: 'track:9' }],
     objects: [{ key: 'track:9', kind: 'track', serverId: 9, cvatId: 5, label: 'car', first: 0, last: 10, fingerprint: fp0 },
       { key: 'track:10', kind: 'track', serverId: 10, cvatId: 6, label: 'car', first: 0, last: 10, fingerprint: 'x10' },
@@ -74,10 +74,19 @@ test('đăng nhập CVAT, vai trò, phiếu giao việc QC → annotator → QC'
   assert.equal(ann.body.role, 'annotator');
   assert.match(qc.cookie, /^qc_session=/);
   assert.equal((await call('GET', '/api/me', { cookie: ann.cookie })).body.username, 'ann');
+  // Trong trang CVAT (qua nginx, X-Forwarded-Prefix): theo tài khoản đang đăng nhập CVAT, bỏ qua phiên web QC còn sót.
+  const viaCvat = async (cookie) => (await fetch(`${base}/api/me`, { headers: { Cookie: cookie, 'X-Forwarded-Prefix': '/pointsnap-qc' } })).json();
+  assert.deepEqual(await viaCvat(`${qc.cookie}; sessionid=s-ann`), { username: 'ann', name: 'An Nguyễn', role: 'annotator' });
+  assert.equal((await viaCvat(qc.cookie)).username, undefined, 'không có phiên CVAT thì không nhận phiên web QC');
   assert.equal((await call('GET', '/api/jobs', { cookie: ann.cookie })).status, 403, 'annotator không xem kết quả quét');
   const users = (await call('GET', '/api/users', { cookie: qc.cookie })).body;
   assert.equal(users.find((u) => u.username === 'ann').role, 'annotator');
   assert.deepEqual(users.find((u) => u.username === 'carol'), { username: 'carol', name: 'Carol', role: 'annotator' }, 'người được giao job cũng nhận phiếu được');
+
+  // Bảng annotator cho plugin trong CVAT: các script MAIN world của extension gộp một file, parse được, theo thứ tự manifest.
+  const bundle = await (await fetch(`${base}/annotator-panel.js`)).text();
+  assert.doesNotThrow(() => new Function(bundle));
+  assert.ok(bundle.indexOf('root.PointSnapBox = api') < bundle.indexOf('root.PointSnapAnnotator = '), 'box.js trước annotator.js');
 
   // QC duyệt từng object: trả lỗi hai cái (ghi lỗi, chưa gửi ai), OK một cái.
   const mark = (keys, status, issue) => call('POST', '/api/jobs/7/objects', { cookie: qc.cookie, body: { keys, status, issue } });
@@ -122,6 +131,25 @@ test('đăng nhập CVAT, vai trò, phiếu giao việc QC → annotator → QC'
   await mark(['track:9', 'track:11'], 'ok');
   assert.equal((await call('POST', '/api/jobs/7/complete', { cookie: qc.cookie, body: {} })).status, 200);
 
+  // Phiếu thiếu vật: theo frame + vị trí, không gắn object; khoá hoàn thành tới khi nghiệm thu; nộp không đọc object trên CVAT.
+  const miss = (cookie, body) => call('POST', '/api/tickets/missing', { cookie, body: { jobId: 7, assignee: 'ann', ...body } });
+  assert.equal((await miss(ann.cookie, { frame: 4 })).status, 403, 'annotator không tự tạo phiếu');
+  assert.match((await miss(qc.cookie, { frame: 99 })).body.error, /Frame phải trong 0–10/);
+  const tm = (await miss(qc.cookie, { frame: 4, label: 'pedestrian', where: 'vỉa hè bên phải, ~12 m', text: 'Người đi bộ chưa có box' })).body;
+  assert.deepEqual([tm.kind, tm.objKey, tm.frames, tm.title, tm.status], ['missing', null, [4, 4], 'Thiếu box', 'open']);
+  assert.match(tm.thread[0].text, /^Frame 4: thiếu box pedestrian ở vỉa hè/);
+  assert.equal((await call('GET', '/api/jobs/7', { cookie: qc.cookie })).body.missing.length, 1, 'trang QC thấy phiếu thiếu vật');
+  assert.match((await call('POST', '/api/jobs/7/complete', { cookie: qc.cookie, body: {} })).body.error, /1 phiếu thiếu vật/);
+  assert.equal((await call('POST', `/api/tickets/${tm.id}/submit`, { cookie: ann.cookie, body: { text: 'Đã thêm box' } })).body.unchanged, false);
+  assert.equal((await call('POST', `/api/tickets/${tm.id}/accept`, { cookie: qc.cookie, body: {} })).body.status, 'accepted');
+  assert.equal((await call('POST', '/api/jobs/7/complete', { cookie: qc.cookie, body: {} })).status, 200);
+
+  // Quét lại: giữ lần quét trước để vòng duyệt lại so trước / sau theo object.
+  const again = new Store(home), old = again.scan(7);
+  again.saveScan(7, { ...old, startedAt: new Date().toISOString(), findings: [], objects: old.objects.map((o) => (o.key === 'track:9' ? { ...o, last: 8, fingerprint: 'moi' } : o)) });
+  const prev = (await call('GET', '/api/jobs/7', { cookie: qc.cookie })).body.prev;
+  assert.deepEqual([prev.objects['track:9'].last, prev.objects['track:9'].fingerprint, prev.findings.map((f) => f.key)], [10, fp0, ['f1']]);
+
   // Token cho extension: tạo từ trang QC, mang vai trò người tạo, không tự đẻ token, xoá là mất quyền.
   const qt = (await call('POST', '/api/ext-tokens', { cookie: qc.cookie, body: { label: 'Edge' } })).body;
   assert.match(qt.token, /^psq_/);
@@ -132,7 +160,7 @@ test('đăng nhập CVAT, vai trò, phiếu giao việc QC → annotator → QC'
   assert.deepEqual((await call('GET', '/api/ext-tokens', { cookie: qc.cookie })).body.map((t) => [t.label, t.hash]), [['Edge', undefined]]);
   const at = (await call('POST', '/api/ext-tokens', { cookie: ann.cookie, body: {} })).body;
   assert.equal((await call('GET', '/api/jobs/7', { bearer: at.token })).status, 403, 'token annotator vẫn chỉ có quyền annotator');
-  assert.equal((await call('GET', '/api/tickets', { bearer: at.token })).body.length, 2);
+  assert.equal((await call('GET', '/api/tickets', { bearer: at.token })).body.length, 3, '2 phiếu object + 1 phiếu thiếu vật');
   assert.equal((await call('GET', '/api/ext-tokens', { cookie: bob.cookie })).body.length, 0, 'không thấy token người khác');
   assert.equal((await call('DELETE', `/api/ext-tokens/${qt.id}`, { cookie: bob.cookie })).status, 404, 'không xoá được token người khác');
   assert.equal((await call('DELETE', `/api/ext-tokens/${qt.id}`, { cookie: qc.cookie })).status, 200);

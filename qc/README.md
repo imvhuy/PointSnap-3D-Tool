@@ -50,7 +50,8 @@ Tool chỉ giảm việc lượt đầu cho QC (xếp chỗ cần xem trước, 
   đủ 100% object, đã gửi hết lỗi và nghiệm thu hết phiếu. Annotator không xem được kết quả quét hay guideline editor.
 - **Làm ngay trong trang CVAT** (thử trên CVAT local): plugin `public/plugin.js` được nginx của CVAT chèn vào trang. Dịch vụ
   đặt ở `/pointsnap-qc/` cùng địa chỉ CVAT, nhận người dùng từ phiên đăng nhập CVAT. QC xem lần lượt object, chuyển frame
-  và chọn box không tải lại trang; annotator sửa và nộp phiếu tại chỗ. Cài / gỡ:
+  và chọn box không tải lại trang; annotator sửa và nộp phiếu tại chỗ. Plugin cũng nạp bảng annotator của extension
+  (đo box, mặt đất, sửa cả track), nên annotator không cần cài extension; spec lấy từ tab Guideline. Cài / gỡ:
   [docs/qc-plugin-cvat.md](../docs/qc-plugin-cvat.md). Extension (nếu dùng) kết nối bằng token tạo ở menu tài khoản:
   [docs/qc-extension-api.md](../docs/qc-extension-api.md).
 
