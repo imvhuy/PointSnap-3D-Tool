@@ -65,10 +65,20 @@
     return gapM > 0 ? COLORS.float : COLORS.sink;
   }
 
-  /** Đường mặt đất dọc trục `axis` (0: dài, 1: rộng) của box, tại độ cao tiếp xúc. */
-  function groundLine(box, contactZ, axis, span) {
+  /**
+   * Đường mặt đất dọc trục `axis` (0: dài, 1: rộng) của box, kéo dài `span` mỗi phía, theo độ dốc của mặt đất đo dưới
+   * hai đầu box (`ground`: [x, y, z] dưới 4 góc đáy, thứ tự `B.corners`). View Side / Front của CVAT xoay theo cả
+   * pitch / roll của box, nên đường vẽ đúng độ cao thật cho thấy box nghiêng lệch mặt đất.
+   */
+  function groundLine(box, ground, axis, span) {
     const yaw = box.rotation[2], dir = axis === 0 ? [Math.cos(yaw), Math.sin(yaw)] : [-Math.sin(yaw), Math.cos(yaw)];
-    return [-span, span].map((t) => [box.center[0] + dir[0] * t, box.center[1] + dir[1] * t, contactZ]);
+    const ends = (axis === 0 ? [[0, 3], [1, 2]] : [[0, 1], [2, 3]]).map((pair) => {
+      const pts = pair.map((i) => ground[i]);
+      return [0, 1, 2].map((k) => pts.reduce((sum, q) => sum + q[k], 0) / pts.length);
+    });
+    const along = (q) => (q[0] - box.center[0]) * dir[0] + (q[1] - box.center[1]) * dir[1];
+    const [a, b] = ends, ta = along(a), tb = along(b), slope = Math.abs(tb - ta) > 1e-6 ? (b[2] - a[2]) / (tb - ta) : 0;
+    return [-span, span].map((t) => [box.center[0] + dir[0] * t, box.center[1] + dir[1] * t, a[2] + slope * (t - ta)]);
   }
 
   /** Tâm mặt `face` ({ axis, sign }) của box, hệ point cloud. */
@@ -90,7 +100,7 @@
     for (const view of Object.keys(ctx.views)) {
       rects[view] = visibleRect(ctx.views[view].renderer.domElement);
     }
-    const key = JSON.stringify([box, contact && [contact.contactZ, contact.gapM], insidePoints.length, outsidePoints.length,
+    const key = JSON.stringify([box, contact && [contact.groundZ, contact.gapM], insidePoints.length, outsidePoints.length,
       faces.map((f) => f.gapM), overlaps.map((o) => [o.ratio, o.allowed]), ghost,
       ...Object.entries(ctx.views).map(([v, view]) => [rects[v] && [rects[v].left, rects[v].top, rects[v].width, rects[v].height],
         ...view.camera.projectionMatrix.elements, ...view.camera.matrixWorldInverse.elements])]);
@@ -135,15 +145,16 @@
 
       if (contact) {
         const color = gapColor(contact.gapM, okM);
-        const bottomCenter = [box.center[0], box.center[1], B.bottomZ(box)];
-        const contactCenter = [box.center[0], box.center[1], contact.contactZ];
+        // Góc không đo được đất thì lấy mặt đất thấp nhất, như bản cũ vẽ cả đường.
+        const ground = B.corners(box).slice(0, 4).map(([x, y], i) => [x, y, contact.groundZ[i] ?? contact.contactZ]);
+        const bottomCenter = B.toWorld(box, [0, 0, -box.dims[2] / 2]);
+        const contactCenter = [bottomCenter[0], bottomCenter[1], ground.reduce((sum, q) => sum + q[2], 0) / 4];
         const text = Math.abs(contact.gapM) <= okM ? '✓ sát đất' : `${contact.gapM > 0 ? '+' : ''}${Math.round(contact.gapM * 100)} cm`;
         if (view === 'side' || view === 'front') {
-          const [a, b] = groundLine(box, contact.contactZ, view === 'side' ? 0 : 1, Math.max(box.dims[0], 4) * 2);
+          const [a, b] = groundLine(box, ground, view === 'side' ? 0 : 1, Math.max(box.dims[0], 4) * 2);
           line(a, b, COLORS.ground, '8 4', 2);
         } else if (view === 'perspective' || view === 'top') {
-          const ring = B.footprint(box).map(([x, y]) => [x, y, contact.contactZ]);
-          ring.forEach((q, i) => line(q, ring[(i + 1) % 4], COLORS.ground, '6 4', 1.6));
+          ground.forEach((q, i) => line(q, ground[(i + 1) % 4], COLORS.ground, '6 4', 1.6));
         }
         line(bottomCenter, contactCenter, color, '', 2);
         // Nhìn từ trên thì đáy và tâm box trùng nhau: nhãn ΔZ ở đó đè lên nhãn khoảng hở, nên chỉ ghi ở các view còn lại.

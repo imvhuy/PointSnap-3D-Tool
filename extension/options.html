@@ -31,22 +31,6 @@
       <p class="hint">Trưởng nhóm chỉnh ngưỡng một lần, bấm <b>Xuất</b> để có file JSON, gửi cho annotator; annotator bấm <b>Nhập file</b> ở đúng địa chỉ CVAT. File chỉ cần ghi phần khác mặc định, ví dụ <code>{"maxDistanceM": 80, "sensorOrigin": [0, 0, 1.73]}</code>. Ngưỡng được kiểm ngay khi nhập.</p>
     </section>
 
-    <details class="card advanced" id="advanced">
-      <summary><h2>Nâng cao: bảng kết quả quét (QC backend)</h2></summary>
-      <p class="hint">Chỉ cần khi dùng luồng QC cũ với <code>pointsnap ui</code>. Annotator không cần phần này.</p>
-      <div id="conn" class="status" role="status"><span class="dot"></span><div><span id="conn-text">Chưa kiểm tra</span></div></div>
-      <label class="field" for="pointsnap-url">Địa chỉ PointSnap</label>
-      <input id="pointsnap-url" type="url" placeholder="http://127.0.0.1:8765">
-      <label class="check"><input id="show-scan-panel" type="checkbox"><span>Hiện bảng kết quả quét của PointSnap backend</span></label>
-      <label class="check"><input id="auto-filter" type="checkbox"><span>Tự bật bộ lọc chỉ hiện box có cờ lỗi</span></label>
-      <label class="check"><input id="auto-expand" type="checkbox"><span>Tự mở DETAILS của box có cờ khi đang lọc</span></label>
-      <label class="check"><input id="auto-highlight" type="checkbox"><span>Tự làm sáng box lỗi đầu tiên khi chuyển frame</span></label>
-      <div class="save-row">
-        <button id="save" class="btn primary" type="button">Lưu</button>
-        <button id="test" class="btn" type="button">Kiểm tra kết nối</button>
-        <span id="status" role="status"></span>
-      </div>
-    </details>
   </main>
   <template id="host-row">
     <div class="host">

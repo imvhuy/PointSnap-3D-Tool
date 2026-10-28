@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Grid = require('../src/annotator/spatial-grid.js');
 const Terrain = require('../src/annotator/terrain.js');
+const B = require('../src/annotator/box.js');
 
 /** Mặt đường z = f(x, y) lấy mẫu đều mỗi `step` mét trong hình vuông nửa cạnh `half` quanh (0, 0). */
 function road(f, half = 15, step = 0.1) {
@@ -100,4 +101,62 @@ test('thân vật chưa gán nhãn không bị coi là mặt đất', () => {
   const { terrain } = measure(pts, [], { center: [0, 0, -1], dims: [1, 1, 1], rotation: [0, 0, 0] });
   const pole = terrain.heightAt(5, 5);
   assert.ok(pole && Math.abs(pole.z + 1.8) < 0.05, 'cột: lấy mặt đất nội suy, không lấy độ cao thân cột');
+});
+
+/**
+ * Người đứng sau bức tường thấp đầu bằng (đỉnh cao 0,9 m), LiDAR ở gốc tọa độ: không thấy chân và không thấy đất ngay
+ * sau tường, đất thật chỉ thấy ở hai bên và phía sau người.
+ */
+function behindWall(groundZ = -1.8) {
+  const top = groundZ + 0.9, pts = [];
+  const flat = road(() => groundZ);
+  for (let i = 0; i < flat.length; i += 3) {
+    const [x, y] = [flat[i], flat[i + 1]];
+    if (x >= 6.5 && x <= 10.3 && Math.abs(y) <= 2.2) continue; // tường + vùng khuất sau tường
+    pts.push(x, y, flat[i + 2]);
+  }
+  for (let x = 6.5; x <= 7.5; x += 0.1) for (let y = -2.2; y <= 2.2; y += 0.1) pts.push(x, y, top);
+  for (let y = -2.2; y <= 2.2; y += 0.1) for (let z = groundZ; z <= top; z += 0.1) pts.push(6.5, y, z);
+  for (let y = -0.25; y <= 0.25; y += 0.05) for (let z = top + 0.1; z <= groundZ + 1.7; z += 0.05) pts.push(7.8, y, z);
+  const ped = { center: [8, 0, groundZ + 0.85], dims: [0.6, 0.6, 1.7], rotation: [0, 0, 0] };
+  return { pts, ped, top };
+}
+
+test('người bị tường thấp che chân: đỉnh tường không thành mặt đất, box đúng không bị báo lún', () => {
+  const { pts, ped, top } = behindWall();
+  const { terrain, contact } = measure(pts, [ped], ped);
+  // Bản cũ lấy contactZ = mặt đất thấp nhất dưới 4 góc: bị đỉnh tường kéo lên, báo lún quá ngưỡng Lỗi 35 cm.
+  const band = { minZ: -2.8, maxZ: -0.8 };
+  const corners = B.footprint(ped).map(([x, y]) => terrain.heightAt(x, y, band).z);
+  assert.ok(Math.min(...corners) > -1.8 + 0.35, `góc thấp nhất ${Math.min(...corners)}`);
+  assert.ok(contact.topContactZ <= top + 0.01);
+  assert.ok(Math.abs(contact.gapM) < 0.01, `gap ${contact.gapM}`);
+});
+
+test('box lún thật trên mặt phẳng, không có bậc thấp quanh box: vẫn báo lún', () => {
+  const { pts, car } = scene();
+  const sunk = { ...car, center: [0, 0, car.center[2] - 0.4] };
+  const { contact } = measure(pts, [sunk], sunk);
+  assert.ok(Math.abs(contact.gapM + 0.4) < 0.03, `gap ${contact.gapM}`);
+});
+
+test('box nghiêng dọc 0,05 rad trên đường phẳng, chạm đất một đầu: đầu kia hở ≈ 22 cm, không còn "sát đất"', () => {
+  const { pts, car } = scene();
+  const pitch = 0.05, lift = (car.dims[2] / 2) * Math.cos(pitch) + (car.dims[0] / 2) * Math.sin(pitch);
+  const tilted = { ...car, center: [0, 0, -1.8 + lift], rotation: [0, pitch, 0] };
+  const { contact } = measure(pts, [tilted], tilted);
+  assert.ok(Math.abs(B.bottomZ(tilted) + 1.8) < 1e-9, 'góc đáy thấp nhất chạm đất');
+  assert.ok(Math.abs(contact.gapM - car.dims[0] * Math.sin(pitch)) < 0.03, `gap ${contact.gapM}`);
+  const snapped = B.bottomZ(tilted) + contact.snapDzM;
+  assert.ok(Math.abs(snapped - (-1.8 - car.dims[0] * Math.sin(pitch) / 2)) < 0.03, 'hạ đáy: hai đầu lệch đều quanh mặt đất');
+});
+
+test('box nghiêng theo đúng mặt dốc: sát đất; mặt đất vẽ được theo từng góc', () => {
+  const slope = 0.05, pts = road((x) => -1.8 + slope * x);
+  const pitch = -Math.atan(slope), car = { center: [0, 0, 0], dims: [4.5, 1.9, 1.6], rotation: [0, pitch, 0] };
+  car.center[2] = -1.8 + (car.dims[2] / 2) / Math.cos(pitch); // tâm đáy nằm trên mặt dốc
+  const { contact } = measure(pts, [car], car);
+  assert.ok(Math.abs(contact.gapM) < 0.03, `gap ${contact.gapM}`);
+  const feet = B.corners(car).slice(0, 4);
+  contact.groundZ.forEach((z, i) => assert.ok(Math.abs(z - (-1.8 + slope * feet[i][0])) < 0.03, `góc ${i}: ${z}`));
 });
