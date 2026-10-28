@@ -13,7 +13,7 @@ const path = require('node:path');
 class Store {
   constructor(home) {
     this.home = home;
-    for (const dir of ['scans', 'reviews', 'specs', 'objects', 'tickets']) fs.mkdirSync(path.join(home, dir), { recursive: true });
+    for (const dir of ['scans', 'reviews', 'specs', 'objects', 'tickets', 'tokens']) fs.mkdirSync(path.join(home, dir), { recursive: true });
   }
 
   file(kind, name) {
@@ -69,6 +69,11 @@ class Store {
    * thread: [{ by, name, role, at, text, kind }], createdBy, createdAt, updatedAt }].
    */
   tickets() { return this.read('tickets', 'all', []); }
+
+  /** Token cho extension: [{ id, hash (sha256), username, name, role, label, createdAt, expiresAt, lastUsedAt }]. Không lưu token gốc. */
+  extTokens() { return this.read('tokens', 'all', []); }
+
+  saveExtTokens(list) { this.write('tokens', 'all', list); }
 
   saveTickets(list) { this.write('tickets', 'all', list); }
 

@@ -27,11 +27,15 @@ function fakeCvat() {
     if (p === '/api/auth/logout') return json(200, {});
     if (p === '/api/server/about') return json(200, { version: 'test' });
     if (p === '/api/users/self') {
-      const u = token === 'svc' ? 'qcuser' : String(token).replace(/^k-/, '');
+      // Phiên trình duyệt của CVAT: cookie sessionid=s-<user>.
+      const sess = String(req.headers.cookie || '').match(/sessionid=s-(\w+)/);
+      const u = sess ? sess[1] : token === 'svc' ? 'qcuser' : String(token).replace(/^k-/, '');
       return USERS[u] ? json(200, { username: u, first_name: USERS[u], groups: [] }) : json(401, {});
     }
     if (p === '/api/users') return json(200, { results: Object.keys(USERS).map((u) => ({ username: u, first_name: USERS[u] })), next: null });
     if (p === '/api/jobs/7/annotations') return json(200, ANN);
+    // carol không có trong /api/users (token không phải admin chỉ thấy chính mình) nhưng được giao job 7.
+    if (p === '/api/jobs') return json(200, { results: [{ id: 7, task_id: 3, assignee: { username: 'carol', first_name: 'Carol' } }], next: null });
     return json(404, {});
   });
 }
@@ -53,8 +57,8 @@ test('đăng nhập CVAT, vai trò, phiếu giao việc QC → annotator → QC'
   t.after(() => { srv.kill(); cvat.close(); });
 
   const base = `http://127.0.0.1:${port}`;
-  const call = async (method, url, { cookie = '', body } = {}) => {
-    const res = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', 'X-PointSnap-QC': '1', Cookie: cookie }, body: body && JSON.stringify(body) });
+  const call = async (method, url, { cookie = '', body, bearer } = {}) => {
+    const res = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', 'X-PointSnap-QC': '1', Cookie: cookie, ...(bearer && { Authorization: `Bearer ${bearer}` }) }, body: body && JSON.stringify(body) });
     return { status: res.status, body: await res.json().catch(() => null), cookie: (res.headers.get('set-cookie') || '').split(';')[0] };
   };
   for (let i = 0; i < 50; i += 1) {
@@ -71,7 +75,9 @@ test('đăng nhập CVAT, vai trò, phiếu giao việc QC → annotator → QC'
   assert.match(qc.cookie, /^qc_session=/);
   assert.equal((await call('GET', '/api/me', { cookie: ann.cookie })).body.username, 'ann');
   assert.equal((await call('GET', '/api/jobs', { cookie: ann.cookie })).status, 403, 'annotator không xem kết quả quét');
-  assert.equal((await call('GET', '/api/users', { cookie: qc.cookie })).body.find((u) => u.username === 'ann').role, 'annotator');
+  const users = (await call('GET', '/api/users', { cookie: qc.cookie })).body;
+  assert.equal(users.find((u) => u.username === 'ann').role, 'annotator');
+  assert.deepEqual(users.find((u) => u.username === 'carol'), { username: 'carol', name: 'Carol', role: 'annotator' }, 'người được giao job cũng nhận phiếu được');
 
   // QC duyệt từng object: trả lỗi hai cái (ghi lỗi, chưa gửi ai), OK một cái.
   const mark = (keys, status, issue) => call('POST', '/api/jobs/7/objects', { cookie: qc.cookie, body: { keys, status, issue } });
@@ -115,6 +121,30 @@ test('đăng nhập CVAT, vai trò, phiếu giao việc QC → annotator → QC'
   // track:11 không có trên CVAT giả → coi như đã xoá; vẫn OK để job khoá theo dấu vân tay của lần quét.
   await mark(['track:9', 'track:11'], 'ok');
   assert.equal((await call('POST', '/api/jobs/7/complete', { cookie: qc.cookie, body: {} })).status, 200);
+
+  // Token cho extension: tạo từ trang QC, mang vai trò người tạo, không tự đẻ token, xoá là mất quyền.
+  const qt = (await call('POST', '/api/ext-tokens', { cookie: qc.cookie, body: { label: 'Edge' } })).body;
+  assert.match(qt.token, /^psq_/);
+  assert.equal(qt.hash, undefined, 'không trả hash');
+  assert.deepEqual((await call('GET', '/api/me', { bearer: qt.token })).body, { username: 'qcuser', name: 'Chị QC', role: 'qc' });
+  assert.equal((await call('GET', '/api/jobs/7', { bearer: qt.token })).status, 200);
+  assert.equal((await call('POST', '/api/ext-tokens', { bearer: qt.token, body: {} })).status, 403, 'token không tạo được token');
+  assert.deepEqual((await call('GET', '/api/ext-tokens', { cookie: qc.cookie })).body.map((t) => [t.label, t.hash]), [['Edge', undefined]]);
+  const at = (await call('POST', '/api/ext-tokens', { cookie: ann.cookie, body: {} })).body;
+  assert.equal((await call('GET', '/api/jobs/7', { bearer: at.token })).status, 403, 'token annotator vẫn chỉ có quyền annotator');
+  assert.equal((await call('GET', '/api/tickets', { bearer: at.token })).body.length, 2);
+  assert.equal((await call('GET', '/api/ext-tokens', { cookie: bob.cookie })).body.length, 0, 'không thấy token người khác');
+  assert.equal((await call('DELETE', `/api/ext-tokens/${qt.id}`, { cookie: bob.cookie })).status, 404, 'không xoá được token người khác');
+  assert.equal((await call('DELETE', `/api/ext-tokens/${qt.id}`, { cookie: qc.cookie })).status, 200);
+  assert.equal((await call('GET', '/api/me', { bearer: qt.token })).status, 401, 'token đã xoá');
+  assert.equal((await call('GET', '/api/me', { bearer: 'psq_sai' })).status, 401);
+
+  // Plugin trong trang CVAT: không đăng nhập riêng, dịch vụ nhận người dùng từ phiên CVAT (cookie sessionid).
+  assert.deepEqual((await call('GET', '/api/me', { cookie: 'sessionid=s-ann; csrftoken=x' })).body, { username: 'ann', name: 'An Nguyễn', role: 'annotator' });
+  assert.equal((await call('GET', '/api/me', { cookie: 'sessionid=s-qcuser' })).body.role, 'qc');
+  assert.equal((await call('GET', '/api/jobs/7', { cookie: 'sessionid=s-ann' })).status, 403, 'phiên CVAT của annotator vẫn chỉ có quyền annotator');
+  assert.equal((await call('GET', '/api/me', { cookie: 'sessionid=s-nobody' })).status, 401, 'phiên CVAT không hợp lệ');
+  assert.equal((await call('POST', '/api/ext-tokens', { cookie: 'sessionid=s-qcuser', body: {} })).status, 403);
 
   await call('POST', '/api/logout', { cookie: ann.cookie });
   assert.equal((await call('GET', '/api/me', { cookie: ann.cookie })).status, 401);

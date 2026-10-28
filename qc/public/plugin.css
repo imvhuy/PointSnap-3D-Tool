@@ -1,0 +1,21 @@
+/* Khung PointSnap trong trang CVAT (plugin.js). Mọi lớp có tiền tố ps- để không đụng CSS của CVAT. */
+#pointsnap-plugin { position: fixed; left: 12px; bottom: 12px; z-index: 1000; width: 360px; max-height: 70vh; overflow: auto; font: 13px/1.45 Inter, "Segoe UI", system-ui, sans-serif;
+  color: #e7ecf2; background: #141b24; border: 1px solid #31405a; border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
+#pointsnap-plugin[hidden] { display: none; }
+#pointsnap-plugin .ps-head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid #243040; position: sticky; top: 0; background: #141b24; }
+#pointsnap-plugin .ps-head .ps-btn { margin-left: auto; }
+#pointsnap-plugin .ps-body { display: grid; gap: 8px; padding: 10px; }
+#pointsnap-plugin .ps-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+#pointsnap-plugin .ps-card { display: grid; gap: 6px; padding: 8px; border: 1px solid #243040; border-radius: 10px; background: #19222e; }
+#pointsnap-plugin .ps-list { margin: 0; padding-left: 16px; }
+#pointsnap-plugin .ps-btn { height: 28px; padding: 0 10px; border: 1px solid #31405a; border-radius: 8px; background: #141b24; color: inherit; cursor: pointer; font: inherit; }
+#pointsnap-plugin .ps-btn:hover { border-color: #3d86ff; }
+#pointsnap-plugin .ps-sm { height: 24px; padding: 0 8px; font-size: 12px; }
+#pointsnap-plugin .ps-pri { background: #3d86ff; border-color: #3d86ff; color: #fff; font-weight: 600; }
+#pointsnap-plugin .ps-ok { color: #4cc38a; border-color: #1f6b47; } #pointsnap-plugin .ps-bad { color: #ff8e9e; border-color: #7a2a38; }
+#pointsnap-plugin .ps-tag { padding: 2px 8px; border: 1px solid #31405a; border-radius: 999px; background: none; color: inherit; cursor: pointer; font-size: 12px; }
+#pointsnap-plugin .ps-tag.on { border-color: #ff6b7f; color: #ff6b7f; background: #301c27; }
+#pointsnap-plugin .ps-in { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #31405a; border-radius: 8px; background: #0d1218; color: inherit; font: inherit; resize: vertical; }
+#pointsnap-plugin .ps-muted { color: #95a3b5; } #pointsnap-plugin .ps-err { color: #ff6b7f; } #pointsnap-plugin .ps-warn { color: #f0a54a; } #pointsnap-plugin .ps-ok-text { color: #4cc38a; }
+#pointsnap-plugin .ps-msg:empty { display: none; }
+#pointsnap-plugin .ps-wrap { gap: 4px; }

@@ -48,6 +48,14 @@ Tool chỉ giảm việc lượt đầu cho QC (xếp chỗ cần xem trước, 
   lại**. Lúc nộp, dịch vụ đọc lại object trên CVAT: chưa đổi gì (quên Lưu) thì báo cả annotator lẫn QC. QC **Nghiệm thu
   đạt** hoặc **Trả lại sửa tiếp**; nghiệm thu ghi theo bản đã sửa, quét lại không bắt duyệt lần nữa. Job chỉ hoàn thành khi
   đủ 100% object, đã gửi hết lỗi và nghiệm thu hết phiếu. Annotator không xem được kết quả quét hay guideline editor.
+- **Làm ngay trong trang CVAT** (thử trên CVAT local): plugin `public/plugin.js` được nginx của CVAT chèn vào trang. Dịch vụ
+  đặt ở `/pointsnap-qc/` cùng địa chỉ CVAT, nhận người dùng từ phiên đăng nhập CVAT. QC xem lần lượt object, chuyển frame
+  và chọn box không tải lại trang; annotator sửa và nộp phiếu tại chỗ. Cài / gỡ:
+  [docs/qc-plugin-cvat.md](../docs/qc-plugin-cvat.md). Extension (nếu dùng) kết nối bằng token tạo ở menu tài khoản:
+  [docs/qc-extension-api.md](../docs/qc-extension-api.md).
+
+Thử nghiệm 2 vòng QC ↔ annotator với lỗi cài biết trước, và số đo sau khi sửa luật box nhảy:
+[docs/qc-thu-nghiem-2-vong.md](../docs/qc-thu-nghiem-2-vong.md).
 
 ## Đo trên dữ liệu thật (26/10/2026, CVAT 2.75.1 local, nhãn chuẩn)
 

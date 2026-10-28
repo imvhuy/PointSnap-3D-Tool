@@ -82,6 +82,10 @@
 .send-list .check { align-items: flex-start; }
 .send-list .check input { margin-top: 3px; }
 .modal input[type=number] { width: 120px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--raise); color: var(--text); }
+.tok { display: block; padding: 8px 10px; font-size: 12px; word-break: break-all; user-select: all; }
+.tok-list { display: grid; gap: 8px; }
+.tok-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.modal input:not([type=checkbox]):not([type=number]) { width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--raise); color: var(--text); font-weight: 400; }
 .ro { display: grid; gap: 4px; padding: 12px; border-radius: 12px; background: var(--raise); border: 1px solid var(--line); }
 .ro-h { display: flex; justify-content: space-between; font-size: 11px; }
 

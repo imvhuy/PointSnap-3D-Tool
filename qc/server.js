@@ -23,7 +23,7 @@ const store = new Store(config.home);
 const client = config.cvatToken ? new CvatClient({ url: config.cvatUrl, token: config.cvatToken }) : null;
 const PUBLIC = path.join(__dirname, 'public');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
-const auth = new Auth({ cvatUrl: config.cvatUrl, qcUsers: config.qcUsers });
+const auth = new Auth({ cvatUrl: config.cvatUrl, qcUsers: config.qcUsers, store });
 
 // ------------------------------------------------------------------ hàng đợi quét (một job một lúc)
 
@@ -148,9 +148,15 @@ const note = (me, text, kind = 'comment') => ({ by: me.username, name: me.name, 
 
 /** API phiếu: QC tạo / nghiệm thu / trả lại; annotator xem phiếu của mình, trả lời, nộp lại. */
 async function ticketRoute(req, p, url, me) {
+  // Người nhận phiếu: người dùng token thấy được, cộng người được giao job. Tài khoản không phải admin trên CVAT không dùng tổ
+  // chức chỉ thấy chính mình ở /api/users, nên annotator lấy từ người được giao job.
   if (req.method === 'GET' && p === '/api/users') {
-    const users = await client.all('/api/users');
-    return { body: users.filter((u) => u.is_active !== false).map((u) => ({ username: u.username, name: [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username, role: auth.roleOf(u) })) };
+    const [users, jobs] = await Promise.all([client.all('/api/users'), client.jobs()]);
+    const all = new Map();
+    for (const u of [...users.filter((x) => x.is_active !== false), ...jobs.map((j) => j.assignee).filter(Boolean)]) {
+      if (!all.has(u.username)) all.set(u.username, { username: u.username, name: [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username, role: auth.roleOf(u) });
+    }
+    return { body: [...all.values()] };
   }
   if (req.method === 'GET' && p === '/api/tickets') {
     const job = Number(url.searchParams.get('job')) || null;
@@ -270,9 +276,20 @@ async function route(req, res) {
     }
   }
   if (req.method === 'POST' && p === '/api/logout') return send(res, 200, { ok: true }, undefined, { 'Set-Cookie': auth.close(req) });
-  const me = auth.session(req);
+  const me = auth.session(req) || await auth.fromCvatSession(req);
   if (req.method === 'GET' && p === '/api/me') return me ? send(res, 200, { username: me.username, name: me.name, role: me.role }) : send(res, 401, { error: 'Chưa đăng nhập' });
   if (p !== '/api/status' && !me) return send(res, 401, { error: 'Chưa đăng nhập' });
+
+  // Token cho extension (QC và annotator đều tạo được cho chính mình). Chỉ tạo / xoá từ trang QC đã đăng nhập, không bằng
+  // chính token extension (lộ một token không đẻ được token khác).
+  if (p === '/api/ext-tokens' || p.startsWith('/api/ext-tokens/')) {
+    if (req.method === 'GET' && p === '/api/ext-tokens') return send(res, 200, auth.tokensOf(me.username));
+    if (me.via) return send(res, 403, { error: 'Tạo / xoá token từ trang QC' });
+    if (req.method === 'POST' && p === '/api/ext-tokens') { const { label = '' } = await readJson(req); return send(res, 200, auth.issueToken(me, label)); }
+    const t = p.match(/^\/api\/ext-tokens\/([0-9a-f]+)$/);
+    if (req.method === 'DELETE' && t) return auth.revokeToken(me.username, t[1]) ? send(res, 200, { ok: true }) : send(res, 404, { error: 'Không có token này' });
+    return send(res, 404, { error: 'Không có' });
+  }
   // Annotator chỉ xem / trả lời phiếu của mình và xem guideline; còn lại là việc của QC.
   const annotatorMay = (req.method === 'GET' && (p === '/api/tickets' || p.startsWith('/api/specs/') || p === '/api/status'))
     || (req.method === 'POST' && /^\/api\/tickets\/BUG-\d+\/(comment|submit)$/.test(p));

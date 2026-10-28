@@ -16,7 +16,11 @@ const B = require('../../extension/src/annotator/box.js');
 const QC_DEFAULTS = {
   jump: {
     posM: 1.0, // lệch vị trí tối thiểu để báo
-    posStepRatio: 0.3, // … và lệch > tỉ lệ này × quãng đường giữa hai keyframe (vật nhanh thì nới)
+    // Lệch dọc hướng đi được nới theo quãng đường (vật đổi tốc độ, thời điểm frame lệch); lệch ngang / lên xuống thì không
+    // có lý do vật lý nào, nên chỉ nới rất ít (xe vào cua).
+    posStepRatio: 0.3, // dọc hướng đi: lệch > tỉ lệ này × quãng đường giữa hai keyframe
+    latStepRatio: 0.05, // ngang hướng đi
+
     dimsRel: 0.15, // kích thước đổi > 15% (vật cứng)
     nonRigidDimsRel: 0.35, // người, động vật
     endFactor: 2, // keyframe đầu / cuối đoạn chỉ có ngoại suy: nới ngưỡng
@@ -28,7 +32,7 @@ const QC_DEFAULTS = {
   // ≥ minTracks track và ≥ minShare số track có mặt cùng nhảy ở một frame → lỗi cả frame, không báo từng track.
   common: { minTracks: 3, minShare: 0.15, movingM: 0.3 }, // movingM: m mỗi frame thì coi là đang chạy
 };
-const QC_NUMBERS = ['jump.posM', 'jump.posStepRatio', 'jump.dimsRel', 'jump.nonRigidDimsRel', 'jump.endFactor',
+const QC_NUMBERS = ['jump.posM', 'jump.posStepRatio', 'jump.latStepRatio', 'jump.dimsRel', 'jump.nonRigidDimsRel', 'jump.endFactor',
   'fragment.maxGapFrames', 'fragment.minDistM', 'fragment.maxDistM', 'fragment.sizeRatio', 'fragment.distStepRatio', 'fragment.maxDimsRel', 'fragment.maxSpeedRel', 'fragment.minSpeedDiffM',
   'duplicate.minRatio', 'duplicate.minVolumeRatio', 'duplicate.minFrames', 'common.minTracks', 'common.minShare', 'common.movingM'];
 
@@ -70,6 +74,30 @@ function localStep(seg, i) {
   return 0;
 }
 
+/** Hướng đi (đơn vị, mặt phẳng xy) quanh keyframe i, không dùng chính i; vật gần như đứng yên thì null. */
+function heading2d(seg, i) {
+  const c = (j) => seg[j].box.center, n = seg.length;
+  const v = i >= 1 && i + 1 < n ? sub(c(i + 1), c(i - 1)) : i + 2 < n ? sub(c(i + 2), c(i + 1)) : i >= 2 ? sub(c(i - 1), c(i - 2)) : [0, 0];
+  const len = Math.hypot(v[0], v[1]);
+  return len > 1e-3 ? [v[0] / len, v[1] / len] : null;
+}
+
+/** Sai lệch `e` (vector 3D) tách thành phần dọc hướng đi `u` và phần còn lại (ngang + lên xuống). */
+function split(e, u) {
+  const along = u ? Math.abs(e[0] * u[0] + e[1] * u[1]) : 0;
+  return { along, lat: Math.sqrt(Math.max(0, e[0] ** 2 + e[1] ** 2 + e[2] ** 2 - along ** 2)) };
+}
+
+/**
+ * Lệch quá ngưỡng: vùng cho phép là hình elip, dài dọc hướng đi (nới theo quãng đường `step`), hẹp theo chiều ngang. Vật
+ * chạy chậm thì elip thành hình tròn bán kính posM, đúng như luật cũ đo theo khoảng cách.
+ */
+function offTrack(e, u, step, cfg, factor = 1) {
+  const { along, lat } = split(e, u);
+  const a = Math.max(cfg.posM, cfg.posStepRatio * step) * factor, b = Math.max(cfg.posM, cfg.latStepRatio * step) * factor;
+  return (along / a) ** 2 + (lat / b) ** 2 > 1;
+}
+
 const cm = (m) => `${Math.round(m * 100)} cm`;
 
 function jumpsInSegment(track, seg, cfg, nonRigid) {
@@ -79,11 +107,13 @@ function jumpsInSegment(track, seg, cfg, nonRigid) {
     const pos = guesses(seg, i, (x) => x.box.center), dims = guesses(seg, i, (x) => x.box.dims);
     const factor = pos.end ? cfg.endFactor : 1;
     const posErr = Math.min(...pos.all.map((g) => dist(g, k.box.center)));
-    const posTol = Math.max(cfg.posM, cfg.posStepRatio * localStep(seg, i)) * factor;
+    const u = heading2d(seg, i), step = localStep(seg, i);
+    // Báo khi mọi cách đoán đều lệch quá ngưỡng (dọc hoặc ngang).
+    const posBad = pos.all.every((g) => offTrack(sub(k.box.center, g), u, step, cfg, factor));
     const dimsErr = Math.min(...dims.all.map((g) => Math.max(...g.map((v, d) => Math.abs(k.box.dims[d] - v) / Math.max(v, 0.1)))));
     const dimsTol = (nonRigid ? cfg.nonRigidDimsRel : cfg.dimsRel) * factor;
     const parts = [];
-    if (posErr > posTol) parts.push(`vị trí lệch ${cm(posErr)}`);
+    if (posBad) parts.push(`vị trí lệch ${cm(posErr)}`);
     if (dimsErr > dimsTol) parts.push(`kích thước lệch ${Math.round(dimsErr * 100)}%`);
     if (!parts.length) return;
     flagged.add(i);
@@ -107,7 +137,10 @@ function breaksInSegment(track, seg, cfg, flagged) {
     const predPrev = line(f(i + 2), c(i + 2), f(i + 1), c(i + 1), f(i));
     const step = (dist(c(i - 1), c(i)) + dist(c(i + 1), c(i + 2))) / 2;
     const tol = Math.max(cfg.posM, cfg.posStepRatio * step);
-    if (dist(predNext, c(i + 1)) > tol && dist(predPrev, c(i)) > tol) out.push({ track, seg, i, from: f(i), to: f(i + 1), predNext, predPrev, tol });
+    const dir = (v) => { const l = Math.hypot(v[0], v[1]); return l > 1e-3 ? [v[0] / l, v[1] / l] : null; };
+    if (offTrack(sub(c(i + 1), predNext), dir(sub(c(i), c(i - 1))), step, cfg) && offTrack(sub(c(i), predPrev), dir(sub(c(i + 2), c(i + 1))), step, cfg)) {
+      out.push({ track, seg, i, from: f(i), to: f(i + 1), predNext, predPrev, tol });
+    }
   }
   return out;
 }
@@ -425,9 +458,11 @@ function motionRules(tracks, g, q, stop) {
 /**
  * Mọi luật cấp track. `g`: guideline đã resolve; `q`: ngưỡng QC đã merge.
  * Luật chuyển động chạy hai lần: theo toạ độ xe thu (như CVAT lưu) và theo toạ độ đã bù chuyển động xe thu ước lượng từ
- * nhãn; chỉ báo khi cả hai cùng báo. Đo trên 4 job chuẩn: xe thu chạy nhanh giữa nhiều rào chắn (scene-0061) thì toạ độ
- * xe thu báo nhầm hàng trăm mục; đường cao tốc ít vật đứng yên (scene-1077) thì ước lượng chuyển động sai và toạ độ đã
- * bù báo nhầm nhiều hơn. Lỗi nhãn thật (box lệch, đổi ID) lệch ở cả hai.
+ * nhãn / point cloud; báo khi cả hai cùng báo, riêng box nhảy của vật đứng yên thì chỉ cần toạ độ đã bù (khi có pose từ
+ * point cloud). Đo trên 4 job chuẩn: xe thu chạy nhanh giữa nhiều rào chắn (scene-0061) thì toạ độ xe thu báo nhầm hàng trăm
+ * mục; đường cao tốc ít vật đứng yên (scene-1077) thì ước lượng chuyển động sai và chỉ dùng toạ độ đã bù báo nhầm 14 mục.
+ * Đo 28/10/2026 (12 box nhảy cài mỗi job × 3 cỡ, 4 job): bắt 1,0 / 1,5 / 2,0 m: 29 / 39 / 42 trên 48 (luật cũ 18 / 31 / 35),
+ * báo nhầm trên nhãn chuẩn 5 mục (cũ 3).
  * Trả về { hits (như scanJob), commonFrames: [{ frame, tracks, of }] }.
  */
 function trackRules({ tracks, frames, stop, poses = null }, g, q) {
@@ -457,7 +492,19 @@ function trackRules({ tracks, frames, stop, poses = null }, g, q) {
   const frag = new Map((poses ? fragments(worldTracks, q.fragment, stop, 'đã bù chuyển động xe thu', tracks)
     : [...fragments(worldTracks, q.fragment, stop, 'đã bù chuyển động xe thu'), ...fragments(tracks, q.fragment, stop).filter((h) => !staticApart(h))])
     .map((h) => [id(h), h]));
-  return { hits: [...sensor.hits.filter((h) => inWorld.has(id(h))), ...frag.values(), ...duplicates(frames, q.duplicate)], commonFrames };
+  // Vật đứng yên (theo toạ độ đã bù, quanh frame bị báo) chỉ cần toạ độ đã bù báo: trong toạ độ xe thu nó trôi theo xe thu nên
+  // box lệch dọc đường bị coi như xe thu đổi tốc độ. Chuyển động xe thu ước lượng sai thì lệch cả frame, đã bị commonJumps bỏ.
+  const stillAt = (h) => {
+    const k = worldTracks.get(h.objKey)?.keyframes.filter((x) => !x.outside && x.box) || [], i = k.findIndex((x) => x.frame === h.frame);
+    const near = [k[i - 2], k[i - 1], k[i + 1], k[i + 2]].filter(Boolean);
+    for (let a = 0; a < near.length; a += 1) for (let b = a + 1; b < near.length; b += 1) {
+      if (dist(near[a].box.center.slice(0, 2), near[b].box.center.slice(0, 2)) / Math.abs(near[b].frame - near[a].frame) >= q.common.movingM) return false;
+    }
+    return near.length >= 2;
+  };
+  const inSensor = new Set(sensor.hits.map(id));
+  const motion = world.hits.filter((h) => inSensor.has(id(h)) || (poses && h.issue.rule === 'track.jump' && stillAt(h)));
+  return { hits: [...motion, ...frag.values(), ...duplicates(frames, q.duplicate)], commonFrames };
 }
 
 module.exports = { QC_DEFAULTS, validateQc, trackRules, segments, egoPoses, invert, fragments, toWorld, assign };

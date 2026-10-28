@@ -196,6 +196,17 @@ test('trackrules: bắt box lệch một frame, đổi ID, đứt track, vẽ ha
   assert.ok(dup.some((h) => h.issue.rule === 'track.duplicate'));
 });
 
+test('trackrules: box lệch ngang 1,2 m vẫn bắt khi xe thu chạy nhanh; lệch dọc hướng đi được nới theo quãng đường', () => {
+  // Xe thu chạy 8 m mỗi frame: trong toạ độ xe thu mọi vật đứng yên trôi −8 m mỗi frame (ngưỡng dọc thành 2,4 m).
+  const fast = statics.map((s) => ({ ...s, dx: -8 }));
+  const parked = (edit) => runTrackRules(trackAnn([{ id: 1, x: 60, dx: -8, frames: [0, 12], edit }, ...fast]));
+  assert.deepEqual(parked(), []);
+  assert.deepEqual(parked((p, f) => { if (f === 6) p[1] += 1.2; }).map((h) => [h.issue.rule, h.frame]), [['track.jump', 6]], 'ngang 1,2 m');
+  // Xe chạy 8 m/frame đổi tốc độ nhẹ: lệch dọc 1,2 m ở một frame không báo (vật chạy nhanh trong cả hai hệ toạ độ).
+  const moving = [{ id: 1, dx: 8, frames: [0, 12], edit: (p, f) => { if (f === 6) p[0] += 1.2; } }, ...statics];
+  assert.deepEqual(runTrackRules(trackAnn(moving)), [], 'dọc 1,2 m ở xe chạy nhanh');
+});
+
 test('guideline: lưu phiên bản, khôi phục, đọc file kiểu cũ; ghi đè sai bị từ chối', () => {
   const home = require('node:path').join(require('node:os').tmpdir(), `pointsnap-qc-spec-${process.pid}`);
   const store = new Store(home);
