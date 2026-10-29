@@ -1,7 +1,7 @@
 /*
  * Kiểm tra một cuboid ngay khi đang sửa. Hàm thuần: nhận số đo đã tính sẵn, trả về danh sách vấn đề.
  * Mỗi vấn đề: { rule, severity: 'error' | 'warning' | 'info', title, message }.
- * Luật và ngưỡng khớp với bộ quét Python (pointsnap/detectors) để annotator và QC thấy cùng một kết luận.
+ * Tool QC (qc/) dùng chung file này để annotator và QC thấy cùng một kết luận.
  */
 (function (root) {
   'use strict';
@@ -82,7 +82,7 @@
 
   function ground(box, contact, label, g) {
     const cfg = g.ground;
-    if (!cfg.classes.includes(label)) return [];
+    if (!cfg.classes.includes('*') && !cfg.classes.includes(label)) return [];
     if (B.rangeXY(box, g.sensorOrigin) > cfg.maxRangeM) {
       return [issue('ground.no_evidence', 'info', 'Quá xa để đo cao độ',
         `Box xa hơn ${cfg.maxRangeM} m: mặt đất ước lượng từ LiDAR không đủ tin; kiểm tra bằng mắt ở view Side / Front`,

@@ -102,6 +102,38 @@
 2. **Tra cho từng box, O(1), chạy được cả lúc kéo:**
    - Lấy độ cao địa hình tại 4 góc footprint, **chỉ dùng ô đất trong ±1 m quanh đáy box**. Trên CVAT thật, mái hiên và sàn cao bị nhận là đất làm người đi bộ bị báo lún tới 4,9 m. Lệch hơn 1 m thì để luật Z thô (PP-09) bắt.
    - Gọi mặt đất thấp nhất và cao nhất dưới footprint là `min`, `max`. **ΔZ = khoảng đáy box nằm ngoài [min, max]**: dương là lơ lửng, âm là lún, 0 nếu nằm trong. Trên bờ vỉa hoặc dốc không biết box tựa mặt nào, nên chấp nhận cả khoảng để tránh báo nhầm.
+   - *(26/10)* **Vật che chân.** Người đứng sau rào chắn / capo xe / tường thấp: LiDAR không thấy chân và không thấy đất
+     ngay sau vật che, nên 4 góc footprint nội suy từ mặt trên phẳng của vật che, và box đúng bị báo lún (người dùng gặp
+     trên CVAT công ty: lún 41 cm; nhãn chuẩn scene-0061: người sau rào chắn lún 60 cm). Khi đáy box thấp hơn `min`, tìm
+     ô đất trong 2,5 m quanh box thấp hơn `min` ít nhất 25 cm (cao hơn bờ vỉa). Có từ 2 ô thì box có thể đứng trên mặt
+     thấp đó: `min` hạ xuống ô gần đáy box nhất. Chỉ nới chiều lún, không tạo báo lơ lửng mới.
+     - Đo trên nhãn chuẩn: scene-0061 (1 663 box, 39 frame) bỏ 3 / 10 báo lún nhầm, cả 3 là người sau rào chắn; AV2
+       (1 475 box) không đổi. Hạ giả box đúng 30 / 50 cm: scene-0061 còn bắt 183 / 184 và 315 / 318, AV2 128 / 128 và
+       147 / 147.
+     - Đã thử và bỏ: bán kính 3,5 m (bỏ 6 / 10 báo nhầm nhưng sót thêm 9% box lún giả); đếm điểm thô thấp hơn mặt đo
+       được (kém hơn); điểm của chính vật thấp hơn mặt đo được (không đổi gì trên dữ liệu này); đòi bậc giữa hai ô đất
+       kề nhau (không bỏ được báo nhầm nào, sót thêm 7% box lún giả).
+     - 7 báo lún còn lại trên scene-0061 đều là người đi bộ 16–39 m. Hai ca xem kỹ chỉ có 1 và 2 điểm LiDAR trong box;
+       một ca có mặt đất thật cách 3,4 m, ngoài bán kính.
+   - *(27/10)* **Box có pitch / roll.** Spec chỉ cho yaw nhưng CVAT cho kéo nghiêng. Bản cũ chỉ so góc đáy thấp nhất với
+     khoảng mặt đất, nên box nghiêng 3° chạm đất một đầu vẫn "sát đất" dù đầu kia hở (xe tải 10,2 m: hở 69 cm). Nay đo
+     đất dưới đúng 4 góc đáy thật; box nghiêng thì so từng góc với đất ngay dưới nó và báo góc lệch nhiều nhất (box đã
+     nghiêng thì theo được mặt dốc, không cần chấp nhận cả khoảng). Box chỉ có yaw: kết quả không đổi.
+   - *(27/10)* **Vẽ đường mặt đất theo độ cao thật dưới các góc**, kéo dài theo độ dốc, thay vì đường phẳng ở góc thấp
+     nhất. Người dùng thấy đường "lệch": (1) trên dốc, đường phẳng ở góc thấp nhất nằm dưới đáy box mà vẫn báo sát đất;
+     (2) view Side / Front của CVAT xoay theo cả pitch / roll của box, nên box nghiêng trông vẫn nằm ngang còn đường mặt
+     đất phẳng thì xiên. Nút Hạ đáy dời box để các góc đáy cân quanh mặt đất (box phẳng: như cũ, giữa mặt thấp nhất và
+     cao nhất).
+   - *(28/10)* **Kiểm mọi class.** Luật chỉ chạy cho class có tên trong danh sách mặc định (tên nuScenes và spec VN).
+     Label CVAT công ty "vehicles" không khớp tên nào nên lệch bao nhiêu cũng không báo, kể cả khi đã hạ ngưỡng trong ⚙
+     rồi Save; panel vẫn đo và ghi "cao X cm" nên trông như luật hỏng. Nay `ground.classes: ['*']` (như chồng lấn), bỏ
+     tick class trong ⚙ để tắt. Nhãn chuẩn scene-0061 (39 frame): rào chắn và nón giao thông mới được kiểm báo 2,0% và
+     2,7% box, ngang người đi bộ (3,3%). Kiểm trên CVAT localhost: lưu ngưỡng Cảnh báo > 5 cm / Lỗi > 10 cm thì box lún
+     15 cm chuyển từ ✓ sang Lỗi ngay.
+   - *(28/10)* Rà các luật khác: Z, quá xa, box rỗng, ôm vật, scale / hướng theo track, chồng lấn chạy cho mọi class.
+     Luật tra theo tên class (khoảng kích thước, thuộc tính bắt buộc, cặp được chồng, người lái / người trong xe) cần
+     spec đúng tên label của project. Khoảng kích thước từng im lặng hiện ✓ khi class chưa có khoảng: nay dòng Kích thước
+     ghi "chưa có khoảng" (mức Thông tin) kèm nút Spec mở trình sửa đúng class (thử trên AV2: `wheelchair`).
 3. **Bằng chứng từ chính vật:** đếm điểm trong footprint cao hơn `max` + 8 cm mà thấp hơn đáy box − 5 cm. Đó là điểm của chính vật (bánh xe, chân) nằm dưới đáy box. Từ 8 điểm trở lên thì báo Lỗi lơ lửng. So với `max` chứ không với `min` để điểm vỉa hè không bị đếm.
 4. Độ tin cậy < 0,3 thì báo "không đủ điểm mặt đất" (mức Thông tin), không đoán.
 5. **Ngưỡng:** Cảnh báo khi |ΔZ| > 20 cm, Lỗi khi > 35 cm. Bản đề xuất ban đầu là 15/30 cm; đã nới theo dữ liệu thật (mục 6.1). **Chỉ đánh giá box trong 50 m:** trên Argoverse 2, so với bản đồ mặt đất thật, sai số p90 ≤ 10 cm trong 50 m nhưng tới 1,37 m ở 50–75 m (mục 6.2).
@@ -346,6 +378,140 @@ Sau khi sửa: 0 báo nhầm trên 840 box chuẩn. Luật này chỉ còn là l
 
 **Rủi ro hành vi.** Nếu luật kích thước chặn submit, annotator junior có thể kéo box cho tắt cảnh báo thay vì sửa đúng (ví dụ thu box van về cỡ car). Lỗi rõ ràng biến thành lỗi ẩn.
 
+### PP-19. Scan QC chỉ lặp lại luật của annotator thì không đáng chạy (26/10)
+
+**Bằng chứng.** Bản đầu của dịch vụ QC (`qc/`) chạy đúng bộ luật theo từng box của extension. Trên 4 job công khai (6 405
+box) nó ra đúng những gì bảng annotator đã báo khi mở từng box. Thêm được hai thứ: box annotator chưa mở tới, và gộp theo
+track. QC cần luật mà người sửa từng box không thấy được.
+
+**Giải pháp.** Hai lớp luật:
+- Theo từng box: **dùng chung** với annotator (cùng code) để hai bên không ra kết luận ngược nhau.
+- **Chỉ QC**, cần nhìn nhiều frame / cả job: đứt track, đổi ID, track trùng, box nhảy trong một frame (PP-20); sau đó
+  chuyển động xe thu tự ước lượng từ point cloud và sót vật (PP-14).
+
+### PP-20. Pre-label: keyframe ở mọi frame, tracker đứt / đổi ID, box rung từng frame (26/10)
+
+**Bằng chứng.**
+- Job pre-label và nhãn chuẩn đều có keyframe ở mọi frame: job 69 có 3 900 keyframe cho 219 track / 39 frame. Luật "box
+  trôi ở frame nội suy" không có gì để bắt; lỗi nằm ở **từng frame** do model sinh ra.
+- Tracker của model hay đứt một vật thành nhiều track, đổi ID khi hai vật đi gần nhau, sinh hai track cho một vật.
+  Annotator sửa từng box nên khó thấy; QC mở từng frame thì không kịp.
+
+**Giải pháp (QC).**
+- `track.fragment`: một track kết thúc, track mới cùng nhóm class bắt đầu gần đó trong vài frame (vị trí đoán theo vận
+  tốc) → nghi cùng một vật bị đứt ID.
+- `track.swap`: hai track cùng class đổi chỗ cho nhau (mỗi track nhảy về phía vị trí của track kia) → nghi đổi ID.
+- `track.duplicate`: hai track chồng nhau ở nhiều frame liền → một vật vẽ hai lần.
+- `track.jump`: vị trí / kích thước / hướng ở một frame lệch hẳn so với mọi cách đoán từ frame lân cận (cùng cách của
+  `heading.jump`).
+
+**Đã làm (26/10, `qc/lib/trackrules.js`).** Đo trên 4 job công khai (6 405 box, 366 track):
+
+| | Bản đầu | Bản cuối |
+|---|---|---|
+| Báo trên nhãn chuẩn (box) | 289 (đứt track 211 ở scene-0061, vẽ hai lần 40 ở AV2) | 8, gộp thành 5 mục |
+
+Ba thay đổi làm số báo nhầm giảm:
+- **Chuyển động xe thu ước lượng từ chính nhãn.** CVAT không lưu pose; vật đứng yên vẫn trôi 5 m mỗi frame theo xe thu. Khớp
+  phép quay + tịnh tiến mà đa số track đồng ý (RANSAC 2 điểm). Luật chuyển động chạy trên cả toạ độ xe thu lẫn toạ độ đã bù,
+  chỉ báo khi cả hai cùng báo: scene-0061 (nhiều rào chắn) toạ độ xe thu báo nhầm hàng trăm mục; scene-1077 (cao tốc, ít vật
+  đứng yên) thì toạ độ đã bù báo nhầm nhiều hơn.
+- **Hai track cùng có mặt ở một frame thì không thể là một vật bị tách ID** (bỏ 200 báo nhầm "đứt track" giữa các rào chắn).
+- **Nhiều track cùng nhảy ở một frame** (≥ 3 và ≥ 15% số track đang chạy) là lỗi cả frame (lệch thời điểm frame, xe thu
+  phanh), không báo từng track; ghi một dòng cho QC.
+
+Bắt lỗi cài vào bản sao nhãn (15 lần mỗi loại mỗi job): box lệch 3 m ở một frame 77%, lệch 1,5 m 63%, to thêm 30% 70% (người
+và vật không cứng được nới 35% nên không bắt), đứt track 88%, đổi ID 93%, vẽ hai lần 80%. Bỏ sót chủ yếu ở vật chạy nhanh (ngưỡng
+nới theo quãng đường mỗi frame) và keyframe đầu / cuối track (chỉ có ngoại suy). 5 mục còn lại trên nhãn chuẩn chưa mở xem
+được là nhãn chuẩn bị tách ID thật hay báo nhầm.
+
+**Rà lại "Nghi đứt track" (27/10).** Xem từng mục trên nhãn chuẩn theo toạ độ đã bù chuyển động xe thu: 3/4 là báo nhầm
+(hai nón đứng yên cách nhau 1,3 m và 2,6 m thay nhau hiện; hai người đi cạnh nhau cách 1 m). Sửa:
+- Ngưỡng theo **cỡ vật** (¼ chiều dài, trong 0,5–2 m) thay cho 2 m cố định; chỉ nới **dọc hướng chạy** theo quãng đường đi
+  trong khoảng đứt, **ngang hướng chạy** thì không (xe làn bên cạnh).
+- Đoán **hai chiều** (đoạn trước đi tới, đoạn sau lùi về); **vận tốc hai đoạn** lệch > max(30%, 0,5 m/frame) là hai vật.
+- Báo khi một trong hai hệ toạ độ nối được (đòi cả hai thì bỏ sót nửa số ca cài), trừ khi toạ độ đã bù cho thấy hai vật
+  đứng yên cách nhau (hàng nón dọc đường). So khớp hai hệ toạ độ phải cùng object kia (trước đó chỉ so object + frame).
+- Mục ghi hai frame (cuối đoạn trước, đầu đoạn sau); `maxGapFrames` đếm số frame trống.
+
+Kết quả: 27 edge case (`qc/test/fragment.test.js`: xe chạy, rẽ, xe nhanh 15 m/frame, nón đứng yên khi xe thu chạy 8 m/frame,
+người đi bộ, nhãn rung ±20 cm, đoạn chỉ một keyframe, biên 5 frame trống, xe buýt 12 m; và các ca không được báo: hai nón cạnh
+nhau, xe sau tới chỗ xe trước vừa rời, xe làn bên, xe ngược chiều, xe cùng làn chậm hơn 40%, khác class, cùng track ra vào,
+hai track cùng có mặt) đúng cả 27. Nhãn chuẩn còn 1 mục (scene-1077, car #61 → car #3: nối liền nhau, lệch 74 cm, kích
+thước lệch 0,5 m, nhiều khả năng nhãn chuẩn tách ID thật). Bắt đứt track cài vào 4 job 92% (55/60).
+
+**Phản hồi của QC (27/10):** mục scene-1077 car #61 → #3 là **hai xe khác nhau** (QC xem trên CVAT: frame 14 LiDAR quét
+thưa, box #61 xoay lệch). Luật chỉ nhìn chuyển động box nên không phân biệt được. Làm lại theo 4 bước:
+
+1. **Chuyển động xe thu khớp từ point cloud** (`qc/lib/icp.js`): bỏ mặt đất và điểm trong box đã gán, chiếu xuống mặt
+   phẳng, tìm thô hai tầng quanh dự đoán rồi ICP 2D. 25 ms/frame. Rào / nón đứng yên theo toạ độ đã bù: scene-0061 lệch
+   tối đa trung vị 18 cm, p90 30 cm (ước lượng từ nhãn: 30 / 77 cm); scene-1077 (cao tốc) p90 38 cm (từ nhãn: 13 m, sai hẳn:
+   xe thu thật chạy 6 m/frame, ước lượng từ nhãn ra 10–12 m).
+2. **Ghép đoạn track một-một bằng Hungarian** trên chi phí chuẩn hoá (lệch dự đoán dọc / ngang hướng chạy, lệch vận tốc,
+   lệch kích thước, độ dài khoảng đứt), sau khi loại cặp vượt ngưỡng.
+3. **Bằng chứng point cloud ở chỗ nối** (`qc/lib/evidence.js`): đặt box "ma" ở chỗ mỗi vật lẽ ra ở trong frame của vật
+   kia; có cụm điểm ở đó không thuộc vật thật (nối nhau trong 0,6 m) và không thuộc box nào khác → hai vật, bỏ mục. Với #61 →
+   #3: ở frame 14 có 11 điểm ở chỗ #3 lẽ ra ở mà không nối với cụm của #61 → hai vật, đúng như QC nhận định.
+4. **Hình nhìn từ trên trên trang QC**: nút "Xem point cloud chỗ nối" vẽ điểm LiDAR (thân vật sáng, mặt đất mờ), box hai
+   đoạn và box ma nét đứt ở hai frame, đọc thẳng từ CVAT, không lưu.
+
+Kết quả cả luồng: nhãn chuẩn 4 job **0 mục đứt track** (1 cặp bị loại nhờ point cloud: #61 → #3); đứt track cài vào 4 job
+bắt **29/31 (94%)**; 27 edge case vẫn đúng. Thời gian quét thêm 3–7 s mỗi job 40 frame (AV2 16 s).
+
+**Giới hạn.** Khác class ở chỗ đứt (pre-label đổi car → truck) chưa báo. `maxGapFrames` tính theo frame, nên với dữ liệu
+10 Hz thì 5 frame chỉ là 0,5 s. Cảnh quá ít vật đứng yên thì chuyển động xe thu ước lượng có thể bám nhầm vào xe đang chạy.
+
+### PP-21. Không biết box pre-label nào chưa ai sửa (26/10)
+
+**Bằng chứng.** CVAT local: shape của job pre-label 73 có `source = auto`; track chỉ có `source` cho **cả track**
+(job 69: 219 track `manual`, 3 900 keyframe không có `source`). Không biết annotator đã sửa frame nào trong track.
+
+**Hướng.** Giữ bản pre-label gốc lúc nhập (trên máy dịch vụ QC) và so với nhãn hiện tại; kiểm xem sửa box `auto` thì
+CVAT có đổi `source` thành `semi-auto` không. Chưa làm.
+
+### PP-22. Luật chung báo nhầm trên nhãn chuẩn (26/10)
+
+**Bằng chứng** (4 job công khai, chi tiết ở [qc-scan-phan-tich-thiet-ke.md](qc-scan-phan-tich-thiet-ke.md) mục 9.3):
+- Lơ lửng / lún: 20/26 mục là người / xe máy ở 23–48 m, ≤ 20 điểm, độ tin cậy mặt đất 0,30–0,56.
+- `z.range`: điểm nhiễu z = −24,5 m (phản xạ) thành ô đất, mặt đất chung tính ra −24,5 m.
+- `heading.jump`: 14/14 mục ở keyframe đầu / cuối track; 5 là nón giao thông (yaw không có nghĩa).
+- `overlap`: 13/41 cặp chồng < 1% (rào chắn nối nhau), vì spec hiện tại "cứ chồng là Lỗi".
+
+**Hướng.** Sửa ở luật chung (extension), quét lại để đo; QC ghi Đúng / Báo nhầm để có precision thật theo luật.
+
+### PP-23. Guideline đổi liên tục (26/10)
+
+**Bằng chứng.** Chỉ trong 26/10, luật chồng lấn đổi từ "> 20% Cảnh báo, chỉ một số class" sang "cứ chồng là Lỗi, mọi
+class": số box bị báo ở scene-0061 từ gần 0 lên 630 / 3 333. Kết quả quét cũ và mới không so được nếu không biết quét
+theo guideline nào.
+
+**Giải pháp.** Trình sửa guideline ngay trong trang QC, theo project: chỉnh ngưỡng bằng ô nhập / bật tắt, không sửa code;
+mỗi lần lưu là một **phiên bản** (ai, khi nào, đổi gì); mỗi lần quét ghi phiên bản đã dùng; quay về phiên bản cũ được.
+
+**Đã làm (26/10).** Tab **Guideline** của trang QC: chọn project (hoặc bản chung), bật / tắt từng luật, ô ngưỡng có đơn vị
+(ô đã sửa tô xanh, ↺ để hoàn tác), bảng khoảng kích thước theo `Class/subtype`, thuộc tính bắt buộc, cặp được phép chồng,
+nhập / xuất JSON (nhận cả file Export của trình sửa spec trong extension). Thanh lưu hiện số thay đổi và ô ghi chú; mỗi lần
+lưu thành v1, v2…, khôi phục bản cũ tạo phiên bản mới. Chỉ lưu phần khác mặc định, nên khi mặc định được hiệu chỉnh, project
+vẫn hưởng phần mình không sửa. Mỗi lần quét ghi guideline + phiên bản đã dùng; guideline đổi sau đó thì trang job nhắc quét
+lại. Thử trên CVAT local: đặt chồng lấn < 2% không báo và tắt "box rỗng" → scene-0061 từ 35 xuống 21 mục chồng lấn, mất 45 mục
+box rỗng; khôi phục bản cũ được.
+
+**Chưa làm.** Ghi người sửa (dịch vụ chưa có đăng nhập riêng); dùng chung guideline với extension annotator (hiện annotator
+vẫn nhập file Export ở ⚙ của extension).
+
+### PP-24. Chữ "ĐẠT" khiến QC tưởng tool đã duyệt (26/10)
+
+**Vấn đề.** Tool chỉ giảm việc lượt đầu, QC vẫn kiểm cả job. Gate ĐẠT / KHÔNG ĐẠT đọc như phán quyết, dễ làm QC lướt qua.
+
+**Giải pháp.** Thay bằng mức ưu tiên xem (nhiều / ít vấn đề tự phát hiện); ghi ngay đầu trang phần tool không kiểm;
+danh sách gọn, ít chữ, số đo trực quan để QC kiểm lại nhanh.
+
+**Đã làm (26/10).** Trang job: ô **Mức ưu tiên** (cao / vừa / ít vấn đề) thay cho ĐẠT; dòng "Tool không kiểm: Sót vật · Sai
+class · Camera / ảnh" ngay dưới; **dải frame** tô đậm nhạt theo số mục (bấm để lọc frame); **thanh theo luật** (bấm để lọc);
+danh sách mỗi mục một dòng: object (cặp thì ghi cả hai), vấn đề + số đo, khoảng frame, ba nút ↗ mở CVAT / ✓ đúng / ✕ báo
+nhầm; bấm dòng để xem chi tiết và link từng frame. Tiến độ duyệt hiện trên ô **Đã duyệt**. Sáng / tối, chạy được trên màn
+hình hẹp.
+
 ---
 
 ## 5. Vấn đề của tool hiện tại cần sửa trước
@@ -496,6 +662,84 @@ xem view có bị che không trước khi vẽ.
 **Chưa kiểm:** độ mượt khi kéo chuột ở frame đông điểm (khung trình duyệt thử quá hẹp); dữ liệu Việt Nam.
 
 ---
+
+### 6.4. Kiểm tới 80 m: bước 0–1 (28/10/2026)
+
+Kế hoạch dài hạn: dựng lại cảnh 4D của cả job (tư thế xe, bản đồ tĩnh, mặt đất có sai số, mô hình từng vật gộp nhiều
+frame) rồi mọi luật so nhãn với cảnh đó. Bước 0–1 đo nền và đo phần quyết định là tư thế xe. Code đo ở `extension/bench/`
+(không nạp vào extension, chạy bằng Node trên dữ liệu công khai trên máy).
+
+**Bước 0: luật hiện tại theo khoảng cách** (`bench/rules-bench.js`; nuScenes mini 10 cảnh, keyframe 2 Hz, bỏ box không có
+điểm LiDAR như bộ đánh giá nuScenes; Argoverse 2 một log 40 frame). Lỗi cài từng cái vào box nhãn chuẩn.
+
+| | nuScenes 0–30 m | 30–50 m | 50–80 m | AV2 0–30 m | 30–50 m | 50–80 m |
+|---|---|---|---|---|---|---|
+| Box | 9 098 | 3 610 | 1 422 | 151 | 139 | 321 |
+| Đo được mặt đất | 62% | 9% | 0% | 93% | 52% | 0% |
+| Bắt nâng / hạ 30 cm | 43% / 35% | 7% / 4% | 0 | 83% / 82% | 35% / 41% | 0 |
+| Bắt nâng / hạ 50 cm | 58% / 58% | 8% / 7% | 0 | 94% / 93% | 50% / 50% | 0 |
+| Bắt lật hướng 180° (một keyframe) | 100% | 100% | 100% | 100% | 100% | 100% |
+| Báo nhầm lơ lửng / lún | 3,1% | 3,0% | 0 | 0 | 1,4% | 0 |
+| Báo nhầm chồng lấn | 7,4% | 5,8% | 1,8% | 43,7% | 10,1% | 0 |
+
+Luật mặt đất mất tác dụng từ 30 m (nuScenes, LiDAR 32 tia) hoặc 50 m (giới hạn `ground.maxRangeM`); hướng không phụ
+thuộc khoảng cách. Báo nhầm chồng lấn cao do quy ước "cứ chồng là Lỗi" (rào nối nhau, người – xe lăn ở AV2).
+
+**Bước 1: tự khớp tư thế xe 6 bậc từ point cloud** (`bench/odometry.js`: ICP điểm – mặt phẳng, bỏ điểm trong box đã
+gán, giữ mặt đất; `bench/pose-bench.js`). Phép đo chính: điểm mặt đất ngay dưới xe ở frame sau đổi về frame trước (cách
+hướng 3 "mặt đất xe sắp đi qua" sẽ dùng), so với pose thật. nuScenes ghi z của xe luôn bằng 0 nên chỉ AV2 đo được độ cao.
+
+| | Một cặp frame | 0–20 m | 20–40 m | 40–60 m | 60–80 m |
+|---|---|---|---|---|---|
+| AV2 nối chuỗi: lệch độ cao p50 / p90 | 0,4 / 1,7 cm | 2,0 / 5,5 cm | 11 / 23 cm | 27 cm (1 cặp) | chưa có dữ liệu |
+| AV2 khớp thẳng frame xa vào frame gốc | | 1,3 / 2,9 cm | 4,1 / 8,6 cm | 11 cm (1 cặp) | chưa có dữ liệu |
+| nuScenes khớp thẳng: cặp hỏng | 6 / 394 cặp liền nhau | 16 / 408 | 52 / 159 | 69 / 112 | 61 / 68 |
+| nuScenes khớp thẳng: sai pitch p50 / p90 | 0,04° / 0,17° | 0,06° / 0,70° | 0,14° / 0,97° | 0,49° / 0,96° | 0,59° / 3,6° |
+
+Kết luận bước 1:
+- Khớp từng cặp đủ tốt (AV2: cm và 0,04°). Nối chuỗi thì độ cao trôi (AV2 20–40 m: p90 23 cm); khớp thẳng frame xa vào
+  frame gốc giảm còn p90 8,6 cm.
+- **Chưa đạt mục tiêu ≤ 5–10 cm ở 80 m.** AV2 trên máy chỉ có 41 m đường; nuScenes (2 Hz, 32 tia) khớp thẳng hỏng gần
+  hết từ 60 m vì hai frame cách xa chồng lấn quá ít, và 1,5% cặp liền nhau khớp hỏng làm hỏng mọi chuỗi đi qua.
+- So keyframe 2 Hz với sweep 20 Hz của nuScenes (cảnh 0796, 0916, 1077): cặp liền nhau hỏng 5 / 119 → 0 / 1 188, sai một
+  cặp 3,3 → 1,2 cm và pitch 0,07° → 0,04° (p50). Nhưng nối chuỗi 20 Hz trôi nhiều hơn (lệch ngang p50 ở 40–60 m: 22 →
+  88 cm): gấp 10 lần số bước, mỗi bước lệch nhỏ cùng chiều (sweep nuScenes chưa bù chuyển động trong lúc quét). Khớp
+  thẳng hai frame cách 60–80 m vẫn hỏng gần hết ở cả hai tần số. Vậy cặp hỏng là do frame thưa (cần tìm thô quanh dự
+  đoán, vì CVAT thường chỉ có keyframe), còn trôi phải xử lý bằng đồ thị tư thế, không phải tăng tần số.
+- Việc tiếp trước khi sang bước 2: (1) phát hiện và khớp lại cặp hỏng (tìm thô quanh dự đoán); (2) đồ thị tư thế: mỗi
+  frame khớp với nhiều frame trong tầm chồng lấn rồi tối ưu cả chuỗi, thay vì nối chuỗi hoặc khớp thẳng đơn lẻ; (3) neo
+  mặt đất dưới xe (độ cao lắp cảm biến cố định); (4) dữ liệu đo có pose 6 bậc và quãng đường ≥ 80 m (thêm log AV2).
+
+### 6.5. Lơ lửng / lún tới 80 m không cần tư thế xe cả chuỗi: thử A, B, C (28/10/2026)
+
+Tư thế xe cả chuỗi khó tự khớp với dữ liệu keyframe thưa (mục 6.4), nên thử ba cách chỉ cần frame đang xét hoặc vài
+frame liền kề (`extension/bench/far-ground-bench.js`). Cài lỗi nâng / hạ đáy 30 và 50 cm từng box nhãn chuẩn; chỉ tính
+là bắt khi báo đúng chiều; ngưỡng 20 cm như luật hiện tại.
+- **A, theo chính vật:** đáy box ≥ điểm cao nhất của vật − chiều cao track, và ≤ điểm thấp nhất trong footprint.
+- **B, mặt đường quanh box:** mặt phẳng bền qua điểm thấp nhất mỗi ô 1 m và đáy các box lân cận, bán kính
+  max(5 m, 0,15 × khoảng cách); chỉ kết luận khi khớp tốt (độ lệch ≤ 15 cm, có điểm ở ≥ 2 góc phần tư).
+- **C, gộp ±2 frame:** khớp từng cặp frame liền nhau (ICP 6 bậc tự khớp, không dùng pose thật), gộp điểm ngoài box vào
+  frame đang xét, chạy luật hiện tại tầm 80 m.
+
+| Bắt ±50 cm / báo nhầm | nuScenes 0–30 m | 30–50 m | 50–80 m | AV2 0–30 m | 30–50 m | 50–80 m |
+|---|---|---|---|---|---|---|
+| Hiện tại (tầm 50 m) | 58% / 3,1% | 7–8% / 3,0% | 0 | 93–94% / 0 | 50% / 1,4% | 0 |
+| Hiện tại nới tầm 80 m | như trên | như trên | 0,5% / 0,4% | như trên | như trên | 22–26% / 4,7% |
+| A: theo chính vật | 47–64% / 8,3% | 7–15% / 3,4% | 2–3% / 1,9% | 33–51% / 0 | 35–43% / 0 | 27–34% / 1,2% |
+| B: mặt đường quanh box | 81–83% / 4,8% | 33–40% / 12,1% | 9–17% / 10,7% | 99–100% / 0 | 68–88% / 10,8% | 44–66% / 20,9% |
+| C: gộp ±2 frame | 70% / 3,5% | 20–23% / 7,1% | 1,5–1,8% / 1,8% | 100% / 0 | 71–77% / 5,8% | 37–43% / 9,0% |
+
+Kết luận:
+- **Mật độ LiDAR quyết định.** Với 32 tia, 2 Hz (nuScenes) không cách nào kiểm được 50–80 m: cách tốt nhất (B) bắt
+  9–17% mà báo nhầm 11%. Với 64 tia, 10 Hz (AV2) thì cả bốn cách đều có tác dụng ở 50–80 m.
+- **A ít báo nhầm nhất ở xa** (AV2 1,2%, nuScenes 1,9% ở 50–80 m) nhưng báo nhầm 8,3% ở gần trên nuScenes (đất dốc dưới
+  mép box làm điểm thấp nhất thấp hơn đáy): chỉ hợp dùng ngoài tầm luật hiện tại.
+- **C cải thiện gần như không tốn báo nhầm ở 0–50 m** (nuScenes 0–30 m: 58 → 70%, báo nhầm 3,1 → 3,5%; AV2 30–50 m:
+  50 → 74%). Cần đọc point cloud frame kề và khớp từng cặp: hợp với QC (đọc mọi frame), extension tải thêm frame thì chậm
+  trên CVAT công ty.
+- **B bắt nhiều nhưng báo nhầm 11–21% ở xa:** chưa dùng được; số đo còn lạc quan vì đáy box lân cận là nhãn chuẩn.
+- Chiều cao track (A) và đáy box lân cận (B) lấy từ nhãn chuẩn: trên dữ liệu thật, các giá trị này cũng có thể sai.
+- Cần biết LiDAR của dữ liệu công ty (số tia, tần số frame) để chọn cách.
 
 ## 7. Rủi ro và câu hỏi mở
 

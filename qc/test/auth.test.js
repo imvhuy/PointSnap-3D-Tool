@@ -92,84 +92,126 @@ test('đăng nhập CVAT, vai trò, phiếu giao việc QC → annotator → QC'
 
   // QC duyệt từng object: trả lỗi hai cái (ghi lỗi, chưa gửi ai), OK một cái.
   const mark = (keys, status, issue) => call('POST', '/api/jobs/7/objects', { cookie: qc.cookie, body: { keys, status, issue } });
+  const send = (cookie = qc.cookie) => call('POST', '/api/tickets/batch', { cookie, body: { jobId: 7, assignee: 'ann' } });
+  const act = (id, kind, cookie, text) => call('POST', `/api/tickets/${id}/${kind}`, { cookie, body: text == null ? {} : { text } });
+  const submitAll = (cookie = ann.cookie) => call('POST', '/api/tickets/submit-all', { cookie, body: { jobId: 7 } });
+  const rounds = () => new Store(home).rounds(7).map((r) => [r.n, r.tickets.length, r.fresh, r.reworked, !!r.submittedAt]);
   await mark(['track:9'], 'returned', { tags: ['Lơ lửng'], frame: 3, text: 'Hạ đáy box', finding: 'f1' });
   // Một cuboid hai lỗi tool báo: phiếu giữ cả hai, mỗi lỗi một khoảng frame, lỗi theo cặp có vật kia.
   await mark(['track:11'], 'returned', { tags: ['Chồng lấn', 'Kích thước'], findings: ['f2', 'f3'] });
+  // Gửi cả vòng: chưa duyệt đủ object thì chưa gửi được.
+  assert.match((await send()).body.error, /Còn 1 object chưa duyệt/);
   await mark(['track:10'], 'ok');
   assert.match((await call('POST', '/api/jobs/7/complete', { cookie: qc.cookie, body: {} })).body.error, /2 lỗi chưa gửi/);
 
-  // Gửi một lượt: mỗi object một phiếu; gửi lại không tạo trùng.
-  assert.equal((await call('POST', '/api/tickets/batch', { cookie: ann.cookie, body: { jobId: 7, assignee: 'ann', keys: ['track:9'] } })).status, 403);
-  const sent = await call('POST', '/api/tickets/batch', { cookie: qc.cookie, body: { jobId: 7, assignee: 'ann', keys: ['track:9', 'track:11', 'track:10'] } });
-  assert.deepEqual(sent.body.map((x) => [x.objKey, x.title, x.status]), [['track:9', 'Lơ lửng', 'open'], ['track:11', 'Chồng lấn · Kích thước', 'open']]);
+  // Vòng 1: mỗi object một phiếu; gửi lại không tạo trùng.
+  assert.equal((await send(ann.cookie)).status, 403);
+  const sent = await send();
+  assert.deepEqual(sent.body.map((x) => [x.objKey, x.title, x.status, x.round]), [['track:9', 'Lơ lửng', 'open', 1], ['track:11', 'Chồng lấn · Kích thước', 'open', 1]]);
   let [t9, t11] = sent.body;
   assert.deepEqual([t11.other, t11.otherServerId, t11.otherCvatId], ['track:10', 10, 6], 'lỗi theo cặp: phiếu ghi cả vật kia');
   assert.deepEqual(t11.issues.map((x) => [x.key, x.frames, x.other || null]), [['f2', [4, 5], 'track:10'], ['f3', [7, 9], null]]);
   assert.deepEqual(t11.frames, [4, 9], 'khoảng frame phủ mọi lỗi');
-  assert.deepEqual(t11.thread.map((m) => m.role), ['bot', 'bot', 'qc'], 'lời tool báo của từng lỗi');
+  assert.deepEqual(t11.thread.map((m) => [m.role, m.round]), [['bot', 1], ['bot', 1], ['qc', 1]], 'lời tool báo của từng lỗi, ghi vòng');
   assert.equal(t9.other, undefined);
   assert.deepEqual(t9.frames, [3, 3]);
   assert.deepEqual(t9.thread.map((m) => m.role), ['bot', 'qc'], 'kèm lời tool báo và ghi chú của QC');
   assert.match(t9.thread[1].text, /^Frame 3: Hạ đáy box/);
   assert.equal(new Store(home).objectReviews(7)['track:9'].ticket, t9.id);
-  assert.equal((await call('POST', '/api/tickets/batch', { cookie: qc.cookie, body: { jobId: 7, assignee: 'ann', keys: ['track:9'] } })).body.length, 0);
+  assert.deepEqual(rounds(), [[1, 2, 2, 0, false]]);
+  assert.match((await send()).body.error, /Không có lỗi nào chờ gửi/);
 
-  // QC thu hồi phiếu annotator chưa đụng tới: phiếu bỏ, object về "Chưa gửi" với đúng lỗi đã ghi; sửa xong gửi lại.
-  assert.equal((await call('POST', `/api/tickets/${t11.id}/recall`, { cookie: ann.cookie, body: {} })).status, 403, 'annotator không thu hồi được');
-  assert.equal((await call('POST', `/api/tickets/${t11.id}/recall`, { cookie: qc.cookie, body: {} })).status, 200);
+  // QC thu hồi phiếu annotator chưa đụng tới: phiếu bỏ, object về "Chưa gửi" với đúng lỗi đã ghi; sửa xong gửi lại, vẫn vòng 1
+  // vì annotator chưa nộp.
+  assert.equal((await act(t11.id, 'recall', ann.cookie)).status, 403, 'annotator không thu hồi được');
+  assert.equal((await act(t11.id, 'recall', qc.cookie)).status, 200);
   const r11 = new Store(home).objectReviews(7)['track:11'];
   assert.deepEqual([r11.status, r11.ticket, r11.issue.findings], ['returned', undefined, ['f2', 'f3']], 'về Chưa gửi, giữ lỗi QC ghi');
+  assert.deepEqual(rounds(), [[1, 1, 2, 0, false]]);
   assert.equal((await call('GET', '/api/tickets', { cookie: ann.cookie })).body.length, 1, 'annotator không còn thấy phiếu đã thu hồi');
   await mark(['track:11'], 'returned', { tags: ['Chồng lấn', 'Kích thước'], text: 'Thu nhỏ đuôi xe', findings: ['f2', 'f3'] });
-  [t11] = (await call('POST', '/api/tickets/batch', { cookie: qc.cookie, body: { jobId: 7, assignee: 'ann', keys: ['track:11'] } })).body;
+  [t11] = (await send()).body;
   assert.match(t11.thread.at(-1).text, /Thu nhỏ đuôi xe/);
+  assert.deepEqual([t11.round, rounds()], [1, [[1, 2, 3, 0, false]]], 'gộp vào vòng annotator chưa nộp');
   assert.equal((await call('GET', '/api/tickets', { cookie: ann.cookie })).body.length, 2);
   assert.equal((await call('GET', '/api/tickets', { cookie: bob.cookie })).body.length, 0, 'chỉ thấy phiếu của mình');
-  assert.equal((await call('POST', `/api/tickets/${t9.id}/submit`, { cookie: bob.cookie, body: {} })).status, 403);
-  assert.equal((await call('POST', `/api/tickets/${t9.id}/accept`, { cookie: ann.cookie, body: {} })).status, 403, 'annotator không tự nghiệm thu');
+  assert.equal((await act(t9.id, 'fix', bob.cookie)).status, 403);
+  assert.equal((await act(t9.id, 'accept', ann.cookie)).status, 403, 'annotator không tự nghiệm thu');
 
-  // Nộp khi chưa sửa / chưa Lưu trên CVAT: phiếu ghi "chưa đổi" để QC thấy.
-  assert.equal((await call('POST', `/api/tickets/${t9.id}/submit`, { cookie: ann.cookie, body: { text: 'Xong' } })).body.unchanged, true);
-  // QC chưa xử lý thì annotator còn nộp lại (sửa ghi chú) hoặc rút về để sửa tiếp; có ghi lại trong trao đổi.
-  assert.equal((await call('POST', `/api/tickets/${t9.id}/submit`, { cookie: ann.cookie, body: { text: 'Xong, đã hạ đáy' } })).body.thread.at(-1).text, 'Xong, đã hạ đáy');
-  assert.equal((await call('POST', `/api/tickets/${t9.id}/withdraw`, { cookie: bob.cookie, body: {} })).status, 403);
-  assert.equal((await call('POST', `/api/tickets/${t9.id}/recall`, { cookie: qc.cookie, body: {} })).status, 409, 'annotator đã nộp thì QC không thu hồi được');
-  const back = (await call('POST', `/api/tickets/${t9.id}/withdraw`, { cookie: ann.cookie, body: { text: 'Sửa thêm' } })).body;
-  assert.deepEqual([back.status, back.thread.at(-1).kind], ['open', 'withdraw'], 'rút về đúng trạng thái trước khi nộp');
-  assert.equal((await call('POST', `/api/tickets/${t9.id}/withdraw`, { cookie: ann.cookie, body: {} })).status, 409, 'chỉ rút được khi đang chờ QC');
-  await call('POST', `/api/tickets/${t9.id}/submit`, { cookie: ann.cookie, body: { text: 'Xong' } });
-  assert.equal((await call('POST', `/api/tickets/${t9.id}/return`, { cookie: qc.cookie, body: { text: 'Chưa thấy sửa' } })).body.status, 'returned');
+  // Annotator đánh dấu từng phiếu đã sửa rồi nộp cả vòng; chưa đánh dấu hết thì chưa nộp được.
+  assert.equal((await act(t9.id, 'fix', ann.cookie, 'Xong')).body.fixed, true);
+  assert.match((await submitAll()).body.error, new RegExp(`1 phiếu chưa đánh dấu đã sửa: ${t11.id}`));
+  await act(t11.id, 'fix', ann.cookie, '');
+  // Nộp khi chưa sửa / chưa Lưu trên CVAT: phiếu ghi "chưa đổi" để QC thấy (track:11 không có trên CVAT giả: coi như đã xoá).
+  assert.deepEqual((await submitAll()).body.map((x) => [x.id, x.status, x.unchanged]), [[t9.id, 'submitted', true], [t11.id, 'submitted', false]]);
+  assert.deepEqual(rounds(), [[1, 2, 3, 0, true]]);
+  assert.equal((await submitAll()).status, 400, 'không còn gì để nộp');
+  // QC chưa xử lý thì annotator còn rút về để sửa tiếp, rồi nộp lại cả vòng.
+  assert.equal((await act(t9.id, 'withdraw', bob.cookie)).status, 403);
+  assert.equal((await act(t9.id, 'recall', qc.cookie)).status, 409, 'annotator đã nộp thì QC không thu hồi được');
+  const back = (await act(t9.id, 'withdraw', ann.cookie, 'Sửa thêm')).body;
+  assert.deepEqual([back.status, back.thread.at(-1).kind, back.fixed], ['open', 'withdraw', true], 'rút về đúng trạng thái trước khi nộp');
+  assert.equal((await act(t9.id, 'withdraw', ann.cookie)).status, 409, 'chỉ rút được khi đang chờ QC');
+  await submitAll();
+
+  // QC trả lại: lời trả lại giữ tới khi gửi cả vòng; annotator chưa thấy, không rút được nữa.
+  assert.equal((await act(t9.id, 'return', qc.cookie, ' ')).status, 400, 'trả lại phải ghi lý do');
+  const held = (await act(t9.id, 'return', qc.cookie, 'Chưa thấy sửa')).body;
+  assert.deepEqual([held.status, held.held.text], ['submitted', 'Chưa thấy sửa']);
+  const seenByAnn = (await call('GET', '/api/tickets', { cookie: ann.cookie })).body.find((x) => x.id === t9.id);
+  assert.deepEqual([seenByAnn.status, seenByAnn.held], ['submitted', undefined]);
+  assert.equal((await act(t9.id, 'withdraw', ann.cookie)).status, 409);
+  assert.match((await send()).body.error, /Còn 1 bài annotator đã nộp chưa nghiệm thu/);
+  assert.equal((await act(t11.id, 'accept', qc.cookie)).body.status, 'accepted');
+  await mark(['track:11'], 'ok'); // object đã xoá trên CVAT: QC duyệt lại theo lần quét
+
+  // Vòng 2: phiếu trả lại tới tay annotator, lời trả lại vào trao đổi.
+  const [r9] = (await send()).body;
+  assert.deepEqual([r9.id, r9.status, r9.round, r9.sends, r9.fixed, r9.thread.at(-1).text, r9.thread.at(-1).round], [t9.id, 'returned', 2, 2, false, 'Chưa thấy sửa', 2]);
+  assert.deepEqual(rounds(), [[1, 2, 3, 0, true], [2, 1, 0, 1, false]]);
   ANN.tracks = [{ ...TRACK, shapes: [{ ...TRACK.shapes[0], points: [0, 0, -0.3, 0, 0, 0, 4, 2, 1.5] }] }];
-  const sub = await call('POST', `/api/tickets/${t9.id}/submit`, { cookie: ann.cookie, body: { text: 'Đã hạ đáy' } });
-  assert.equal(sub.body.status, 'submitted');
-  assert.equal(sub.body.unchanged, false);
-  assert.equal(sub.body.thread.at(-1).name, 'An Nguyễn');
-  assert.match((await call('POST', '/api/jobs/7/complete', { cookie: qc.cookie, body: {} })).body.error, /2 phiếu sửa lỗi chưa nghiệm thu/);
+  await act(t9.id, 'fix', ann.cookie, 'Đã hạ đáy');
+  const [sub] = (await submitAll()).body;
+  assert.deepEqual([sub.status, sub.unchanged, sub.thread.at(-1).name, sub.thread.at(-1).round], ['submitted', false, 'An Nguyễn', 2]);
+  assert.match((await call('POST', '/api/jobs/7/complete', { cookie: qc.cookie, body: {} })).body.error, /1 phiếu sửa lỗi chưa nghiệm thu/);
 
   // Nghiệm thu: object OK theo bản đã sửa trên CVAT (quét lại không bắt duyệt lần nữa).
-  assert.equal((await call('POST', `/api/tickets/${t9.id}/accept`, { cookie: qc.cookie, body: {} })).body.status, 'accepted');
-  assert.equal((await call('POST', `/api/tickets/${t9.id}/submit`, { cookie: ann.cookie, body: {} })).status, 409, 'đã nghiệm thu thì khoá');
-  assert.equal((await call('POST', `/api/tickets/${t9.id}/withdraw`, { cookie: ann.cookie, body: {} })).status, 409);
-  const r9 = new Store(home).objectReviews(7)['track:9'];
-  assert.equal(r9.status, 'ok');
-  assert.equal(r9.fingerprint, fingerprint(ANN.tracks[0]));
-  await call('POST', `/api/tickets/${t11.id}/accept`, { cookie: qc.cookie, body: {} });
-  // track:11 không có trên CVAT giả → coi như đã xoá; vẫn OK để job khoá theo dấu vân tay của lần quét.
-  await mark(['track:9', 'track:11'], 'ok');
+  assert.equal((await act(t9.id, 'accept', qc.cookie)).body.status, 'accepted');
+  assert.equal((await act(t9.id, 'fix', ann.cookie)).status, 409, 'đã nghiệm thu thì khoá');
+  assert.equal((await act(t9.id, 'withdraw', ann.cookie)).status, 409);
+  const o9 = new Store(home).objectReviews(7)['track:9'];
+  assert.equal(o9.status, 'ok');
+  assert.equal(o9.fingerprint, fingerprint(ANN.tracks[0]));
+  await mark(['track:9'], 'ok');
   assert.equal((await call('POST', '/api/jobs/7/complete', { cookie: qc.cookie, body: {} })).status, 200);
 
-  // Phiếu thiếu vật: theo frame + vị trí, không gắn object; khoá hoàn thành tới khi nghiệm thu; nộp không đọc object trên CVAT.
+  // Số liệu chất lượng: 1 vòng rework, đạt ngay lần đầu 1/2 phiếu, lỗi trên 100 object mỗi vòng.
+  assert.equal((await call('GET', '/api/stats', { cookie: ann.cookie })).status, 403);
+  const stats = (await call('GET', '/api/stats', { cookie: qc.cookie })).body, j7 = stats.jobs.find((j) => j.jobId === 7);
+  assert.deepEqual([j7.reworkRounds, j7.tickets, j7.firstPass, j7.done], [1, 2, 0.5, true]);
+  assert.deepEqual(j7.rounds.map((r) => [r.n, r.errors, r.per100, r.tags]), [[1, 2, 66.7, { 'Lơ lửng': 1, 'Chồng lấn': 1, 'Kích thước': 1 }], [2, 1, 33.3, { 'Lơ lửng': 1 }]]);
+  assert.deepEqual(stats.byAnnotator.map((g) => [g.assignee, g.jobs, g.avgReworkRounds, g.firstPassRate]), [['ann', 1, 1, 0.5]]);
+
+  // Phiếu thiếu vật: theo frame + vị trí, không gắn object; chờ gửi cùng vòng; khoá hoàn thành tới khi nghiệm thu; nộp không đọc
+  // object trên CVAT.
   const miss = (cookie, body) => call('POST', '/api/tickets/missing', { cookie, body: { jobId: 7, assignee: 'ann', ...body } });
   assert.equal((await miss(ann.cookie, { frame: 4 })).status, 403, 'annotator không tự tạo phiếu');
   assert.match((await miss(qc.cookie, { frame: 99 })).body.error, /Frame phải trong 0–10/);
   const tm = (await miss(qc.cookie, { frame: 4, label: 'pedestrian', where: 'vỉa hè bên phải, ~12 m', text: 'Người đi bộ chưa có box' })).body;
-  assert.deepEqual([tm.kind, tm.objKey, tm.frames, tm.title, tm.status], ['missing', null, [4, 4], 'Thiếu box', 'open']);
+  assert.deepEqual([tm.kind, tm.objKey, tm.frames, tm.title, tm.status], ['missing', null, [4, 4], 'Thiếu box', 'draft']);
   assert.match(tm.thread[0].text, /^Frame 4: thiếu box pedestrian ở vỉa hè/);
   assert.equal((await call('GET', '/api/jobs/7', { cookie: qc.cookie })).body.missing.length, 1, 'trang QC thấy phiếu thiếu vật');
+  assert.equal((await call('GET', '/api/tickets', { cookie: ann.cookie })).body.some((x) => x.id === tm.id), false, 'chưa gửi thì annotator chưa thấy');
+  assert.equal((await act(tm.id, 'fix', ann.cookie)).status, 404);
   assert.match((await call('POST', '/api/jobs/7/complete', { cookie: qc.cookie, body: {} })).body.error, /1 phiếu thiếu vật/);
-  assert.equal((await call('POST', `/api/tickets/${tm.id}/submit`, { cookie: ann.cookie, body: { text: 'Đã thêm box' } })).body.unchanged, false);
-  assert.equal((await call('POST', `/api/tickets/${tm.id}/accept`, { cookie: qc.cookie, body: {} })).body.status, 'accepted');
+  assert.deepEqual((await send()).body.map((x) => [x.id, x.status, x.round]), [[tm.id, 'open', 3]]);
+  await act(tm.id, 'fix', ann.cookie, 'Đã thêm box');
+  assert.equal((await submitAll()).body[0].unchanged, false);
+  assert.equal((await act(tm.id, 'accept', qc.cookie)).body.status, 'accepted');
   assert.equal((await call('POST', '/api/jobs/7/complete', { cookie: qc.cookie, body: {} })).status, 200);
+  // Phiếu thiếu vật chưa gửi thì QC bỏ được.
+  const tm2 = (await miss(qc.cookie, { frame: 5, label: 'cyclist' })).body;
+  assert.equal((await act(tm2.id, 'recall', qc.cookie)).status, 200);
 
   // Quét lại: giữ lần quét trước để vòng duyệt lại so trước / sau theo object.
   const again = new Store(home), old = again.scan(7);

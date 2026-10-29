@@ -5,10 +5,10 @@
  */
 (function () {
   const { api, esc, toast, $, fmtTime, frameRange, ticketObj, ticketUrl: cvatUrl } = window.QC;
-  const STATUS = { open: ['Chờ sửa', 'warning'], submitted: ['Đã nộp lại', 'accent'], accepted: ['Đã duyệt đạt', 'ok'], returned: ['Trả lại sửa tiếp', 'error'] };
+  const STATUS = { draft: ['Chưa gửi', 'warning'], open: ['Chờ sửa', 'warning'], submitted: ['Đã nộp lại', 'accent'], accepted: ['Đã duyệt đạt', 'ok'], returned: ['Trả lại sửa tiếp', 'error'] };
   const T = { list: [], cur: null, users: null };
 
-  const status = (t) => `<span class="pill ${STATUS[t.status][1]}">${STATUS[t.status][0]}</span>`;
+  const status = (t) => (t.held ? '<span class="pill error">Trả lại · chờ gửi vòng sau</span>' : `<span class="pill ${STATUS[t.status][1]}">${STATUS[t.status][0]}</span>`);
   const prio = (t) => (t.priority === 'must' ? '<span class="pill error">Lỗi bắt buộc sửa</span>' : '<span class="pill warning">Cảnh báo</span>');
 
   async function badge() {
@@ -79,25 +79,23 @@
     const annotators = T.users.filter((u) => u.role !== 'qc'), assignee = d.result.job.assignee;
     const line = (o) => { const is = d.objectReviews[o.key].issue; return is ? [is.tags.join(', '), is.frame != null ? `frame ${is.frame}` : '', is.text].filter(Boolean).join(' · ') : 'không ghi lỗi'; };
     const html = `<form class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
-      <div class="m-h"><div><h2 id="m-title">Gửi lỗi cho annotator</h2><div class="muted">Job #${jobId} / ${esc(d.result.job.taskName)} · mỗi object một phiếu</div></div>
+      <div class="m-h"><div><h2 id="m-title">Gửi cả vòng cho annotator</h2><div class="muted">Job #${jobId} / ${esc(d.result.job.taskName)} · gửi một lần mọi lỗi chờ gửi, để đếm được số lần rework</div></div>
         <button type="button" class="act" data-close aria-label="Đóng">✕</button></div>
       <div class="m-body">
-        <div class="send-list">${objs.map((o) => `<label class="check"><input type="checkbox" name="k" value="${esc(o.key)}" checked>
-          <span><b>${esc(ticketObj(o))}</b> <span class="muted">${esc(line(o))}</span></span></label>`).join('')}</div>
+        <div class="send-list">${objs.map((o) => `<div><b>${esc(ticketObj(o))}</b> <span class="muted">${esc(line(o))}</span></div>`).join('')}
+          ${d.pendingTickets ? `<div class="muted">+ ${d.pendingTickets} phiếu trả lại / thiếu vật chờ gửi</div>` : ''}</div>
         <label>Giao cho *<select name="assignee" required>${annotators.map((u) => `<option value="${esc(u.username)}"${u.username === assignee ? ' selected' : ''}>${esc(u.name)} · ${esc(u.username)}</option>`).join('')
           || '<option value="">Không có tài khoản annotator nào</option>'}</select></label>
         <div class="muted small">${assignee ? `Người làm job trên CVAT: ${esc(assignee)}` : 'Job chưa giao ai trên CVAT'} · annotator sửa trên CVAT, nộp lại, QC nghiệm thu.</div>
         <div class="err" id="m-err" role="alert"></div></div>
       <div class="m-f"><button type="button" class="btn" data-close>Huỷ</button><button class="btn primary" type="submit">✉ Gửi</button></div></form>`;
     return dialog(html, async (form) => {
-      const keys = [...form.querySelectorAll('[name=k]:checked')].map((x) => x.value);
-      if (!keys.length) throw new Error('Chưa chọn lỗi nào');
       if (!form.assignee.value) throw new Error('Chưa có annotator để giao');
-      return api('/api/tickets/batch', { method: 'POST', body: JSON.stringify({ jobId, assignee: form.assignee.value, keys }) });
+      return api('/api/tickets/batch', { method: 'POST', body: JSON.stringify({ jobId, assignee: form.assignee.value }) });
     }, 'select');
   }
 
-  /** QC ghi "thiếu vật" (vật chưa có box) theo frame + vị trí; phiếu gửi annotator ngay. Trả về phiếu hoặc null. */
+  /** QC ghi "thiếu vật" (vật chưa có box) theo frame + vị trí; phiếu chờ gửi cùng vòng. Trả về phiếu hoặc null. */
   async function missingForm({ frame, doc = document }) {
     const r = window.QC.S.detail.result, job = r.job;
     if (!T.users) T.users = await api('/api/users').catch(() => []);
@@ -133,7 +131,7 @@
 
   function thread(t) {
     const who = (m) => (m.role === 'bot' ? 'Tool' : `${esc(m.name)} (${m.role === 'qc' ? 'QC' : 'Annotator'})`);
-    const kindTxt = { assign: 'giao việc', submit: 'nộp lại', withdraw: 'rút lại để sửa', accept: 'nghiệm thu đạt', return: 'trả lại sửa tiếp', comment: '', tool: 'tự phát hiện' };
+    const kindTxt = { assign: 'giao việc', fix: 'đã sửa', submit: 'nộp cả vòng', withdraw: 'rút lại để sửa', accept: 'nghiệm thu đạt', return: 'trả lại sửa tiếp', comment: '', tool: 'tự phát hiện' };
     return t.thread.map((m) => `<div class="msg ${m.role}"><div class="msg-h"><span class="ava">${esc((m.name || '?').slice(0, 2).toUpperCase())}</span>
       <b>${who(m)}</b>${kindTxt[m.kind] ? `<span class="muted"> · ${kindTxt[m.kind]}</span>` : ''}<span class="right muted">${fmtTime(m.at)}</span></div>
       <div>${esc(m.text) || '<span class="muted">—</span>'}</div></div>`).join('');
@@ -184,7 +182,7 @@
     if (b.dataset.tact === 'return' && !text.trim()) { toast('Ghi lý do trả lại vào ô ghi chú'); $('#t-text').focus(); return; }
     try {
       await api(`/api/tickets/${T.cur}/${b.dataset.tact}`, { method: 'POST', body: JSON.stringify({ text }) });
-      toast({ accept: 'Đã nghiệm thu đạt', return: 'Đã trả lại sửa tiếp', comment: 'Đã gửi ghi chú' }[b.dataset.tact]);
+      toast({ accept: 'Đã nghiệm thu đạt', return: 'Đã ghi trả lại: gửi cùng vòng sau', comment: 'Đã gửi ghi chú' }[b.dataset.tact]);
       window.QC.S.detail = await api(`/api/jobs/${window.QC.S.jobId}`);
       window.QC.loadJobs();
       await open(window.QC.S.jobId);

@@ -1,7 +1,7 @@
 /*
- * Ngưỡng kiểm tra cho annotator. Mặc định lấy từ pointsnap/config.yaml (class nuScenes) và
- * pointsnap/guidelines/spec-vn.yaml (5 class spec VN, khóa `Class/thuộc tính phân loại`).
- * Dự án ghi đè bằng JSON ở trang Tùy chọn; chỉ cần ghi phần khác mặc định.
+ * Ngưỡng kiểm tra cho annotator và tool QC (qc/ dùng chung file này). Mặc định ban đầu lấy từ config.yaml (class
+ * nuScenes) và spec-vn.yaml (5 class spec VN, khóa `Class/thuộc tính phân loại`) của backend Python cũ, nay đã gỡ (còn
+ * trong lịch sử git). Dự án ghi đè bằng trình sửa spec / trang Tùy chọn; chỉ cần ghi phần khác mặc định.
  */
 (function (root) {
   'use strict';
@@ -12,7 +12,6 @@
   // thông, bus, trailer nới theo min–max nhãn chuẩn của cả 10 cảnh nuScenes mini (25/10/2026): khoảng cũ dựng từ 5 cảnh
   // báo nhầm 5–29% box chuẩn ở các class này (xe tay ga 1,27 m, người gầy 0,41 m); khoảng mới 0%. Car giữ nguyên
   // (1,3% báo nhầm) vì đó là luật bắt pre-label cắt ngắn xe (KITTI 000008: PointPillars cho xe dài 3,14 m).
-  // config.yaml của bộ quét QC chưa cập nhật theo.
   const DEFAULT_GUIDELINE = {
     // Vị trí LiDAR trong hệ tọa độ của point cloud; khác [0, 0, 0] khi dữ liệu xuất ở hệ xe thu.
     sensorOrigin: [0, 0, 0],
@@ -62,8 +61,8 @@
       nonRigidClasses: ['pedestrian', 'Pedestrian', 'Animal'],
     },
     ground: {
-      classes: ['car', 'truck', 'bus', 'trailer', 'construction_vehicle', 'pedestrian', 'motorcycle', 'bicycle',
-        'Vehicle', 'Two-wheels', 'Pedestrian', 'Animal'],
+      // '*' = mọi class: danh sách tên cố định bỏ sót label đặt tên khác (CVAT công ty: "vehicles"), luật lặng im.
+      classes: ['*'],
       // Đo trên 425 box nhãn chuẩn nuScenes scene-0061 (10 frame): đo được 132 box với độ tin cậy ≥ 0,3; ngưỡng 20 / 35 cm
       // báo 9 Cảnh báo + 2 Lỗi trên nhãn chuẩn, ngưỡng 15 / 30 cm báo 18 + 2. Chỉ có một frame, không so được với track.
       okM: 0.05,
@@ -99,7 +98,7 @@
     attributes: {
       required: { Vehicle: ['subtype'], 'Two-wheels': ['rider_state'], Pedestrian: ['age_group', 'pose'], Animal: ['species'], Obstacle: ['type'] },
     },
-    // Luật spec về việc box có nên tồn tại, giống bộ quét QC (pointsnap/guidelines/spec-vn.yaml). Cặp được xét trước
+    // Luật spec về việc box có nên tồn tại, lấy từ spec-vn.yaml của backend cũ. Cặp được xét trước
     // overlap.allowedPairs: vi phạm spec thì không ghi "được phép chồng".
     spec: {
       // spec 4.3C: xe có người lái thì người lái nằm trong box xe, không gán thêm box người.

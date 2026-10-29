@@ -149,7 +149,7 @@
         <table><tr><th class="label" style="width:90px"></th>${DIMS.map((d) => `<th>${DIM_VI[d]} (m)</th>`).join('')}<th class="job" style="width:118px">Job</th></tr>${rows}</table>
         <div class="row sep">
           <button data-act="suggest" title="Khoảng thực tế của box đã gán trong job; xem lại trước khi Save">Gợi ý từ job</button>
-          <label class="chk"><input type="checkbox" data-toggle="ground" ${draft.ground.classes.includes(l.name) ? 'checked' : ''}> Mặt đất</label>
+          <label class="chk"><input type="checkbox" data-toggle="ground" ${['*', l.name].some((n) => draft.ground.classes.includes(n)) ? 'checked' : ''}> Mặt đất</label>
           <label class="chk"><input type="checkbox" data-toggle="overlap" ${['*', l.name].some((n) => draft.overlap.classes.includes(n)) ? 'checked' : ''}> Chồng lấn</label>
           <label class="chk" title="Kiểm scale theo track, đồng bộ cỡ, mượt yaw"><input type="checkbox" data-toggle="rigid" ${draft.size.nonRigidClasses.includes(l.name) ? '' : 'checked'}> Vật cứng</label>
         </div>
@@ -311,11 +311,10 @@
         if (t.value) draft.size.keyAttributes[t.dataset.split] = t.value; else delete draft.size.keyAttributes[t.dataset.split];
         setDirty();
       } else if (t.dataset.toggle && l) {
-        if (t.dataset.toggle === 'ground') draft.ground.classes = toggleIn(draft.ground.classes, l.name, t.checked);
-        if (t.dataset.toggle === 'overlap') {
+        if (t.dataset.toggle === 'ground' || t.dataset.toggle === 'overlap') {
           // '*' = mọi class: bỏ tick một class thì đổi '*' thành danh sách các class còn lại của project.
-          const list = draft.overlap.classes.includes('*') ? labels.map((x) => x.name) : draft.overlap.classes;
-          draft.overlap.classes = toggleIn(list, l.name, t.checked);
+          const cfg = draft[t.dataset.toggle], list = cfg.classes.includes('*') ? labels.map((x) => x.name) : cfg.classes;
+          cfg.classes = toggleIn(list, l.name, t.checked);
         }
         if (t.dataset.toggle === 'rigid') draft.size.nonRigidClasses = toggleIn(draft.size.nonRigidClasses, l.name, !t.checked);
         setDirty();

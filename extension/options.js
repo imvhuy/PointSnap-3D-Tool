@@ -1,11 +1,10 @@
 'use strict';
 /*
  * Trang Tùy chọn: các địa chỉ CVAT đã bật PointSnap, bộ ngưỡng riêng của từng địa chỉ (nhập / xuất file JSON, kiểm ngay
- * bằng PointSnapGuideline.resolve), và phần nâng cao cho luồng QC backend cũ.
+ * bằng PointSnapGuideline.resolve).
  */
 
 const Hosts = globalThis.PointSnapHosts, G = globalThis.PointSnapGuideline;
-const QC_DEFAULTS = { pointsnapUrl: 'http://127.0.0.1:8765', autoFilter: false, autoHighlight: true, autoExpand: true, showScanPanel: false };
 const $ = (id) => document.getElementById(id);
 
 function hostStatus(text, kind = '') {
@@ -141,53 +140,3 @@ $('add-host').addEventListener('submit', async (event) => {
 
 chrome.storage.onChanged.addListener(() => render());
 render();
-
-// ------------------------------------------------------------------ nâng cao: QC backend
-
-function setStatus(text, kind) {
-  $('status').textContent = text;
-  $('status').className = kind || '';
-}
-
-chrome.storage.sync.get(QC_DEFAULTS, (data) => {
-  $('pointsnap-url').value = data.pointsnapUrl;
-  $('auto-filter').checked = !!data.autoFilter;
-  $('auto-highlight').checked = !!data.autoHighlight;
-  $('auto-expand').checked = !!data.autoExpand;
-  $('show-scan-panel').checked = !!data.showScanPanel;
-});
-
-$('save').addEventListener('click', () => {
-  let pointsnapUrl;
-  try {
-    pointsnapUrl = Hosts.httpOrigin($('pointsnap-url').value.trim() || QC_DEFAULTS.pointsnapUrl);
-  } catch (_) {
-    setStatus('Địa chỉ PointSnap không hợp lệ', 'err');
-    return;
-  }
-  chrome.permissions.request({ origins: [`${pointsnapUrl}/*`] }, (granted) => {
-    if (!granted) {
-      setStatus('Chưa được cấp quyền truy cập PointSnap, chưa lưu.', 'err');
-      return;
-    }
-    chrome.storage.sync.set({
-      pointsnapUrl,
-      autoFilter: $('auto-filter').checked,
-      autoHighlight: $('auto-highlight').checked,
-      autoExpand: $('auto-expand').checked,
-      showScanPanel: $('show-scan-panel').checked,
-    }, () => setStatus('Đã lưu. Tải lại trang CVAT để áp dụng.', 'ok'));
-  });
-});
-
-function checkConnection() {
-  setStatus('Đang kiểm tra…');
-  chrome.runtime.sendMessage({ type: 'pointsnap', method: 'GET', path: '/api/projects' }, (res) => {
-    const ok = !chrome.runtime.lastError && res && res.ok;
-    const text = ok ? `PointSnap đang chạy · ${res.data.length} dự án` : ((res && res.error) || 'Không kết nối được PointSnap — chạy "pointsnap ui".');
-    $('conn').className = `status ${ok ? 'ok' : 'err'}`;
-    $('conn-text').textContent = text;
-    setStatus(ok ? 'Kết nối được.' : text, ok ? 'ok' : 'err');
-  });
-}
-$('test').addEventListener('click', checkConnection);

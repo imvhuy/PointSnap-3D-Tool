@@ -267,6 +267,12 @@
     const syncable = editable && isTrack && rigid && sizeIssues.some((i) => i.rule === 'size.in_track');
     const size = row('size', 'Kích thước', sizeIssues, m.box.dims.map((d) => d.toFixed(2)).join(' × ') + ' m',
       syncable ? { action: 'plan-sync-size', source: 'median', label: 'Cỡ trung vị' } : null);
+    // Class chưa có khoảng trong spec (label đặt tên khác, vd "vehicles"): luật kích thước không chạy, đừng hiện ✓.
+    if (size.level === 'ok' && !g.size.ranges[m.classKey] && !g.size.ranges[m.label]) {
+      Object.assign(size, { level: 'na', text: `${size.text} · chưa có khoảng`,
+        tip: `Spec chưa có khoảng kích thước cho class "${m.label}" nên chưa kiểm. Bấm Spec → Gợi ý từ job → Save.`,
+        fix: { action: 'open-spec', label: 'Spec' } });
+    }
 
     // Ôm vật: Cảnh báo khi mặt LiDAR thấy có vật lòi ra > 10 cm, hoặc ≥ 20 điểm đỏ chiếm ≥ 15% điểm của vật. Đo 25/10/2026
     // (nuScenes scene-1077, 1100, AV2): nhãn chuẩn bị báo 0–5%, box co 15% bắt được 38–78% (chỉ dùng mặt: 32–78%).
@@ -465,11 +471,11 @@
       notify({ kind: 'ok', text: 'Đáy box đã nằm trên mặt đất đo được.' });
       return;
     }
-    // Đặt đáy giữa mặt đất thấp nhất và cao nhất dưới 4 góc (trên đất phẳng hai mức trùng nhau). Đo 25/10/2026 trên box
+    // Đặt các góc đáy cân giữa mặt đất dưới chúng (box phẳng: đáy giữa mặt đất thấp nhất và cao nhất dưới 4 góc). Đo 25/10/2026 trên box
     // chuẩn ở dốc / bờ vỉa (nuScenes scene-1077, 1100, AV2) nâng hoặc hạ 30 cm rồi hạ đáy: đặt giữa lệch nhãn chuẩn p50
     // 3–7 cm, p90 9–18 cm; hạ tới mặt cao nhất (bản cũ, "dời ít nhất") lệch p50 tới 16 cm, p90 tới 36 cm.
     const box = B.fromCvatPoints(m.objectState.points);
-    const edits = [{ frame: ctx.frame, box: Ops.snapToGround(box, (contact.contactZ + contact.topContactZ) / 2) }];
+    const edits = [{ frame: ctx.frame, box: Ops.snapToGround(box, B.bottomZ(box) + contact.snapDzM) }];
     await commit(ctx.job, new Map([[ctx.frame, { state: m.objectState }]]), edits, 'Hạ đáy box');
   }
 
@@ -481,6 +487,7 @@
   async function onAction(name, data = {}) {
     const ctx = A.context();
     if (name === 'rerender') { S.lastPanelAt = 0; return; }
+    if (name === 'toggle-panel') { panel?.toggle(); S.lastPanelAt = 0; return; }
     if (!ctx || S.busy) return;
     if (A.isSaving()) { notify({ kind: 'info', text: 'CVAT đang Save; thử lại sau khi Save xong.' }); return; }
     const objectState = activeObject();
@@ -507,10 +514,13 @@
             }
           }
           break;
+        case 'prev-undone':
         case 'next-undone': {
           const done = doneSet(ctx.job.id), tracks = frameTracks().filter((s) => !done.has(trackId(s)));
-          const start = tracks.findIndex((s) => s.clientID === objectState?.clientID);
-          const next = tracks[(start + 1) % tracks.length];
+          const start = tracks.findIndex((s) => s.clientID === objectState?.clientID), n = tracks.length;
+          // Chưa chọn track nào trong danh sách: ⏭ lấy track đầu, ⏮ lấy track cuối.
+          const at = name === 'next-undone' ? start + 1 : start < 0 ? n - 1 : start - 1;
+          const next = tracks[(at + n) % n];
           if (!next) notify({ kind: 'ok', text: 'Mọi track trong frame này đã đánh dấu xong.' });
           else if (next.clientID === objectState?.clientID) notify({ kind: 'info', text: 'Chỉ còn track đang chọn chưa xong trong frame này.' });
           else A.select(ctx, next.clientID, true);
@@ -572,7 +582,7 @@
     S.lastPanelAt = 0;
   }
 
-  const SHORTCUTS = { KeyF: 'toggle-follow', KeyG: 'snap-ground', KeyD: 'toggle-done' };
+  const SHORTCUTS = { KeyF: 'toggle-follow', KeyG: 'snap-ground', KeyD: 'toggle-done', KeyP: 'toggle-panel' };
   window.addEventListener('keydown', (event) => {
     if (!S.enabled || !event.altKey || !event.shiftKey || event.ctrlKey || event.metaKey) return;
     const tag = event.target?.tagName;
@@ -740,7 +750,9 @@
     try {
       const ctx = S.enabled ? A.context() : null;
       if (ctx && ctx.job.id !== S.jobId) onJobChanged(ctx.job.id, ctx.job.projectId);
-      const cache = ctx && frameData(ctx);
+      // Tab Hỗ trợ không mở: không đo, không vẽ gì lên canvas.
+      const shown = !panel || panel.isOpen();
+      const cache = shown && ctx && frameData(ctx);
       const m = cache && measureActive(ctx, cache);
       if (ctx) syncTrack(ctx, m?.objectState || null);
       // Người dùng bỏ chọn box (Esc / bấm chỗ trống) ngay trong frame này thì thôi khoá, đổi frame không chọn lại box cũ.

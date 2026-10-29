@@ -154,9 +154,17 @@ const baseInput = (overrides = {}) => ({
   contact: null, coarseGroundZ: null, others: [], pointsInside: 50, ...overrides,
 });
 
-test('checks: class không có trong guideline thì không báo kích thước / mặt đất, không lỗi', () => {
+test('checks: class không có trong guideline thì không báo kích thước, không lỗi', () => {
   const issues = Checks.checkBox(baseInput({ label: 'ufo', classKey: 'ufo', box: box([10, 0, 0], [30, 30, 30]) }), g);
-  assert.deepEqual(issues, []);
+  assert.deepEqual(issues.filter((i) => i.severity !== 'info'), []);
+});
+
+test('checks: mặt đất kiểm mọi class mặc định (label CVAT công ty "vehicles"); spec liệt kê class thì chỉ kiểm các class đó', () => {
+  const contact = { contactZ: GROUND, topContactZ: GROUND, gapM: 0.4, spreadM: 0, confidence: 1, pointsBelowBottom: 0 };
+  const floating = baseInput({ label: 'vehicles', classKey: 'vehicles', contact, box: box([10, 0, GROUND + 1.2]) });
+  assert.equal(Checks.checkBox(floating, g).find((i) => i.rule === 'ground.gap')?.severity, 'error');
+  const listed = G.resolve({ ground: { classes: ['car'] } }).guideline;
+  assert.ok(!Checks.checkBox(floating, listed).some((i) => i.rule.startsWith('ground.')));
 });
 
 test('checks: box occluded không bị báo lơ lửng / rỗng / Z', () => {

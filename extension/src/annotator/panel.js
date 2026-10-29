@@ -9,7 +9,7 @@
   'use strict';
 
   const STORAGE_KEY = 'pointsnap.annotator.panel';
-  const SHORTCUTS = 'Alt+Shift+G: hạ đáy box · Alt+Shift+F: khoá box · Alt+Shift+D: đánh dấu track xong. Save / Undo bằng CVAT.';
+  const SHORTCUTS = 'Alt+Shift+P: mở / đóng tab Hỗ trợ · Alt+Shift+G: hạ đáy box · Alt+Shift+F: khoá box · Alt+Shift+D: đánh dấu track xong. Save / Undo bằng CVAT.';
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const ICON = { ok: '✓', warning: '!', error: '✕', na: '–', muted: '–' };
   const LEVEL_TEXT = { ok: 'Ổn', warning: 'Cần xem', error: 'Lỗi', na: 'Chưa đo được', muted: 'Đã bỏ qua' };
@@ -20,12 +20,9 @@
   /* Theo kiểu Ant Design của CVAT: nền trắng như thanh bên của CVAT, viền #d9d9d9, xanh #1677ff. */
   const CSS = `
     :host { all: initial; }
-    .panel { position: fixed; z-index: 2147483000; width: 300px; display: flex; flex-direction: column;
-      background: #fff; color: rgba(0,0,0,.88); border: 1px solid #d9d9d9; border-radius: 8px;
-      box-shadow: 0 6px 16px rgba(0,0,0,.08), 0 3px 6px -4px rgba(0,0,0,.12), 0 9px 28px 8px rgba(0,0,0,.05);
+    .panel { display: flex; flex-direction: column; background: #fff; color: rgba(0,0,0,.88);
       font: 12.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; overflow: hidden; overflow-wrap: anywhere; }
-    .head { display: flex; align-items: center; gap: 6px; padding: 7px 8px 7px 10px; background: #fafafa; border-bottom: 1px solid #f0f0f0; cursor: move; user-select: none; }
-    .collapsed .head { border-bottom: 0; }
+    .head { display: flex; align-items: center; gap: 6px; padding: 7px 8px 7px 10px; background: #fafafa; border-bottom: 1px solid #f0f0f0; user-select: none; }
     .logo { flex: none; width: 20px; height: 20px; color: #1f1f1f; }
     .head .title { font-weight: 600; margin-right: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .head .title small { font-weight: 400; color: rgba(0,0,0,.45); }
@@ -36,7 +33,6 @@
     .count.error { background: #fff1f0; color: #cf1322; border-color: #ffa39e; }
     .muted { color: rgba(0,0,0,.45); }
     .body { overflow-y: auto; overflow-x: hidden; padding: 8px 10px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
-    .collapsed .body { display: none; }
     button { font: inherit; border: 1px solid #d9d9d9; background: #fff; color: rgba(0,0,0,.88); border-radius: 6px; padding: 1px 8px; cursor: pointer; white-space: nowrap;
       box-shadow: 0 2px 0 rgba(0,0,0,.02); transition: color .2s, border-color .2s, background .2s; }
     button:hover:not(:disabled) { color: #4096ff; border-color: #4096ff; }
@@ -78,11 +74,25 @@
     .warn { color: #d46b08; } .bad { color: #cf1322; }
     .link { border: 0; background: none; box-shadow: none; padding: 0; color: #1677ff; }
     .link:hover:not(:disabled) { background: none; color: #4096ff; }
-    /* Gắn vào tab PointSnap trong thanh bên của CVAT (plugin trong CVAT): nằm trong luồng, không nổi, không kéo / thu gọn. */
-    :host([docked]) .panel { position: static; width: auto; max-height: none !important; border: 0; border-radius: 0; box-shadow: none; }
-    :host([docked]) .head { cursor: default; } :host([docked]) .logo, :host([docked]) [data-action="collapse"] { display: none; }
-    :host([docked]) .collapsed .body { display: grid; }
   `;
+
+  /*
+   * Tab "Hỗ trợ" trong thanh bên phải của CVAT, cạnh Objects / Labels (và tab PointSnap QC của bản nhúng): không nổi đè
+   * lên canvas. CVAT chưa có chỗ cắm cho thanh bên nên chèn một tab cùng kiểu antd; bật tab thì ẩn nội dung của CVAT (không
+   * gỡ, React vẫn giữ) và hiện `.psa-pane`. Cùng một code cho extension và bản nhúng thẳng vào CVAT.
+   */
+  const TAB_CSS = `
+    .cvat-objects-sidebar-tabs .psa-tab .ant-tabs-tab-btn { display: inline-flex; align-items: center; gap: 6px; }
+    .cvat-objects-sidebar-tabs .psa-tab svg { width: 16px; height: 16px; flex: none; }
+    .cvat-objects-sidebar-tabs.psa-tab-on .ant-tabs-tab-active { background: transparent !important; }
+    .cvat-objects-sidebar-tabs.psa-tab-on .ant-tabs-tab-active .ant-tabs-tab-btn { text-shadow: none; }
+    .cvat-objects-sidebar-tabs.psa-tab-on .psa-tab { background: rgb(190, 190, 190) !important; }
+    .cvat-objects-sidebar-tabs.psa-tab-on .psa-tab .ant-tabs-tab-btn { text-shadow: 0 0 .25px currentColor; }
+    .cvat-objects-sidebar-tabs.psa-tab-on > .ant-tabs-content-holder, .cvat-objects-sidebar-tabs.psa-tab-on > .ps-pane { display: none !important; }
+    .cvat-objects-sidebar-tabs:not(.psa-tab-on) > .psa-pane { display: none !important; }
+    .cvat-objects-sidebar-tabs > .psa-pane { display: block !important; flex: 1 1 auto; min-height: 0; overflow-y: auto; background: #fff; }
+  `;
+  const TAB_ICON = LOGO.replace('class="logo" ', '');
 
   function create(onAction) {
     const host = document.createElement('div');
@@ -90,61 +100,59 @@
     const shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML = `<style>${CSS}</style><div class="panel" role="complementary" aria-label="PointSnap annotator"></div>`;
     const panel = shadow.querySelector('.panel');
-    // Plugin trong CVAT có tab PointSnap ở thanh bên (`.ps-pane`): gắn vào đó; không có (extension) thì nổi trên trang.
-    const dock = document.querySelector('.ps-pane');
-    if (dock) host.setAttribute('docked', '');
-    // Có plugin nhưng thanh bên chưa dựng xong (CVAT đang tải job): ẩn tới khi plugin gắn bảng vào tab, không nổi giữa trang.
-    // (style, không dùng `hidden`: `:host { all: initial }` của shadow đè thuộc tính hidden.)
-    else if (document.documentElement.dataset.pointsnapPlugin) host.style.display = 'none';
-    if (dock) dock.prepend(host); else document.documentElement.appendChild(host);
-
-    const saved = readPosition();
-    let collapsed = !!saved.collapsed, lastHtml = '';
-    place(saved.left, saved.top);
-
-    function place(left, top) {
-      // Mặc định: sát bên trái danh sách object của CVAT, không che danh sách.
-      const sidebarLeft = document.querySelector('.cvat-objects-sidebar')?.getBoundingClientRect().left || window.innerWidth;
-      const x = Number.isFinite(left) ? left : sidebarLeft - 312, y = Number.isFinite(top) ? top : 90;
-      panel.style.left = `${Math.max(0, Math.min(x, window.innerWidth - 80))}px`;
-      const clampedTop = Math.max(0, Math.min(y, window.innerHeight - 30));
-      panel.style.top = `${clampedTop}px`;
-      // Không cho bảng tràn khỏi mép dưới màn hình khi đặt thấp: phần thân cuộn bên trong.
-      panel.style.maxHeight = `${Math.max(30, window.innerHeight - clampedTop - 8)}px`;
+    if (!document.getElementById('pointsnap-annotator-tab-css')) {
+      const style = document.createElement('style');
+      style.id = 'pointsnap-annotator-tab-css';
+      style.textContent = TAB_CSS;
+      document.head.appendChild(style);
     }
-    // Cửa sổ thu nhỏ (đổi màn hình, mở DevTools): kéo bảng về trong màn hình, không để mất thanh tiêu đề.
-    const onResize = () => place(parseFloat(panel.style.left), parseFloat(panel.style.top));
-    window.addEventListener('resize', onResize);
+    let open = readPosition().open === true, lastHtml = '', listHooked = null;
+
+    function setOpen(value) {
+      open = value;
+      writePosition({ open });
+      ensureTab();
+    }
+
+    /** CVAT dựng lại thanh bên khi đổi job / thu gọn: mỗi lần vẽ kiểm lại tab, pane và bảng. */
+    function ensureTab() {
+      const tabs = document.querySelector('.cvat-objects-sidebar-tabs'), list = tabs?.querySelector('.ant-tabs-nav-list');
+      if (!list) return;
+      let tab = list.querySelector('.psa-tab'), pane = tabs.querySelector(':scope > .psa-pane');
+      if (!tab) {
+        tab = document.createElement('div');
+        tab.className = 'ant-tabs-tab psa-tab';
+        tab.innerHTML = `<div class="ant-tabs-tab-btn" role="tab" tabindex="0" title="PointSnap: hỗ trợ gán nhãn (Alt+Shift+P)">${TAB_ICON}<span>Hỗ trợ</span></div>`;
+        tab.addEventListener('click', () => setOpen(true));
+        tab.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(true); } });
+        list.insertBefore(tab, list.querySelector('.ant-tabs-ink-bar'));
+      }
+      if (listHooked !== list) {
+        // Bấm Objects / Labels / tab QC: về tab đó.
+        list.addEventListener('click', (e) => { if (e.target.closest('.ant-tabs-tab') && !e.target.closest('.psa-tab')) setOpen(false); });
+        listHooked = list;
+      }
+      if (!pane) {
+        pane = document.createElement('div');
+        pane.className = 'psa-pane';
+        pane.setAttribute('role', 'tabpanel');
+        pane.setAttribute('aria-label', 'PointSnap hỗ trợ gán nhãn');
+        tabs.querySelector('.ant-tabs-content-holder').after(pane);
+      }
+      if (host.parentNode !== pane) pane.appendChild(host);
+      tabs.classList.toggle('psa-tab-on', open);
+      tab.firstChild.setAttribute('aria-selected', String(open));
+    }
+    ensureTab();
 
     panel.addEventListener('click', (event) => {
       const el = event.target.closest('[data-action]');
       if (!el || el.disabled) return;
-      if (el.dataset.action === 'collapse') {
-        collapsed = !collapsed;
-        writePosition({ collapsed });
-        lastHtml = '';
-        onAction('rerender');
-        return;
-      }
       onAction(el.dataset.action, { ...el.dataset });
     });
-    panel.addEventListener('mousedown', (event) => {
-      if (host.hasAttribute('docked') || !event.target.closest('.head') || event.target.closest('button') || event.button !== 0) return;
-      const rect = panel.getBoundingClientRect(), dx = event.clientX - rect.left, dy = event.clientY - rect.top;
-      const move = (e) => place(e.clientX - dx, e.clientY - dy);
-      const up = () => {
-        window.removeEventListener('mousemove', move, true);
-        window.removeEventListener('mouseup', up, true);
-        writePosition({ left: parseFloat(panel.style.left), top: parseFloat(panel.style.top) });
-      };
-      window.addEventListener('mousemove', move, true);
-      window.addEventListener('mouseup', up, true);
-      event.preventDefault();
-    });
-
     function render(vm) {
-      panel.classList.toggle('collapsed', collapsed);
-      const html = head(vm, collapsed) + (collapsed ? '' : `<div class="body">${body(vm)}</div>`);
+      ensureTab();
+      const html = head(vm) + `<div class="body">${body(vm)}</div>`;
       if (html === lastHtml) return;
       const scroller = panel.querySelector('.body'), scroll = scroller ? scroller.scrollTop : 0;
       panel.innerHTML = html;
@@ -153,7 +161,16 @@
       if (next) next.scrollTop = scroll;
     }
 
-    return { render, destroy: () => { window.removeEventListener('resize', onResize); host.remove(); } };
+    return {
+      // Mở bằng phím tắt: bấm hộ tab để các tab khác (Objects / Labels / QC) tự tắt như khi người dùng bấm.
+      render, isOpen: () => open, toggle: () => { if (open) setOpen(false); else document.querySelector('.psa-tab')?.click(); },
+      destroy: () => {
+        host.remove();
+        document.querySelector('.psa-tab')?.remove();
+        document.querySelector('.psa-pane')?.remove();
+        document.querySelector('.cvat-objects-sidebar-tabs')?.classList.remove('psa-tab-on');
+      },
+    };
   }
 
   function readPosition() {
@@ -164,8 +181,8 @@
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...readPosition(), ...values })); } catch (_) { /* bộ nhớ trang bị chặn: bỏ qua */ }
   }
 
-  /** Thanh tiêu đề: chấm trạng thái + box đang chọn + số dòng cần xem; luôn hiện, kể cả khi thu gọn. */
-  function head(vm, collapsed) {
+  /** Thanh tiêu đề: chấm trạng thái + box đang chọn + số dòng cần xem + nút chung. */
+  function head(vm) {
     const b = vm.box;
     const title = b ? `${esc(b.label)} #${esc(b.clientId)} <small>· ${b.rangeM.toFixed(0)} m</small>` : 'PointSnap';
     const status = b ? `<span class="dot ${b.level}" title="${LEVEL_TEXT[b.level]}"></span>` : '<span class="dot"></span>';
@@ -173,11 +190,11 @@
     const progress = vm.progress ? `<span class="muted" title="Track đã xong / track trong frame">${vm.progress.done}/${vm.progress.total}</span>` : '';
     const tools = vm.status === 'ready'
       ? `<button class="${vm.follow ? 'on' : ''}" data-action="toggle-follow" aria-pressed="${vm.follow}" aria-label="Khoá box" title="Khoá box: đổi frame thì camera đi theo box đang chọn (Alt+Shift+F)">◎</button>`
+        + '<button data-action="prev-undone" aria-label="Track chưa xong trước đó" title="Chọn track chưa xong trước đó trong frame">⏮</button>'
         + '<button data-action="next-undone" aria-label="Track chưa xong kế tiếp" title="Chọn track chưa xong kế tiếp trong frame">⏭</button>'
         + '<button data-action="open-spec" aria-label="Spec của project" title="Spec của project: ngưỡng theo class / thuộc tính">⚙</button>'
       : '';
-    return `<div class="head" title="${esc(SHORTCUTS)}">${LOGO}${status}<span class="title">${title}</span>${count}${progress}${tools}`
-      + `<button data-action="collapse" aria-label="${collapsed ? 'Mở rộng' : 'Thu gọn'}">${collapsed ? '▾' : '▴'}</button></div>`;
+    return `<div class="head" title="${esc(SHORTCUTS)}">${status}<span class="title">${title}</span>${count}${progress}${tools}</div>`;
   }
 
   function body(vm) {

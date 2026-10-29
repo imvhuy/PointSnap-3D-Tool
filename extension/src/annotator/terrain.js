@@ -34,6 +34,9 @@
   };
   const ANY_HEIGHT = { minZ: -Infinity, maxZ: Infinity };
   const CONTACT_BAND_M = 1.0;
+  // Mặt đất thấp hơn mặt đo được ≥ STEP_M (cao hơn bờ vỉa), trong STEP_RADIUS_M quanh box: xem `measureContact`.
+  const STEP_M = 0.25, STEP_RADIUS_M = 2.5, STEP_MIN_CELLS = 2;
+  const TILT_EPS = 0.5 * Math.PI / 180;
 
   /** Điểm không dùng làm đất: điểm của box đã gán và điểm có tọa độ NaN / Infinity. */
   function excludedMask(grid, boxes, marginM) {
@@ -183,32 +186,56 @@
       return heights.length >= 5 ? heights[Math.floor(o.coarsePercentile * (heights.length - 1))] : null;
     }
 
-    return { available: true, cellM: cell, heightAt, coarseHeightAt, groundCellCount: ground.reduce((s, v) => s + v, 0) };
+    return { available: true, cellM: cell, heightAt, coarseHeightAt, groundCellsNear, groundCellCount: ground.reduce((s, v) => s + v, 0) };
   }
 
   function unavailable() {
-    return { available: false, cellM: 0, heightAt: () => null, coarseHeightAt: () => null, groundCellCount: 0 };
+    return { available: false, cellM: 0, heightAt: () => null, coarseHeightAt: () => null, groundCellsNear: () => [], groundCellCount: 0 };
   }
 
   /**
-   * Đo tiếp đất của một box (không pitch / roll) từ mặt đất dưới 4 góc footprint. Trả về null khi dưới 3 góc đo được.
+   * Đo tiếp đất của một box từ mặt đất dưới 4 góc đáy. Trả về null khi dưới 3 góc đo được.
    * - Chỉ dùng ô đất trong ±`CONTACT_BAND_M` quanh đáy box: lệch hơn thế thì kiểm tra Z thô (mặt đất chung của vùng)
    *   bắt, không để mái hiên / nóc vật chưa gán nhãn kéo số đo đi vài mét.
    * - `contactZ`: mặt đất thấp nhất dưới footprint (box đúng chạm đường ở góc thấp nhất); `topContactZ`: cao nhất.
    * - `gapM`: đáy box nằm ngoài [contactZ, topContactZ] bao xa (dương: lơ lửng, âm: lún, 0: nằm trong khoảng). Trên bờ
    *   vỉa / dốc không biết box tựa mặt nào nên chấp nhận cả khoảng, tránh báo nhầm.
+   * - Box có pitch / roll (spec chỉ cho yaw, nhưng CVAT cho kéo nghiêng) thì box tự theo được mặt dốc, không cần chấp nhận
+   *   cả khoảng: `gapM` là khoảng hở của góc đáy lệch nhiều nhất so với đất ngay dưới nó. Bản cũ chỉ so góc đáy thấp nhất,
+   *   nên box nghiêng 3° chạm đất một đầu, đầu kia hở 23 cm vẫn "sát đất".
+   * - `groundZ`: mặt đất dưới từng góc đáy (thứ tự `B.corners`, null khi không đo được) để vẽ; `snapDzM`: dời box theo
+   *   trục z bao nhiêu để các góc đáy nằm cân giữa mặt đất (box phẳng trên đất phẳng: đáy chạm đất).
+   * - Vật che chân (rào chắn, capo xe chưa gán nhãn…) có mặt trên phẳng, LiDAR không thấy đất sau nó, nên đất "ngay dưới"
+   *   box nội suy từ mặt trên của vật che: box đúng bị báo lún. Khi đáy box thấp hơn mặt đo được mà trong
+   *   `STEP_RADIUS_M` quanh box có mặt đất thấp hơn mặt đó ≥ `STEP_M`, box có thể đứng trên mặt thấp: `contactZ` hạ
+   *   xuống ô đất gần đáy box nhất. Đòi chênh ≥ `STEP_M` (cao hơn bờ vỉa) để dốc thoai thoải quanh box không che mất box
+   *   lún thật. Đo trên nhãn chuẩn nuScenes scene-0061 / AV2: bỏ 3 / 10 báo lún nhầm (người sau rào chắn), box hạ giả
+   *   30 cm còn bắt 183 / 184 và 128 / 128.
    * - `pointsBelowBottom`: điểm trong footprint cao hơn mặt đất cao nhất mà thấp hơn đáy box: điểm của chính vật
    *   (bánh xe, chân) dưới đáy box là bằng chứng lơ lửng trực tiếp. So với mặt cao nhất để điểm vỉa hè không bị đếm.
    */
   function measureContact(terrain, grid, box) {
     if (!terrain.available) return null;
-    const bottom = B.bottomZ(box);
-    const band = { minZ: bottom - CONTACT_BAND_M, maxZ: bottom + CONTACT_BAND_M };
-    const samples = B.footprint(box).map(([x, y]) => terrain.heightAt(x, y, band)).filter(Boolean);
+    const bottom = B.bottomZ(box), feet = B.corners(box).slice(0, 4);
+    const measured = feet.map(([x, y, z]) => terrain.heightAt(x, y, { minZ: z - CONTACT_BAND_M, maxZ: z + CONTACT_BAND_M }));
+    const samples = measured.filter(Boolean);
     if (samples.length < 3) return null;
     const heights = samples.map((s) => s.z);
-    const contactZ = Math.min(...heights), topContactZ = Math.max(...heights);
-    const gapM = bottom > topContactZ ? bottom - topContactZ : bottom < contactZ ? bottom - contactZ : 0;
+    let contactZ = Math.min(...heights);
+    const topContactZ = Math.max(...heights);
+    let groundZ = measured.map((s) => (s ? s.z : null));
+    if (bottom < contactZ) {
+      const reach = Math.hypot(box.dims[0], box.dims[1]) / 2 + STEP_RADIUS_M;
+      const lower = terrain.groundCellsNear(box.center[0], box.center[1], reach, { minZ: bottom - CONTACT_BAND_M, maxZ: contactZ - STEP_M });
+      if (lower.length >= STEP_MIN_CELLS) {
+        contactZ = lower.reduce((best, c) => (Math.abs(c.z - bottom) < Math.abs(best - bottom) ? c.z : best), contactZ);
+        groundZ = groundZ.map((z) => (z === null ? null : contactZ)); // mặt trên vật che không phải đất
+      }
+    }
+    const gaps = feet.map((f, i) => (groundZ[i] === null ? null : f[2] - groundZ[i])).filter((d) => d !== null);
+    const tilted = [0, 1].some((i) => Math.abs(B.wrapAngle(box.rotation[i])) > TILT_EPS);
+    const gapM = tilted ? gaps.reduce((worst, d) => (Math.abs(d) > Math.abs(worst) ? d : worst), 0)
+      : bottom > topContactZ ? bottom - topContactZ : bottom < contactZ ? bottom - contactZ : 0;
     let below = 0;
     const p = grid.positions;
     for (const i of Grid.pointsNearBox(grid, box, 0)) {
@@ -220,6 +247,8 @@
       topContactZ,
       gapM,
       spreadM: topContactZ - contactZ,
+      groundZ,
+      snapDzM: -(Math.min(...gaps) + Math.max(...gaps)) / 2,
       confidence: samples.reduce((s, x) => s + x.confidence, 0) / 4,
       pointsBelowBottom: below,
     };

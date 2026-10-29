@@ -437,11 +437,11 @@ function filtersHtml(objs, rows, { compact = false } = {}) {
 function jobSteps(result) {
   const objs = result.objects, st = objs.map(objState), rev = S.detail.objectReviews || {};
   const reviewed = st.filter((s) => s === 'ok' || s === 'returned').length, full = reviewed === objs.length;
-  const missing = (S.detail.missing || []).filter((t) => t.status !== 'accepted').length;
-  const sendN = drafts().length, waiting = objs.filter((o, i) => st[i] === 'returned' && rev[o.key]?.ticket).length + missing;
+  const missing = (S.detail.missing || []).filter((t) => t.status !== 'accepted' && t.status !== 'draft').length;
+  const sendN = drafts().length + (S.detail.pendingTickets || 0), waiting = objs.filter((o, i) => st[i] === 'returned' && rev[o.key]?.ticket).length + missing;
   const rescan = st.filter((s) => s === 'rescan').length, changed = st.filter((s) => s === 'changed').length, comp = S.detail.completion;
   const anyErr = st.some((s) => s === 'returned' || s === 'rescan');
-  const cur = sendN ? 'send' : !full ? 'review' : waiting ? 'wait' : rescan ? 'rescan' : 'done';
+  const cur = !full ? 'review' : sendN ? 'send' : waiting ? 'wait' : rescan ? 'rescan' : 'done';
   return { objs, reviewed, full, sendN, waiting, rescan, changed, comp, anyErr, cur };
 }
 
@@ -460,7 +460,7 @@ function stepsHtml(result) {
   const pct = j.objs.length ? Math.round((j.reviewed / j.objs.length) * 100) : 100;
   const main = {
     review: S.view === 'review' ? `<span class="muted">Còn ${j.objs.length - j.reviewed} object cần xem</span>` : `<button class="btn primary" data-view-go="review">${icon('play')} Duyệt object tiếp</button>`,
-    send: `<button class="btn primary" data-act="send">✉ Gửi ${j.sendN} lỗi cho annotator</button>`,
+    send: `<button class="btn primary" data-act="send">✉ Gửi cả vòng: ${j.sendN} lỗi</button>`,
     wait: '<button class="btn primary" data-view-go="tickets">Mở Giao việc Lỗi ›</button>',
     rescan: `<button class="btn primary" data-act="scan" title="Bản sửa đã nghiệm thu; quét lại để tool kiểm bản mới">⟳ Quét lại ${j.rescan} object đã sửa</button>`,
     done: j.comp ? '<button class="btn sm ghost" data-act="complete">Hoàn thành lại</button>' : '<button class="btn primary ok-bg" data-act="complete" title="Cần gửi hết lỗi và nghiệm thu hết phiếu sửa">✓ Hoàn thành duyệt job</button>',
@@ -799,13 +799,13 @@ document.addEventListener('click', async (e) => {
     }
     if (act === 'send') {
       const made = await window.QCTickets.send(S.jobId, drafts());
-      if (made) { toast(`Đã gửi ${made.length} lỗi cho annotator`); S.detail = await api(`/api/jobs/${S.jobId}`); window.QCTickets.badge(); loadJobs(); render(); }
+      if (made) { toast(`Đã gửi ${made.length} lỗi cho annotator (vòng ${made[0]?.round ?? ''})`); S.detail = await api(`/api/jobs/${S.jobId}`); window.QCTickets.badge(); loadJobs(); render(); }
       return undefined;
     }
     if (act === 'missing') {
       const cur = S.detail.result.objects?.find((x) => x.key === S.obj.cur);
       const made = await window.QCTickets.missingForm({ frame: cur ? focusFrame(cur) : S.detail.result.job.start });
-      if (made) { toast(`Đã tạo ${made.id} · thiếu box ${made.label}`); S.detail = await api(`/api/jobs/${S.jobId}`); window.QCTickets.badge(); render(); }
+      if (made) { toast(`Đã tạo ${made.id} · thiếu box ${made.label} · chờ gửi cùng vòng`); S.detail = await api(`/api/jobs/${S.jobId}`); window.QCTickets.badge(); render(); }
       return undefined;
     }
     if (act === 'scan') { await api(`/api/jobs/${S.jobId}/scan`, { method: 'POST' }); return refreshJob(); }
