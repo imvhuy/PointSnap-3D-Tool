@@ -38,8 +38,12 @@ khác thì xin phép chủ hệ thống trước.
 
 ## Bảng trong job
 
-- **Thanh tiêu đề** (luôn hiện, kể cả khi thu gọn): chấm trạng thái (xanh ổn / cam cần xem / đỏ lỗi), box đang chọn,
-  khoảng cách, số mục cần xem, tiến độ `xong/tổng`, ◎ khoá box, ⏮ / ⏭ track chưa xong trước / kế tiếp, ▴ thu gọn.
+- **Mở / đóng**: tab **Hỗ trợ** (logo PointSnap) ở thanh bên phải của CVAT, cạnh Objects / Labels, hoặc
+  <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>. Bảng nằm trong thanh bên, không nổi đè lên canvas; bấm Objects / Labels
+  để về danh sách của CVAT. Tab không mở thì PointSnap không đo, không vẽ gì lên canvas. Như nhau khi cài extension hay
+  khi dùng bản nhúng thẳng vào CVAT (dịch vụ QC); tab **PointSnap** của bản nhúng dành cho QC và phiếu sửa lỗi.
+- **Thanh tiêu đề**: chấm trạng thái (xanh ổn / cam cần xem / đỏ lỗi), box đang chọn,
+  khoảng cách, số mục cần xem, tiến độ `xong/tổng`, ◎ khoá box, ⏮ / ⏭ track chưa xong trước / kế tiếp, ⚙ spec.
 - **Checklist**, mỗi khía cạnh một dòng ✓ / ! / ✕ kèm một cụm từ ngắn (rê chuột xem đầy đủ) và **nút sửa nằm ngay trên
   dòng của vấn đề**: Mặt đất (**Hạ đáy** <kbd>G</kbd>), Kích thước (**Cỡ trung vị**), Ôm vật, Hướng (**Mượt yaw**),
   Chồng lấn, Thuộc tính. Báo nhầm thì bấm **✕** cuối dòng: dòng chuyển xám, không báo mục đó cho box / track này nữa;

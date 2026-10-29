@@ -487,6 +487,7 @@
   async function onAction(name, data = {}) {
     const ctx = A.context();
     if (name === 'rerender') { S.lastPanelAt = 0; return; }
+    if (name === 'toggle-panel') { panel?.toggle(); S.lastPanelAt = 0; return; }
     if (!ctx || S.busy) return;
     if (A.isSaving()) { notify({ kind: 'info', text: 'CVAT đang Save; thử lại sau khi Save xong.' }); return; }
     const objectState = activeObject();
@@ -581,7 +582,7 @@
     S.lastPanelAt = 0;
   }
 
-  const SHORTCUTS = { KeyF: 'toggle-follow', KeyG: 'snap-ground', KeyD: 'toggle-done' };
+  const SHORTCUTS = { KeyF: 'toggle-follow', KeyG: 'snap-ground', KeyD: 'toggle-done', KeyP: 'toggle-panel' };
   window.addEventListener('keydown', (event) => {
     if (!S.enabled || !event.altKey || !event.shiftKey || event.ctrlKey || event.metaKey) return;
     const tag = event.target?.tagName;
@@ -749,7 +750,9 @@
     try {
       const ctx = S.enabled ? A.context() : null;
       if (ctx && ctx.job.id !== S.jobId) onJobChanged(ctx.job.id, ctx.job.projectId);
-      const cache = ctx && frameData(ctx);
+      // Tab Hỗ trợ không mở: không đo, không vẽ gì lên canvas.
+      const shown = !panel || panel.isOpen();
+      const cache = shown && ctx && frameData(ctx);
       const m = cache && measureActive(ctx, cache);
       if (ctx) syncTrack(ctx, m?.objectState || null);
       // Người dùng bỏ chọn box (Esc / bấm chỗ trống) ngay trong frame này thì thôi khoá, đổi frame không chọn lại box cũ.
