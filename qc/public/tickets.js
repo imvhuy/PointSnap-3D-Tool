@@ -51,7 +51,8 @@
     const tool = r.findings.filter((x) => (x.objKey === objKey || x.other === objKey) && x.severity !== 'info');
     const f = findingKey ? r.findings.find((x) => x.key === findingKey) : null;
     const tags = [...new Set([...tool.map((x) => x.title), ...COMMON])];
-    const on = new Set(f ? [f.title] : tool.length === 1 ? [tool[0].title] : []);
+    // Một cuboid có thể có nhiều lỗi: chọn sẵn mọi lỗi tool báo, QC bỏ tick lỗi nào thấy báo nhầm.
+    const on = new Set(tool.map((x) => x.title));
     const html = `<form class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
       <div class="m-h"><div><h2 id="m-title">Trả lỗi · ${esc(ticketObj(obj))}</h2><div class="muted">${frameRange(obj.first, obj.last)} · gom lại, gửi annotator một lượt</div></div>
         <button type="button" class="act" data-close aria-label="Đóng">✕</button></div>
@@ -65,7 +66,9 @@
       const picked = [...form.querySelectorAll('[data-tag][aria-pressed="true"]')].map((b) => b.dataset.tag), text = form.text.value.trim();
       if (!picked.length && !text) throw new Error('Chọn ít nhất một lỗi hoặc ghi chú');
       const fr = Number.parseInt(form.frame.value, 10);
-      return { tags: picked, frame: Number.isInteger(fr) ? fr : null, text, finding: f ? f.key : null };
+      // Lỗi QC bấm từ danh sách đứng đầu; giữ mọi lỗi tool báo có nhãn còn được tick.
+      const keep = [...(f ? [f] : []), ...tool.filter((x) => x !== f)].filter((x) => picked.includes(x.title)).map((x) => x.key);
+      return { tags: picked, frame: Number.isInteger(fr) ? fr : null, text, finding: keep[0] || null, findings: keep };
     }, 'textarea', doc);
   }
 
@@ -130,7 +133,7 @@
 
   function thread(t) {
     const who = (m) => (m.role === 'bot' ? 'Tool' : `${esc(m.name)} (${m.role === 'qc' ? 'QC' : 'Annotator'})`);
-    const kindTxt = { assign: 'giao việc', submit: 'nộp lại', accept: 'nghiệm thu đạt', return: 'trả lại sửa tiếp', comment: '', tool: 'tự phát hiện' };
+    const kindTxt = { assign: 'giao việc', submit: 'nộp lại', withdraw: 'rút lại để sửa', accept: 'nghiệm thu đạt', return: 'trả lại sửa tiếp', comment: '', tool: 'tự phát hiện' };
     return t.thread.map((m) => `<div class="msg ${m.role}"><div class="msg-h"><span class="ava">${esc((m.name || '?').slice(0, 2).toUpperCase())}</span>
       <b>${who(m)}</b>${kindTxt[m.kind] ? `<span class="muted"> · ${kindTxt[m.kind]}</span>` : ''}<span class="right muted">${fmtTime(m.at)}</span></div>
       <div>${esc(m.text) || '<span class="muted">—</span>'}</div></div>`).join('');

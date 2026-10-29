@@ -19,9 +19,10 @@ Bảng annotator là đúng các script MAIN world của extension: dịch vụ 
 `/pointsnap-qc/annotator-panel.js`, plugin nạp file đó và trả lời yêu cầu cấu hình / lưu spec của bảng thay cho
 `settings-bridge.js`. Máy nào vẫn cài extension thì chỉ một bảng chạy, và spec lấy từ dịch vụ QC.
 
-Cả bảng annotator lẫn khung QC nằm trong tab **PointSnap** (có logo) ở thanh bên phải, cạnh Objects / Labels, không nổi đè
-lên canvas. CVAT chưa có chỗ cắm plugin cho thanh bên nên plugin chèn tab cùng kiểu antd vào DOM; tab đang mở được nhớ
-trong trình duyệt.
+Khung QC ↔ annotator (quét, duyệt, phiếu) nằm trong tab **PointSnap** (có logo) ở thanh bên phải, cạnh Objects / Labels,
+không nổi đè lên canvas. CVAT chưa có chỗ cắm plugin cho thanh bên nên plugin chèn tab cùng kiểu antd vào DOM; tab đang mở
+được nhớ trong trình duyệt. Bảng annotator nằm ở tab riêng **Hỗ trợ** cạnh đó, mở bằng cách bấm tab hoặc Alt+Shift+P,
+như trong extension.
 
 Code: [qc/public/plugin.js](../qc/public/plugin.js), [qc/public/plugin.css](../qc/public/plugin.css). Phía dịch vụ:
 `Auth.fromCvatSession` trong [qc/lib/auth.js](../qc/lib/auth.js) hỏi CVAT `/api/users/self` bằng đúng cookie phiên, nhớ 5
