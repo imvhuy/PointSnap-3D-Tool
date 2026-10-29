@@ -1,56 +1,117 @@
-/* Khung PointSnap trong trang CVAT (plugin.js). Theo kiểu Ant Design của CVAT (nền trắng, viền #d9d9d9, xanh #1677ff).
+/* Khung PointSnap trong tab bên phải của CVAT (plugin.js). Kiểu Ant Design của CVAT: nền trắng, viền #f0f0f0 / #d9d9d9,
+ * xanh #1677ff. Thang khoảng cách 4 / 8 px, chữ 12–13 px. Không gì rộng hơn thanh bên (≥ 260 px): min-width 0, cắt "…".
  * Mọi lớp có tiền tố ps- để không đụng CSS của CVAT. */
-#pointsnap-plugin { position: fixed; left: 12px; bottom: 12px; z-index: 1000; width: 360px; max-height: 70vh; overflow: auto;
-  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  color: rgba(0, 0, 0, .88); background: #fff; border: 1px solid #d9d9d9; border-radius: 8px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, .08), 0 3px 6px -4px rgba(0, 0, 0, .12), 0 9px 28px 8px rgba(0, 0, 0, .05); }
+#pointsnap-plugin { font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: rgba(0, 0, 0, .88); background: #fff; overflow-x: hidden; }
 #pointsnap-plugin[hidden] { display: none; }
-#pointsnap-plugin .ps-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #f0f0f0; position: sticky; top: 0; background: #fafafa; z-index: 1; }
-#pointsnap-plugin .ps-logo { display: inline-flex; width: 22px; height: 22px; color: #1f1f1f; flex: none; }
-#pointsnap-plugin .ps-logo svg { width: 100%; height: 100%; }
-#pointsnap-plugin .ps-role { padding: 0 7px; border: 1px solid #91caff; border-radius: 4px; background: #e6f4ff; color: #1677ff; font-size: 12px; line-height: 20px; }
-#pointsnap-plugin .ps-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#pointsnap-plugin .ps-head .ps-btn { margin-left: auto; }
-#pointsnap-plugin .ps-body { display: grid; gap: 10px; padding: 12px; }
-#pointsnap-plugin .ps-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-#pointsnap-plugin .ps-card { display: grid; gap: 8px; padding: 10px; border: 1px solid #f0f0f0; border-radius: 8px; background: #fafafa; }
-#pointsnap-plugin .ps-list { margin: 0; padding-left: 18px; }
-#pointsnap-plugin .ps-btn { height: 28px; padding: 0 12px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; color: rgba(0, 0, 0, .88); cursor: pointer; font: inherit;
-  box-shadow: 0 2px 0 rgba(0, 0, 0, .02); transition: color .2s, border-color .2s, background .2s; }
+#pointsnap-plugin *, #pointsnap-plugin *::before, #pointsnap-plugin *::after { box-sizing: border-box; min-width: 0; }
+#pointsnap-plugin .ps-body { display: grid; gap: 8px; padding: 8px; }
+#pointsnap-plugin .ps-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+#pointsnap-plugin .ps-ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#pointsnap-plugin .ps-muted { color: rgba(0, 0, 0, .45); }
+#pointsnap-plugin .ps-xs { font-size: 11px; }
+#pointsnap-plugin .ps-err { color: #cf1322; } #pointsnap-plugin .ps-warn { color: #d48806; } #pointsnap-plugin .ps-ok-text { color: #389e0d; }
+#pointsnap-plugin .ps-empty { padding: 16px 8px; text-align: center; color: rgba(0, 0, 0, .45); font-size: 12px; }
+#pointsnap-plugin .ps-msg:empty { display: none; }
+#pointsnap-plugin .ps-grow { flex: 1; }
+
+/* Nút */
+#pointsnap-plugin .ps-btn { height: 28px; padding: 0 10px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; color: rgba(0, 0, 0, .88); cursor: pointer; font: inherit;
+  white-space: nowrap; transition: color .2s, border-color .2s, background .2s; }
 #pointsnap-plugin .ps-btn:hover { color: #4096ff; border-color: #4096ff; }
-#pointsnap-plugin .ps-btn:focus-visible, #pointsnap-plugin .ps-tag:focus-visible { outline: 3px solid #91caff; outline-offset: 1px; }
-#pointsnap-plugin .ps-sm { height: 24px; padding: 0 8px; font-size: 12px; border-radius: 4px; }
-#pointsnap-plugin .ps-pri { background: #1677ff; border-color: #1677ff; color: #fff; box-shadow: 0 2px 0 rgba(5, 145, 255, .1); }
+#pointsnap-plugin .ps-btn:disabled, #pointsnap-plugin .ps-btn:disabled:hover { color: rgba(0, 0, 0, .25); border-color: #d9d9d9; background: #f5f5f5; cursor: not-allowed; }
+#pointsnap-plugin .ps-btn:focus-visible, #pointsnap-plugin .ps-tag:focus-visible, #pointsnap-plugin .ps-tk-h:focus-visible, #pointsnap-plugin .ps-seg-i:focus-visible { outline: 2px solid #91caff; outline-offset: 1px; }
+#pointsnap-plugin .ps-sm { height: 24px; padding: 0 7px; font-size: 12px; border-radius: 4px; }
+#pointsnap-plugin .ps-icon { width: 24px; padding: 0; border-color: transparent; background: none; color: rgba(0, 0, 0, .55); font-size: 17px; line-height: 1; }
+#pointsnap-plugin .ps-icon:hover { background: rgba(0, 0, 0, .06); border-color: transparent; color: #1677ff; }
+#pointsnap-plugin .ps-pri { background: #1677ff; border-color: #1677ff; color: #fff; }
 #pointsnap-plugin .ps-pri:hover { background: #4096ff; border-color: #4096ff; color: #fff; }
 #pointsnap-plugin .ps-ok { color: #389e0d; border-color: #b7eb8f; } #pointsnap-plugin .ps-ok:hover { color: #52c41a; border-color: #52c41a; }
 #pointsnap-plugin .ps-bad { color: #cf1322; border-color: #ffa39e; } #pointsnap-plugin .ps-bad:hover { color: #ff4d4f; border-color: #ff4d4f; }
-#pointsnap-plugin .ps-tag { padding: 1px 8px; border: 1px solid #d9d9d9; border-radius: 4px; background: #fafafa; color: inherit; cursor: pointer; font-size: 12px; }
+#pointsnap-plugin .ps-link { padding: 0; border: 0; background: none; color: #1677ff; cursor: pointer; font: inherit; font-size: 12px; white-space: nowrap; }
+#pointsnap-plugin .ps-link:hover { color: #4096ff; }
+
+/* Dòng đầu: tiến độ duyệt */
+#pointsnap-plugin .ps-top { display: flex; align-items: center; gap: 8px; }
+#pointsnap-plugin .ps-prog { flex: 1; height: 6px; border-radius: 3px; background: #f0f0f0; overflow: hidden; }
+#pointsnap-plugin .ps-prog > i { display: block; height: 100%; background: #52c41a; border-radius: 3px; }
+#pointsnap-plugin .ps-num { font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* Tab con: chia đều bề ngang, chữ ngắn ở trên, số ở dưới */
+#pointsnap-plugin .ps-seg { display: grid; gap: 2px; padding: 2px; border-radius: 6px; background: #f5f5f5; }
+#pointsnap-plugin .ps-seg-i { display: grid; justify-items: center; gap: 0; padding: 3px 2px; border: 0; border-radius: 4px; background: none; color: rgba(0, 0, 0, .65); cursor: pointer; font: inherit; }
+#pointsnap-plugin .ps-seg-i:hover { color: rgba(0, 0, 0, .88); background: rgba(0, 0, 0, .04); }
+#pointsnap-plugin .ps-seg-i.on { background: #fff; color: rgba(0, 0, 0, .88); box-shadow: 0 1px 2px rgba(0, 0, 0, .06); }
+#pointsnap-plugin .ps-seg-l { max-width: 100%; font-size: 11px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#pointsnap-plugin .ps-seg-n { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; font-weight: 600; line-height: 18px; font-variant-numeric: tabular-nums; }
+/* Tab chờ chính người đang xem làm: số đỏ. */
+#pointsnap-plugin .ps-seg-i.need .ps-seg-n { color: #cf1322; }
+#pointsnap-plugin .ps-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #1677ff; flex: none; }
+
+/* Thanh lỗi chưa gửi */
+#pointsnap-plugin .ps-bar { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 8px; border: 1px solid #ffe58f; border-radius: 6px; background: #fffbe6; font-size: 12px; }
+#pointsnap-plugin .ps-bar .ps-pri { margin-left: auto; }
+
+/* Thẻ phiếu / object: sọc màu theo mức lỗi, dòng gọn, bấm mở thêm */
+#pointsnap-plugin .ps-tk { display: grid; gap: 4px; padding: 6px 8px; border: 1px solid #f0f0f0; border-left: 3px solid #d9d9d9; border-radius: 6px; background: #fff; }
+#pointsnap-plugin .ps-s-err { border-left-color: #ff4d4f; } #pointsnap-plugin .ps-s-warn { border-left-color: #faad14; } #pointsnap-plugin .ps-s-ok { border-left-color: #52c41a; }
+#pointsnap-plugin .ps-tk.open { background: #fafafa; }
+#pointsnap-plugin .ps-tk-h { display: grid; gap: 3px; cursor: pointer; border-radius: 4px; }
+#pointsnap-plugin .ps-l1 { display: flex; align-items: center; gap: 4px; }
+#pointsnap-plugin .ps-l1 > b { flex: 1; font-size: 13px; }
+#pointsnap-plugin .ps-id { flex: none; color: rgba(0, 0, 0, .45); font-size: 11px; font-variant-numeric: tabular-nums; }
+#pointsnap-plugin .ps-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+#pointsnap-plugin .ps-chip { max-width: 100%; padding: 0 6px; border: 1px solid #d9d9d9; border-radius: 4px; background: #fafafa; color: rgba(0, 0, 0, .65); font-size: 11px; line-height: 18px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#pointsnap-plugin .ps-c-err { border-color: #ffa39e; background: #fff1f0; color: #cf1322; }
+#pointsnap-plugin .ps-c-warn { border-color: #ffe58f; background: #fffbe6; color: #d48806; }
+#pointsnap-plugin .ps-c-ok { border-color: #b7eb8f; background: #f6ffed; color: #389e0d; }
+#pointsnap-plugin .ps-l3 { display: flex; align-items: center; gap: 4px; color: rgba(0, 0, 0, .55); font-size: 12px; }
+#pointsnap-plugin .ps-ava { flex: none; width: 16px; height: 16px; border-radius: 50%; background: #e6f4ff; color: #1677ff; font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; }
+#pointsnap-plugin .ps-a-annotator { background: #f6ffed; color: #389e0d; } #pointsnap-plugin .ps-a-bot { background: #f5f5f5; color: rgba(0, 0, 0, .45); }
+#pointsnap-plugin .ps-finds { display: grid; gap: 4px; }
+#pointsnap-plugin .ps-find { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+#pointsnap-plugin .ps-find > .ps-ell { flex: 1; }
+#pointsnap-plugin .ps-find > .ps-chip { flex: none; }
+#pointsnap-plugin .ps-acts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+#pointsnap-plugin .ps-acts > .ps-btn { padding: 0 4px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+#pointsnap-plugin .ps-acts-r { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+#pointsnap-plugin .ps-foot { display: flex; gap: 4px; flex-wrap: wrap; justify-content: space-between; }
+
+/* Trao đổi kiểu chat: mình bên phải, bên kia bên trái, tool ở giữa nhạt */
+#pointsnap-plugin .ps-thread { display: grid; gap: 6px; padding: 4px 0; }
+#pointsnap-plugin .ps-msg { max-width: 90%; padding: 4px 8px; border-radius: 8px; border: 1px solid #f0f0f0; background: #fff; font-size: 12px; overflow-wrap: anywhere; }
+#pointsnap-plugin .ps-msg.me { justify-self: end; background: #e6f4ff; border-color: #bae0ff; }
+#pointsnap-plugin .ps-msg.them { justify-self: start; }
+#pointsnap-plugin .ps-msg.bot { justify-self: stretch; max-width: none; background: #fafafa; color: rgba(0, 0, 0, .65); }
+#pointsnap-plugin .ps-msg-h { display: flex; align-items: center; gap: 4px; font-size: 11px; }
+#pointsnap-plugin .ps-msg-h > b { font-weight: 600; }
+#pointsnap-plugin .ps-msg-t { white-space: pre-wrap; }
+#pointsnap-plugin .ps-kind { flex: none; margin-left: auto; padding: 0 4px; border-radius: 3px; background: #f0f0f0; color: rgba(0, 0, 0, .55); font-size: 10px; line-height: 15px; }
+#pointsnap-plugin .ps-k-assign, #pointsnap-plugin .ps-k-return { background: #fff1f0; color: #cf1322; }
+#pointsnap-plugin .ps-k-submit, #pointsnap-plugin .ps-k-accept { background: #f6ffed; color: #389e0d; }
+#pointsnap-plugin .ps-k-withdraw { background: #fffbe6; color: #d48806; }
+
+/* Form trả lỗi / thiếu vật */
+#pointsnap-plugin .ps-form { display: grid; gap: 6px; padding-top: 6px; border-top: 1px dashed #f0f0f0; }
+#pointsnap-plugin .ps-wrap { gap: 4px; }
+#pointsnap-plugin .ps-tag { padding: 0 6px; border: 1px solid #d9d9d9; border-radius: 4px; background: #fafafa; color: inherit; cursor: pointer; font: inherit; font-size: 11px; line-height: 20px; }
 #pointsnap-plugin .ps-tag.on { border-color: #ffa39e; color: #cf1322; background: #fff1f0; }
-#pointsnap-plugin .ps-in { width: 100%; box-sizing: border-box; padding: 4px 11px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; color: inherit; font: inherit; resize: vertical; }
+#pointsnap-plugin .ps-in { width: 100%; padding: 4px 8px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; color: inherit; font: inherit; font-size: 12px; resize: vertical; }
 #pointsnap-plugin .ps-in:hover, #pointsnap-plugin .ps-in:focus { border-color: #4096ff; outline: 0; }
 #pointsnap-plugin .ps-in:focus { box-shadow: 0 0 0 2px rgba(5, 145, 255, .1); }
-#pointsnap-plugin .ps-muted { color: rgba(0, 0, 0, .45); } #pointsnap-plugin .ps-err { color: #cf1322; } #pointsnap-plugin .ps-warn { color: #d48806; } #pointsnap-plugin .ps-ok-text { color: #389e0d; }
-#pointsnap-plugin .ps-msg:empty { display: none; }
-#pointsnap-plugin .ps-wrap { gap: 4px; }
-/* Tab con của annotator: kiểu Segmented của Ant Design. */
-#pointsnap-plugin .ps-seg { display: flex; gap: 2px; padding: 2px; border-radius: 6px; background: #f5f5f5; position: sticky; top: 0; z-index: 1; }
-#pointsnap-plugin .ps-seg-i { flex: 1; min-width: 0; height: 26px; padding: 0 6px; border: 0; border-radius: 4px; background: none; color: rgba(0, 0, 0, .65); cursor: pointer; font: inherit; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#pointsnap-plugin .ps-seg-i:hover { color: rgba(0, 0, 0, .88); background: rgba(0, 0, 0, .06); }
-#pointsnap-plugin .ps-seg-i.on { background: #fff; color: rgba(0, 0, 0, .88); box-shadow: 0 1px 2px rgba(0, 0, 0, .03), 0 1px 6px -1px rgba(0, 0, 0, .02), 0 2px 4px rgba(0, 0, 0, .02); }
-#pointsnap-plugin .ps-seg-i:focus-visible { outline: 3px solid #91caff; outline-offset: 1px; }
 
 /* Tab PointSnap trong thanh bên của CVAT (cạnh Objects / Labels), cùng kiểu tab card của CVAT. */
-.cvat-objects-sidebar-tabs .ps-sidebar-tab .ant-tabs-tab-btn { display: inline-flex; align-items: center; gap: 6px; }
-.cvat-objects-sidebar-tabs .ps-sidebar-tab svg { width: 16px; height: 16px; flex: none; }
+.cvat-objects-sidebar-tabs .ps-sidebar-tab .ant-tabs-tab-btn { display: inline-flex; align-items: center; gap: 6px; position: relative; }
+.cvat-objects-sidebar-tabs .ps-sidebar-tab svg { width: 18px; height: 18px; flex: none; }
+/* Tab chỉ có biểu tượng, lề hẹp như tab Hỗ trợ (.psa-tab) để 4 tab vừa thanh bên. */
+.cvat-objects-sidebar-tabs .ant-tabs-tab.ps-sidebar-tab { padding: 6px 10px !important; margin-left: 2px !important; }
+.cvat-objects-sidebar-tabs .ps-tab-badge { position: absolute; top: -4px; right: -8px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: #ff4d4f; color: #fff; font-size: 10px; line-height: 15px; text-align: center; }
+.cvat-objects-sidebar-tabs .ps-tab-badge[hidden] { display: none; }
 .cvat-objects-sidebar-tabs.ps-tab-on .ant-tabs-tab-active { background: transparent !important; }
 .cvat-objects-sidebar-tabs.ps-tab-on .ant-tabs-tab-active .ant-tabs-tab-btn { text-shadow: none; }
 .cvat-objects-sidebar-tabs.ps-tab-on .ps-sidebar-tab { background: rgb(190, 190, 190) !important; }
-.cvat-objects-sidebar-tabs.ps-tab-on .ps-sidebar-tab .ant-tabs-tab-btn { text-shadow: 0 0 .25px currentColor; }
 /* CVAT đặt display cho khung nội dung với độ ưu tiên cao hơn: cần !important. */
 .cvat-objects-sidebar-tabs.ps-tab-on > .ant-tabs-content-holder { display: none !important; }
 .cvat-objects-sidebar-tabs:not(.ps-tab-on) > .ps-pane { display: none !important; }
-.cvat-objects-sidebar-tabs > .ps-pane { display: block !important; flex: 1 1 auto; min-height: 0; overflow-y: auto; background: #fff; }
-/* Khung QC trong tab: không nổi. */
-.ps-pane #pointsnap-plugin { position: static; width: auto; max-height: none; overflow: visible; border: 0; border-top: 1px solid #f0f0f0; border-radius: 0; box-shadow: none; }
-.ps-pane #pointsnap-plugin .ps-head { position: static; }
-.ps-pane #pointsnap-plugin .ps-logo, .ps-pane #pointsnap-plugin .ps-head > b { display: none; }
+.cvat-objects-sidebar-tabs > .ps-pane { display: block !important; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; background: #fff; }

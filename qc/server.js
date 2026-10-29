@@ -162,20 +162,32 @@ async function ticketRoute(req, p, url, me) {
   }
   if (req.method === 'GET' && p === '/api/tickets') {
     const job = Number(url.searchParams.get('job')) || null;
-    const list = store.tickets().filter((t) => (me.role === 'qc' ? !job || t.jobId === job : t.assignee === me.username));
+    // Annotator không thấy phiếu thiếu vật chưa gửi, cũng không thấy lời trả lại QC đang giữ chờ gửi cả vòng.
+    const list = me.role === 'qc' ? store.tickets().filter((t) => !job || t.jobId === job)
+      : store.tickets().filter((t) => t.assignee === me.username && t.status !== 'draft').map(({ held, ...t }) => t);
     return { body: list.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) };
   }
-  // Gửi một lượt: mọi object QC đã trả lỗi (kèm lỗi ghi lúc duyệt) thành phiếu cho một annotator.
+  // Gửi cả vòng (để đếm được số lần rework): chỉ khi QC đã duyệt đủ object và xử lý hết bài annotator nộp. Gửi một lần mọi lỗi
+  // chờ gửi: object đã trả lỗi chưa có phiếu (phiếu mới), phiếu QC trả lại (rework), phiếu thiếu vật chưa gửi.
   if (req.method === 'POST' && p === '/api/tickets/batch') {
-    const { jobId, assignee, keys = [] } = await readJson(req);
+    const { jobId, assignee } = await readJson(req);
     const scan = store.scan(Number(jobId)), seen = store.objectReviews(Number(jobId));
     if (!scan?.objects) return { status: 400, body: { error: 'Job chưa quét' } };
-    if (!assignee || !Array.isArray(keys)) return { status: 400, body: { error: 'Cần người nhận' } };
-    const live = new Set(store.tickets().filter((t) => t.jobId === scan.job.id && t.status !== 'accepted').map((t) => t.objKey));
+    if (!assignee) return { status: 400, body: { error: 'Cần người nhận' } };
+    const job = scan.job.id, mine = store.tickets().filter((t) => t.jobId === job), rounds = store.rounds(job), last = rounds.at(-1);
+    const left = scan.objects.filter((o) => !isReviewed(seen[o.key], o)).length;
+    if (left) return { status: 409, body: { error: `Còn ${left} object chưa duyệt: duyệt hết rồi mới gửi cả vòng` } };
+    const waiting = mine.filter((t) => t.status === 'submitted' && !t.held).length;
+    if (waiting) return { status: 409, body: { error: `Còn ${waiting} bài annotator đã nộp chưa nghiệm thu / trả lại` } };
+    // Annotator chưa nộp vòng trước thì lỗi mới gộp vào vòng đó (QC thu hồi sửa rồi gửi lại); đã nộp mà còn phiếu rút về thì chờ.
+    const out = mine.filter((t) => t.status === 'open' || t.status === 'returned').length, append = out > 0 && !!last && !last.submittedAt;
+    if (out && !append) return { status: 409, body: { error: `Annotator còn ${out} phiếu chưa nộp lại` } };
+    const n = append ? last.n : rounds.length + 1, sentAt = new Date().toISOString();
+    const live = new Set(mine.filter((t) => t.status !== 'accepted').map((t) => t.objKey));
     const made = [];
-    for (const key of keys) {
-      const obj = scan.objects.find((o) => o.key === key), r = seen[key];
-      if (!obj || r?.status !== 'returned' || live.has(key)) continue;
+    for (const obj of scan.objects) {
+      const key = obj.key, r = seen[key];
+      if (r?.status !== 'returned' || live.has(key)) continue;
       const is = r.issue || { tags: [], frame: null, text: '' };
       // Mọi lỗi tool báo QC giữ lại cho object này (một cuboid có thể có nhiều lỗi): mỗi lỗi giữ khoảng frame và, với lỗi
       // theo cặp, vật kia, để annotator tới đúng chỗ từng lỗi.
@@ -193,16 +205,52 @@ async function ticketRoute(req, p, url, me) {
         frames: is.frame != null ? [is.frame, is.frame] : issues.length ? [Math.min(...issues.map((x) => x.frames[0])), Math.max(...issues.map((x) => x.frames[1]))] : [obj.first, obj.last],
         rule: f ? f.rule : 'qc.manual', title: is.tags.join(' · ') || f?.title || 'QC trả lỗi', message: is.text || f?.message || '',
         priority: !is.tags.length && f && !found.some((x) => x.severity === 'error') ? 'warn' : 'must', assignee: String(assignee), status: 'open', createdBy: me.username,
-        fingerprint: obj.fingerprint,
-        thread: [...found.map((x) => ({ by: 'tool', name: 'Tool', role: 'bot', at: scan.startedAt, text: x.message, kind: 'tool' })),
-          { ...note({ username: r.by, name: r.by, role: 'qc' }, `${is.frame != null ? `Frame ${is.frame}: ` : ''}${is.text || is.tags.join(', ') || 'Xem lại object này'}`, 'assign'), at: r.at }] });
+        fingerprint: obj.fingerprint, round: n, sends: 1,
+        thread: [...found.map((x) => ({ by: 'tool', name: 'Tool', role: 'bot', at: scan.startedAt, text: x.message, kind: 'tool', round: n })),
+          { ...note({ username: r.by, name: r.by, role: 'qc' }, `${is.frame != null ? `Frame ${is.frame}: ` : ''}${is.text || is.tags.join(', ') || 'Xem lại object này'}`, 'assign'), at: r.at, round: n }] });
       store.setObjectReviews(scan.job.id, [{ key, fingerprint: r.fingerprint, issue: r.issue, ticket: t.id }], 'returned', r.by);
       made.push(t);
     }
+    // Phiếu QC trả lại và phiếu thiếu vật chưa gửi: tới tay annotator cùng lúc, lời trả lại vào trao đổi lúc gửi.
+    const held = new Set(mine.filter((t) => (t.status === 'submitted' && t.held) || t.status === 'draft').map((t) => t.id));
+    let reworked = 0;
+    for (const id of held) {
+      made.push(store.updateTicket(id, (x) => {
+        if (x.held) { x.thread.push({ ...x.held, round: n }); x.status = 'returned'; x.sends = (x.sends || 1) + 1; reworked += 1; } else x.status = 'open';
+        x.round = n; x.fixed = false; delete x.held;
+      }));
+    }
+    if (!made.length) return { status: 400, body: { error: 'Không có lỗi nào chờ gửi' } };
+    const ids = made.map((t) => t.id);
+    if (append) Object.assign(last, { tickets: [...last.tickets, ...ids], fresh: last.fresh + made.length - reworked, reworked: last.reworked + reworked });
+    else rounds.push({ n, sentAt, sentBy: me.username, tickets: ids, fresh: made.length - reworked, reworked, submittedAt: null, submittedBy: null });
+    store.saveRounds(job, rounds);
     return { body: made };
   }
-  // Phiếu "thiếu vật": QC thấy vật chưa có box, ghi theo frame + vị trí, không gắn object nào. Job không hoàn thành được tới khi
-  // nghiệm thu phiếu này.
+  // Annotator nộp cả vòng: chỉ khi mọi phiếu đang cần sửa của job đã đánh dấu "đã sửa". Đọc CVAT một lần để biết phiếu nào
+  // object chưa đổi so với lúc QC trả lỗi.
+  if (req.method === 'POST' && p === '/api/tickets/submit-all') {
+    const { jobId } = await readJson(req), job = Number(jobId);
+    const list = store.tickets().filter((t) => t.jobId === job && t.assignee === me.username && (t.status === 'open' || t.status === 'returned'));
+    if (!list.length) return { status: 400, body: { error: 'Không có phiếu nào cần nộp' } };
+    const notFixed = list.filter((t) => !t.fixed);
+    if (notFixed.length) return { status: 409, body: { error: `Còn ${notFixed.length} phiếu chưa đánh dấu đã sửa: ${notFixed.map((t) => t.id).join(', ')}` } };
+    const ann = list.some((t) => t.kind !== 'missing') ? await client.annotations(job).catch(() => null) : null;
+    const done = list.map((t) => {
+      const fp = t.kind !== 'missing' && ann ? liveFingerprint(t, ann) : null;
+      return store.updateTicket(t.id, (x) => {
+        x.beforeSubmit = x.status; // rút lại thì về đúng "chờ sửa" / "trả lại"
+        x.status = 'submitted';
+        x.unchanged = !!fp && !!x.fingerprint && fp === x.fingerprint;
+        x.thread.push({ ...note(me, '', 'submit'), round: x.round });
+      });
+    });
+    const rounds = store.rounds(job), last = rounds.at(-1);
+    if (last) { Object.assign(last, { submittedAt: new Date().toISOString(), submittedBy: me.username }); store.saveRounds(job, rounds); }
+    return { body: done };
+  }
+  // Phiếu "thiếu vật": QC thấy vật chưa có box, ghi theo frame + vị trí, không gắn object nào. Chờ gửi cùng vòng như lỗi khác;
+  // job không hoàn thành được tới khi nghiệm thu phiếu này.
   if (req.method === 'POST' && p === '/api/tickets/missing') {
     const { jobId, assignee, label = '', frame, where = '', text = '' } = await readJson(req);
     const scan = store.scan(Number(jobId));
@@ -212,39 +260,47 @@ async function ticketRoute(req, p, url, me) {
     const lbl = String(label).trim().slice(0, 60) || 'vật', at = String(where).trim().slice(0, 200), msg = String(text).trim().slice(0, 500);
     const t = store.addTicket({ jobId: scan.job.id, taskId: scan.job.taskId, taskName: scan.job.taskName, objKey: null, kind: 'missing', serverId: null,
       cvatId: null, label: lbl, frames: [frame, frame], rule: 'qc.missing', title: 'Thiếu box', where: at, message: [at, msg].filter(Boolean).join(' · '),
-      priority: 'must', assignee: String(assignee), status: 'open', createdBy: me.username, fingerprint: null,
+      priority: 'must', assignee: String(assignee), status: 'draft', createdBy: me.username, fingerprint: null,
       thread: [note(me, `Frame ${frame}: thiếu box ${lbl}${at ? ` ở ${at}` : ''}${msg ? `. ${msg}` : ''}`, 'assign')] });
     return { body: t };
   }
-  const m = p.match(/^\/api\/tickets\/(BUG-\d+)\/(comment|submit|withdraw|recall|accept|return)$/);
+  const m = p.match(/^\/api\/tickets\/(BUG-\d+)\/(comment|fix|withdraw|recall|accept|return)$/);
   if (req.method === 'POST' && m) {
     const [, id, act] = m, { text = '' } = await readJson(req);
     const t = store.tickets().find((x) => x.id === id);
-    if (!t) return { status: 404, body: { error: 'Không có phiếu này' } };
+    if (!t || (t.status === 'draft' && me.role !== 'qc')) return { status: 404, body: { error: 'Không có phiếu này' } };
     if (me.role !== 'qc' && t.assignee !== me.username) return { status: 403, body: { error: 'Phiếu này không giao cho bạn' } };
-    // QC thu hồi phiếu annotator chưa đụng tới: phiếu bỏ đi, object về lại "Chưa gửi" với đúng lỗi QC đã ghi để sửa rồi gửi lại.
+    // QC thu hồi phiếu annotator chưa đụng tới: phiếu bỏ đi (bỏ khỏi vòng đã gửi), object về lại "Chưa gửi" với đúng lỗi QC
+    // đã ghi để sửa rồi gửi lại. Phiếu thiếu vật chưa gửi thì bỏ luôn.
     if (act === 'recall') {
       if (me.role !== 'qc') return { status: 403, body: { error: 'Chỉ QC thu hồi được phiếu' } };
-      if (t.kind === 'missing') return { status: 409, body: { error: 'Phiếu thiếu vật: sửa bằng ghi chú' } };
-      if (t.status !== 'open' || t.thread.some((x) => x.role === 'annotator')) return { status: 409, body: { error: 'Annotator đã bắt đầu xử lý phiếu này, không thu hồi được' } };
+      if (t.kind === 'missing' && t.status !== 'draft') return { status: 409, body: { error: 'Phiếu thiếu vật đã gửi: sửa bằng ghi chú' } };
+      if (t.kind !== 'missing' && (t.status !== 'open' || t.thread.some((x) => x.role === 'annotator'))) return { status: 409, body: { error: 'Annotator đã bắt đầu xử lý phiếu này, không thu hồi được' } };
       store.saveTickets(store.tickets().filter((x) => x.id !== id));
-      const r = store.objectReviews(t.jobId)[t.objKey];
+      const rounds = store.rounds(t.jobId).map((r) => ({ ...r, tickets: r.tickets.filter((x) => x !== id) })).filter((r) => r.tickets.length);
+      store.saveRounds(t.jobId, rounds);
+      const r = t.objKey && store.objectReviews(t.jobId)[t.objKey];
       if (r) store.setObjectReviews(t.jobId, [{ key: t.objKey, fingerprint: r.fingerprint, ...(r.issue && { issue: r.issue }) }], 'returned', r.by);
       return { body: { ok: true } };
     }
     if ((act === 'accept' || act === 'return') && me.role !== 'qc') return { status: 403, body: { error: 'Chỉ QC nghiệm thu' } };
-    if (act === 'withdraw' && t.assignee !== me.username) return { status: 403, body: { error: 'Chỉ người được giao rút được bài nộp' } };
-    // Đã nghiệm thu thì khoá; bài đã nộp mà QC chưa xử lý thì annotator còn nộp lại (sửa ghi chú) hoặc rút về để sửa tiếp.
+    if ((act === 'withdraw' || act === 'fix') && t.assignee !== me.username) return { status: 403, body: { error: 'Chỉ người được giao làm được việc này' } };
+    // Đã nghiệm thu thì khoá. Annotator đánh dấu từng phiếu đã sửa rồi nộp cả vòng; bài đã nộp mà QC chưa xử lý thì còn rút về
+    // sửa tiếp. QC trả lại thì giữ lời trả lại, gửi cùng vòng sau.
     if (t.status === 'accepted' && act !== 'comment') return { status: 409, body: { error: 'Phiếu đã nghiệm thu, không sửa được' } };
-    if (act === 'withdraw' && t.status !== 'submitted') return { status: 409, body: { error: 'Chỉ rút được bài đang chờ QC' } };
-    const next = { submit: 'submitted', withdraw: t.beforeSubmit || 'open', accept: 'accepted', return: 'returned' }[act];
-    // Nộp / nghiệm thu: đọc lại object trên CVAT để biết annotator có sửa thật không, và để lần quét sau không bắt duyệt lại.
-    const fp = (act === 'submit' || act === 'accept') && t.kind !== 'missing' ? await liveFingerprint(t).catch(() => null) : null;
+    if (t.status === 'draft' && act !== 'comment') return { status: 409, body: { error: 'Phiếu chưa gửi annotator' } };
+    if (act === 'fix' && t.status !== 'open' && t.status !== 'returned') return { status: 409, body: { error: 'Chỉ đánh dấu được phiếu đang cần sửa' } };
+    if (act === 'withdraw' && (t.status !== 'submitted' || t.held)) return { status: 409, body: { error: 'Chỉ rút được bài đang chờ QC' } };
+    if (act === 'return' && t.status !== 'submitted') return { status: 409, body: { error: 'Chỉ trả lại được bài annotator đã nộp' } };
+    if (act === 'return' && !String(text).trim()) return { status: 400, body: { error: 'Ghi lý do trả lại' } };
+    // Nghiệm thu: đọc lại object trên CVAT để lần quét sau không bắt duyệt lại.
+    const fp = act === 'accept' && t.kind !== 'missing' ? await client.annotations(t.jobId).then((ann) => liveFingerprint(t, ann)).catch(() => null) : null;
     const updated = store.updateTicket(id, (x) => {
-      if (act === 'submit' && x.status !== 'submitted') x.beforeSubmit = x.status; // rút lại thì về đúng "chờ sửa" / "trả lại"
-      if (next) x.status = next;
-      if (act === 'submit') x.unchanged = !!fp && !!x.fingerprint && fp === x.fingerprint;
-      if (String(text).trim() || act !== 'comment') x.thread.push(note(me, text, act));
+      if (act === 'return') { x.held = { ...note(me, text, 'return') }; return; }
+      if (act === 'accept') { x.status = 'accepted'; delete x.held; }
+      if (act === 'withdraw') x.status = x.beforeSubmit || 'open';
+      if (act === 'fix') x.fixed = true;
+      if (String(text).trim() || act !== 'comment') x.thread.push({ ...note(me, text, act), ...(x.round && { round: x.round }) });
     });
     if (act === 'accept') {
       const obj = store.scan(t.jobId)?.objects?.find((o) => o.key === t.objKey);
@@ -255,11 +311,44 @@ async function ticketRoute(req, p, url, me) {
   return { status: 404, body: { error: 'Không có' } };
 }
 
-/** Dấu vân tay hiện tại của object của phiếu, đọc thẳng từ CVAT ('deleted' nếu object đã bị xoá). */
-async function liveFingerprint(t) {
-  const ann = await client.annotations(t.jobId);
+/** Dấu vân tay hiện tại của object của phiếu trong annotation CVAT vừa đọc (`ann`); 'deleted' nếu object đã bị xoá. */
+function liveFingerprint(t, ann) {
   const item = ((t.kind === 'track' ? ann.tracks : ann.shapes) || []).find((x) => x.id === t.serverId);
   return item ? fingerprint(item) : 'deleted';
+}
+
+/** Object đã duyệt: theo đúng nội dung hiện tại, hoặc đã trả lỗi và đang có phiếu (cùng cách tính với plugin). */
+const isReviewed = (r, o) => !!r && (r.fingerprint === o.fingerprint || (!!r.ticket && r.status === 'returned'));
+
+/**
+ * Số liệu chất lượng theo vòng QC ↔ annotator, cho dashboard: mỗi job (số vòng rework, lỗi mỗi vòng và trên 100 object,
+ * tỉ lệ đạt ngay lần đầu, thời gian từng vòng), gộp theo annotator và project.
+ */
+function qualityStats() {
+  const all = store.tickets(), mins = (a, b) => (a && b ? Math.round((Date.parse(b) - Date.parse(a)) / 60000) : null);
+  const jobs = [...new Set(all.map((t) => t.jobId))].map((jobId) => {
+    const rounds = store.rounds(jobId), scan = store.scan(jobId), objects = scan?.objects?.length || 0;
+    const mine = all.filter((t) => t.jobId === jobId && t.status !== 'draft'), byId = new Map(mine.map((t) => [t.id, t]));
+    const accepted = mine.filter((t) => t.status === 'accepted');
+    return { jobId, projectId: scan?.job.projectId ?? null, taskName: scan?.job.taskName || null, assignee: mine[0]?.assignee || null, objects,
+      done: !!store.completion(jobId), reworkRounds: Math.max(0, rounds.length - 1), tickets: mine.length,
+      firstPass: accepted.length ? accepted.filter((t) => (t.sends || 1) === 1).length / accepted.length : null,
+      rounds: rounds.map((r, i) => {
+        const tags = {};
+        for (const id of r.tickets) for (const tag of (byId.get(id)?.title || '').split(' · ').filter(Boolean)) tags[tag] = (tags[tag] || 0) + 1;
+        return { n: r.n, sentAt: r.sentAt, submittedAt: r.submittedAt, errors: r.tickets.length, fresh: r.fresh, reworked: r.reworked,
+          per100: objects ? Math.round((r.tickets.length / objects) * 1000) / 10 : null, tags,
+          annotatorMin: mins(r.sentAt, r.submittedAt), qcMin: i ? mins(rounds[i - 1].submittedAt, r.sentAt) : null };
+      }) };
+  });
+  const group = (key) => Object.values(jobs.reduce((m, j) => {
+    const g = (m[j[key] ?? '—'] ||= { [key]: j[key], jobs: 0, reworkRounds: 0, tickets: 0, accepted: 0, firstPass: 0 });
+    const acc = all.filter((t) => t.jobId === j.jobId && t.status === 'accepted');
+    Object.assign(g, { jobs: g.jobs + 1, reworkRounds: g.reworkRounds + j.reworkRounds, tickets: g.tickets + j.tickets, accepted: g.accepted + acc.length,
+      firstPass: g.firstPass + acc.filter((t) => (t.sends || 1) === 1).length });
+    return m;
+  }, {})).map((g) => ({ ...g, avgReworkRounds: g.reworkRounds / g.jobs, firstPassRate: g.accepted ? g.firstPass / g.accepted : null }));
+  return { jobs, byAnnotator: group('assignee'), byProject: group('projectId') };
 }
 
 /** Lỗi QC ghi khi trả object: nhãn lỗi, frame thấy lỗi, ghi chú, mục tool báo liên quan. */
@@ -352,7 +441,7 @@ async function route(req, res) {
   }
   // Annotator chỉ xem / trả lời phiếu của mình và xem guideline; còn lại là việc của QC.
   const annotatorMay = (req.method === 'GET' && (p === '/api/tickets' || p.startsWith('/api/specs/') || p === '/api/status'))
-    || (req.method === 'POST' && /^\/api\/tickets\/BUG-\d+\/(comment|submit|withdraw)$/.test(p));
+    || (req.method === 'POST' && (/^\/api\/tickets\/BUG-\d+\/(comment|fix|withdraw)$/.test(p) || p === '/api/tickets/submit-all'));
   if (me && me.role !== 'qc' && !annotatorMay) return send(res, 403, { error: 'Chỉ QC làm được việc này' });
 
   // Phiếu giao việc sửa lỗi.
@@ -371,6 +460,7 @@ async function route(req, res) {
     }
   }
   if (req.method === 'GET' && p === '/api/jobs') return send(res, 200, await listJobs());
+  if (req.method === 'GET' && p === '/api/stats') return send(res, 200, qualityStats());
 
   const m = p.match(/^\/api\/jobs\/(\d+)(\/[\w.]+)?$/);
   if (m) {
@@ -380,7 +470,9 @@ async function route(req, res) {
       // Guideline đã đổi sau lần quét thì trang nhắc quét lại.
       const specNow = now && { name: now.name, version: now.version, project: now.project };
       return send(res, 200, { run: publicRun(runs.get(jobId)), result, reviews: store.reviews(jobId), specNow,
-        objectReviews: store.objectReviews(jobId), completion: store.completion(jobId), prev: prevView(store.prevScan(jobId)),
+        objectReviews: store.objectReviews(jobId), completion: store.completion(jobId), prev: prevView(store.prevScan(jobId)), rounds: store.rounds(jobId),
+        // Phiếu chờ gửi cùng vòng ngoài object trả lỗi: bài QC trả lại, phiếu thiếu vật chưa gửi.
+        pendingTickets: store.tickets().filter((t) => t.jobId === jobId && (t.held || t.status === 'draft')).length,
         missing: store.tickets().filter((t) => t.jobId === jobId && t.kind === 'missing') });
     }
     // Duyệt object: lưu kèm dấu vân tay lúc duyệt, để track bị sửa sau đó tự về "Chưa xem".

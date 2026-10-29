@@ -1,7 +1,7 @@
 'use strict';
 /*
  * Màn "Việc của tôi" của annotator (Figma "Annotator Workspace"): phiếu QC giao cho mình, nhóm theo job ở cột trái,
- * hàng đợi lỗi có tìm / lọc, mở CVAT đúng object, trả lời và nộp lại cho QC nghiệm thu.
+ * hàng đợi lỗi có tìm / lọc, mở CVAT đúng object, trả lời, đánh dấu từng lỗi đã sửa rồi nộp cả vòng cho QC nghiệm thu.
  */
 (function () {
   const { api, esc, toast, $, icon, classIcon, fmtTime, PAGE, ticketObj, ticketUrl: cvatUrl } = window.QC;
@@ -45,10 +45,13 @@
   function render() {
     const me = window.QC.S.me, list = mine(), t = list.find((x) => x.id === A.cur);
     const n = (...s) => list.filter((x) => s.includes(x.status)).length;
+    // Nộp cả vòng một lần, khi mọi lỗi đang cần sửa đã đánh dấu "Đã sửa" (để QC đếm được số lần rework).
+    const todo = list.filter(canSubmit), left = todo.filter((x) => !x.fixed).length;
     const head = `<div class="crumb">KHÔNG GIAN CỦA BẠN</div>
       <div class="page-h"><div><h1>Xin chào ${esc(me.name)}</h1>
         <div class="sub">${A.job ? `Job #${A.job} · ${list.length} lỗi được giao · ${list.filter((x) => x.priority === 'must' && canSubmit(x)).length} lỗi ưu tiên cao · ${n('submitted')} lỗi chờ QC` : 'Chưa có lỗi nào được giao.'}</div></div>
-        ${t ? `<div class="right"><a class="btn" href="${esc(cvatUrl(t))}" target="pointsnap-cvat" rel="noopener">↗ Mở CVAT</a></div>` : ''}</div>`;
+        <div class="right">${todo.length ? `<button class="btn primary" data-asubmitall ${left ? `disabled title="Còn ${left} lỗi chưa đánh dấu đã sửa"` : ''}>Nộp tất cả (${todo.length - left}/${todo.length} đã sửa)</button>` : ''}
+        ${t ? `<a class="btn" href="${esc(cvatUrl(t))}" target="pointsnap-cvat" rel="noopener">↗ Mở CVAT</a>` : ''}</div></div>`;
     if (!A.job) { $('#main').innerHTML = `${head}<div class="card"><div class="empty">QC chưa giao phiếu sửa lỗi nào cho bạn.</div></div>`; return; }
     const pct = (k) => (list.length ? Math.round((k / list.length) * 100) : 0);
     const tiles = `<div class="tiles">
@@ -71,7 +74,7 @@
         <td><span class="pill ${STATUS[x.status][1]}">${STATUS[x.status][0]}</span></td>
         <td class="muted a-note">${esc(qcNote(x))}</td>
         <td class="ops"><a class="btn sm" href="${esc(cvatUrl(x))}" target="pointsnap-cvat" rel="noopener">CVAT</a>
-          <button class="btn sm" data-asubmit="${x.id}" ${canSubmit(x) ? '' : 'disabled'}>${canSubmit(x) ? 'Nộp' : 'Đã nộp'}</button></td></tr>`).join('')
+          <button class="btn sm" data-afix="${x.id}" ${canSubmit(x) ? '' : 'disabled'}>${!canSubmit(x) ? 'Đã nộp' : x.fixed ? '✓ Đã sửa' : 'Đã sửa'}</button></td></tr>`).join('')
         || '<tr><td colspan="6" class="muted">Không có lỗi khớp bộ lọc.</td></tr>'}
       </tbody></table></div>
       <div class="pager"><span class="muted">Hiển thị ${rows.length ? A.page * PAGE + 1 : 0}–${A.page * PAGE + shown.length} / ${rows.length} lỗi</span>
@@ -86,7 +89,7 @@
       <div class="a-k">TRAO ĐỔI VỚI QC</div>
       <div class="msgs">${t.thread.map((m) => `<div class="msg ${m.role}"><div class="msg-h"><b>${m.role === 'bot' ? 'Tool' : esc(m.name)}</b><span class="right muted">${fmtTime(m.at)}</span></div><div>${esc(m.text) || '<span class="muted">—</span>'}</div></div>`).join('')}</div>
       ${t.status === 'accepted' ? '<div class="muted small">QC đã nghiệm thu đạt.</div>' : `<textarea id="a-text" rows="2" maxlength="1000" placeholder="Đã sửa gì, ở frame nào…" aria-label="Phản hồi cho QC"></textarea>
-      <div class="actions"><button class="btn primary" data-aact="submit">Nộp lại</button>${t.status === 'submitted' ? '<button class="btn" data-aact="withdraw" title="QC chưa xử lý: rút về Chưa nộp để sửa tiếp">Rút lại để sửa</button>' : ''}<button class="btn ghost" data-aact="comment">Gửi ghi chú</button></div>`}</div>` : '';
+      <div class="actions">${canSubmit(t) ? `<button class="btn primary" data-aact="fix">${t.fixed ? 'Sửa ghi chú đã sửa' : 'Đánh dấu đã sửa'}</button>` : ''}${t.status === 'submitted' ? '<button class="btn" data-aact="withdraw" title="QC chưa xử lý: rút về Chưa nộp để sửa tiếp">Rút lại để sửa</button>' : ''}<button class="btn ghost" data-aact="comment">Gửi ghi chú</button></div>`}</div>` : '';
     const counts = [['open', 'Cần sửa'], ['returned', 'Trả lại'], ['submitted', 'Đã nộp'], ['accepted', 'Đạt']];
     const filter = `<div class="card"><div class="card-h"><h2>Bộ lọc trạng thái</h2></div><div class="a-filter">
       ${counts.map(([s, l]) => `<label class="check"><input type="checkbox" data-astatus="${s}"${A.status.has(s) ? ' checked' : ''}> ${l}<span class="right muted num">${n(s)}</span></label>`).join('')}</div></div>`;
@@ -103,8 +106,16 @@
 
   async function act(id, kind, text = '') {
     try {
-      const t = await api(`/api/tickets/${id}/${kind}`, { method: 'POST', body: JSON.stringify({ text }) });
-      toast(kind === 'withdraw' ? 'Đã rút về Chưa nộp' : kind !== 'submit' ? 'Đã gửi ghi chú' : t.unchanged ? 'Đã nộp, nhưng object trên CVAT chưa đổi: bạn đã Lưu (Ctrl+S) chưa?' : 'Đã nộp lại cho QC');
+      await api(`/api/tickets/${id}/${kind}`, { method: 'POST', body: JSON.stringify({ text }) });
+      toast(kind === 'withdraw' ? 'Đã rút về Chưa nộp: sửa xong nộp lại cả vòng' : kind === 'fix' ? 'Đã đánh dấu đã sửa' : 'Đã gửi ghi chú');
+      await open();
+    } catch (error) { toast(error.message); }
+  }
+
+  async function submitAll() {
+    try {
+      const same = (await api('/api/tickets/submit-all', { method: 'POST', body: JSON.stringify({ jobId: A.job }) })).filter((x) => x.unchanged);
+      toast(same.length ? `Đã nộp, nhưng ${same.length} object trên CVAT chưa đổi: bạn đã Lưu (Ctrl+S) chưa?` : 'Đã nộp cả vòng cho QC');
       await open();
     } catch (error) { toast(error.message); }
   }
@@ -113,8 +124,9 @@
     if (window.QC.S.view !== 'mine') return;
     const j = e.target.closest('[data-ajob]');
     if (j) { A.job = Number(j.dataset.ajob); A.cur = null; A.page = 0; open(); return; }
-    const sub = e.target.closest('[data-asubmit]');
-    if (sub) { act(sub.dataset.asubmit, 'submit'); return; }
+    const fix = e.target.closest('[data-afix]');
+    if (fix) { act(fix.dataset.afix, 'fix'); return; }
+    if (e.target.closest('[data-asubmitall]')) { submitAll(); return; }
     const b = e.target.closest('[data-aact]');
     if (b) {
       const text = $('#a-text')?.value || '';

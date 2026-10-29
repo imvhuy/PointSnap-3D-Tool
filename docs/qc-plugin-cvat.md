@@ -15,6 +15,31 @@ hay đăng nhập riêng.
 | Annotator | Lỗi QC trả về của job đang mở: tới box, đọc lời QC, Nộp. Nộp bị chặn nếu còn thay đổi chưa Lưu, và có cảnh báo nếu object chưa đổi |
 | Mọi người | Bảng annotator của extension (mặt đất, kiểm box, dải track, sửa cả track, spec), không cần cài extension. Spec đọc / lưu ở dịch vụ QC theo project (cả nhóm dùng chung; chỉ QC lưu được) |
 
+Tab PointSnap (biểu tượng bảng kẹp có dấu tích, số đỏ = việc đang chờ mình) gọn cho thanh bên hẹp (đã thử 260–300 px,
+không tràn ngang). Dòng đầu là thanh tiến độ duyệt, giờ quét và ⟳. Tab con chia đều, đặt theo lượt của ai:
+
+| Bên | Tab con |
+|---|---|
+| QC | **Duyệt** (object chưa xem; trên đầu là thanh "N lỗi chờ gửi": mở ra sửa / bỏ từng lỗi, rồi **Gửi V*n***) · **Đang sửa** (phiếu chờ annotator; thu hồi được phiếu annotator chưa đụng tới) · **Chờ QC** (nghiệm thu / trả lại) · **Xong** |
+| Annotator | **Cần sửa** (Đã sửa từng lỗi, rồi **Nộp tất cả**) · **Chờ QC** (rút về sửa tiếp) · **Xong** |
+
+**Làm theo vòng** (để đếm số lần rework cho dashboard chất lượng):
+
+- QC trả lỗi, trả lại bài nộp hay tạo phiếu thiếu vật thì lỗi vào hàng **chờ gửi**, annotator chưa thấy.
+- Nút **Gửi V*n*** chỉ bấm được khi QC đã duyệt đủ 100% object và xử lý hết bài annotator nộp; lý do hiện ngay dưới thanh.
+  Mỗi lần gửi là một vòng: V1 là lần duyệt đầu, mỗi lần duyệt lại là một vòng mới. Annotator chưa nộp mà QC thu hồi rồi
+  gửi lại thì vẫn tính cùng vòng.
+- Nghiệm thu có hiệu lực ngay. Trả lại thì giữ lời trả lại tới khi gửi vòng sau (bấm lại để sửa lời, hoặc Nghiệm thu để bỏ).
+- Annotator đánh dấu **Đã sửa** từng lỗi; **Nộp tất cả** chỉ bấm được khi mọi lỗi của vòng đã đánh dấu.
+- Dịch vụ lưu mỗi vòng (giờ gửi, giờ nộp, phiếu, số lỗi mới / làm lại). Số liệu ở `GET /api/stats`; trang dashboard chưa làm.
+
+- Tab chờ chính người đang xem làm có số đỏ.
+- Mỗi phiếu là một dòng gọn: sọc màu theo mức lỗi, vật + mã phiếu, nhãn lỗi + frame, tin cuối + số tin. Bấm dòng để mở:
+  từng lỗi (nút frame, ↔ vật kia), **trao đổi QC ↔ annotator** kiểu chat (tin của mình bên phải), ô trả lời và các nút.
+  Nút "Gửi" gửi ghi chú; nộp / trả lại dùng luôn chữ trong ô đó.
+- Chấm xanh ở phiếu và ở tab khi bên kia viết tin cuối sau lần mình mở phiếu trước. Lần mở được nhớ trong trình duyệt.
+- Ký hiệu: ◎ tới box, ↔#N vật kia, F3–5 tới frame, ⟳ quét lại; tên đầy đủ ở chú thích khi rê chuột.
+
 Bảng annotator là đúng các script MAIN world của extension: dịch vụ gộp theo thứ tự `extension/manifest.json` ở
 `/pointsnap-qc/annotator-panel.js`, plugin nạp file đó và trả lời yêu cầu cấu hình / lưu spec của bảng thay cho
 `settings-bridge.js`. Máy nào vẫn cài extension thì chỉ một bảng chạy, và spec lấy từ dịch vụ QC.

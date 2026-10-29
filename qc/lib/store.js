@@ -71,8 +71,10 @@ class Store {
 
   /**
    * Phiếu giao việc sửa lỗi (QC → annotator): [{ id: 'BUG-101', jobId, taskId, objKey, kind, serverId, cvatId, label, frames,
-   * rule, title, message, priority: 'must' | 'warn', assignee, status: 'open' | 'submitted' | 'accepted' | 'returned',
-   * thread: [{ by, name, role, at, text, kind }], createdBy, createdAt, updatedAt }].
+   * rule, title, message, priority: 'must' | 'warn', assignee,
+   * status: 'draft' (thiếu vật chưa gửi) | 'open' | 'submitted' | 'accepted' | 'returned',
+   * round (vòng gửi gần nhất), sends (số lần gửi annotator), fixed (annotator đánh dấu đã sửa, chờ nộp cả vòng),
+   * held (QC trả lại, chờ gửi cùng vòng sau), thread: [{ by, name, role, at, text, kind, round }], createdBy, createdAt, updatedAt }].
    */
   tickets() { return this.read('tickets', 'all', []); }
 
@@ -100,6 +102,13 @@ class Store {
     this.saveTickets(all);
     return t;
   }
+
+  /**
+   * Các vòng QC ↔ annotator của job: [{ n, sentAt, sentBy, tickets: [id], fresh, reworked, submittedAt, submittedBy }].
+   * Một vòng = QC gửi hết lỗi một lần (sau khi duyệt đủ object) → annotator nộp hết một lần.
+   */
+  rounds(jobId) { return this.read('objects', `job-${jobId}-rounds`, []); }
+  saveRounds(jobId, list) { this.write('objects', `job-${jobId}-rounds`, list); }
 
   /** Lần QC bấm hoàn thành job: { at, by, scanAt } hoặc null. */
   completion(jobId) { return this.read('objects', `job-${jobId}-done`); }

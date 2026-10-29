@@ -28,7 +28,7 @@ extension (mục 4–6) chưa làm.
   không được làm proxy mở cho mọi đường dẫn:
   - `GET /api/me`, `GET /api/status`
   - `GET /api/jobs/<số>`; `POST /api/jobs/<số>/(scan|objects|reviews|complete)`
-  - `GET /api/tickets`, `GET /api/tickets?job=<số>`; `POST /api/tickets/batch`; `POST /api/tickets/BUG-<số>/(comment|submit|accept|return)`
+  - `GET /api/tickets`, `GET /api/tickets?job=<số>`; `POST /api/tickets/batch`, `POST /api/tickets/submit-all`; `POST /api/tickets/BUG-<số>/(comment|fix|withdraw|accept|return)`
   - `GET /api/users`
 - Nội dung từ dịch vụ (lời QC, ghi chú annotator, tên) chỉ hiện bằng `textContent`, không `innerHTML`: người khác viết được
   nội dung này.
@@ -43,11 +43,13 @@ extension (mục 4–6) chưa làm.
 | Quét lại | `POST /api/jobs/<jobId>/scan` (202); hỏi lại `GET /api/jobs/<jobId>` tới khi `run.state` là `done` / `error` | Chỉ QC |
 | QC duyệt object | `POST /api/jobs/<jobId>/objects` `{ keys: ['track:123'], status: 'ok' \| 'returned' \| null, issue? }` | `issue = { tags: [..], frame, text, finding }` khi trả lỗi |
 | QC kết luận mục tool báo | `POST /api/jobs/<jobId>/reviews` `{ key, verdict: 'confirmed' \| 'false_alarm' \| null }` | |
-| Gửi lỗi cho annotator | `POST /api/tickets/batch` `{ jobId, assignee, keys }` → danh sách phiếu | Gửi mọi object đã trả lỗi mà chưa có phiếu |
+| Gửi cả vòng cho annotator | `POST /api/tickets/batch` `{ jobId, assignee }` → danh sách phiếu đã gửi | 409 nếu còn object chưa duyệt / bài nộp chưa xử lý. Gửi một lần mọi object đã trả lỗi chưa có phiếu, bài QC trả lại, phiếu thiếu vật chưa gửi |
 | Hoàn thành job | `POST /api/jobs/<jobId>/complete` → 409 kèm lý do nếu chưa đủ | Đủ 100% object, gửi hết lỗi, nghiệm thu hết phiếu |
 | Phiếu | `GET /api/tickets?job=<jobId>` (QC: mọi phiếu của job) · `GET /api/tickets` (annotator: phiếu của mình) | |
-| Annotator nộp / ghi chú | `POST /api/tickets/<id>/submit` hoặc `/comment` `{ text }` | Phiếu trả về có `unchanged: true` nếu object trên CVAT chưa đổi |
-| QC nghiệm thu / trả lại | `POST /api/tickets/<id>/accept` hoặc `/return` `{ text }` | |
+| Annotator đánh dấu đã sửa / ghi chú | `POST /api/tickets/<id>/fix` hoặc `/comment` `{ text }` | `fix` đặt `fixed: true`, chưa nộp |
+| Annotator nộp cả vòng | `POST /api/tickets/submit-all` `{ jobId }` → danh sách phiếu đã nộp | 409 nếu còn phiếu chưa `fixed`. Phiếu có `unchanged: true` nếu object trên CVAT chưa đổi |
+| QC nghiệm thu / trả lại | `POST /api/tickets/<id>/accept` hoặc `/return` `{ text }` | Nghiệm thu có hiệu lực ngay. Trả lại (bắt buộc ghi lý do) chỉ giữ ở `held`, tới tay annotator khi QC gửi vòng sau |
+| Số liệu chất lượng | `GET /api/stats` → `{ jobs, byAnnotator, byProject }` | Chỉ QC. Theo vòng: số lỗi, lỗi / 100 object, nhãn lỗi, phút annotator / QC; số vòng rework, tỉ lệ đạt ngay lần đầu |
 | Người nhận phiếu | `GET /api/users` → `[{ username, name, role }]` | Gồm người được giao job trên CVAT |
 
 Một số trường hay dùng:
@@ -93,7 +95,7 @@ Một số trường hay dùng:
   chọn box theo `serverId`, khoá camera, hiện lời QC và các trao đổi.
 - **Nộp**:
   - Nếu CVAT còn thay đổi chưa Lưu thì nhắc Lưu trước.
-  - Gọi `POST /api/tickets/<id>/submit`.
+  - Đánh dấu từng phiếu bằng `POST /api/tickets/<id>/fix`, rồi nộp cả vòng bằng `POST /api/tickets/submit-all`.
   - Phiếu trả về `unchanged: true` thì báo "object chưa đổi trên CVAT, bạn đã Lưu chưa?". Với lỗi theo cặp (vẽ trùng, đứt
     track) thì bình thường: sửa bằng cách xoá object kia.
 - Không thấy kết quả quét hay guideline editor: dịch vụ trả 403 cho annotator.
