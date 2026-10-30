@@ -279,7 +279,7 @@
       + `<button data-action="plan-sync-size" data-source="median" ${rigidOnly('Cả track lấy trung vị kích thước các keyframe')}>Cỡ trung vị</button>`
       + `<button data-action="plan-smooth-yaw" ${rigidOnly('Sửa lật đầu, làm mượt hướng')}>Mượt yaw</button>`
       + `<button data-action="plan-thin" ${t.locked ? off('Box đang khóa') : 'title="Bỏ keyframe mà CVAT tự nội suy lại được"'}>Tỉa keyframe</button>`
-      + `<button data-action="snap-track" ${t.locked ? off('Box đang khóa') : 'title="Một lần bấm: đo mặt đất ở mọi frame track xuất hiện, hạ / nâng đáy box chạm đất (thêm keyframe ở frame nội suy còn lệch), ghi luôn, chưa Save"'}>Hạ đáy mọi frame</button></div>`
+      + `<button data-action="snap-track" ${t.locked ? off('Box đang khóa') : 'title="Một lần bấm, như bấm Hạ đáy ở từng frame track xuất hiện (cả frame nội suy): đo mặt đất ở chính frame đó, hạ / nâng đáy box chạm đất; ghi luôn, chưa Save"'}>Hạ đáy mọi frame</button></div>`
       + attrSection(t);
   }
 

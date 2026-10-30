@@ -23,7 +23,10 @@ const store = new Store(config.home);
 const client = config.cvatToken ? new CvatClient({ url: config.cvatUrl, token: config.cvatToken }) : null;
 const PUBLIC = path.join(__dirname, 'public');
 const EXTENSION = path.join(__dirname, '..', 'extension');
-const ANNOTATOR_SCRIPTS = require('../extension/manifest.json').content_scripts.find((c) => c.world === 'MAIN').js;
+// Đọc manifest mỗi lần phục vụ: thêm script mới vào extension không cần khởi động lại dịch vụ (bảng thiếu module
+// sẽ hỏng ngầm, ví dụ không đọc được point cloud frame khác).
+const annotatorScripts = () => JSON.parse(fs.readFileSync(path.join(EXTENSION, 'manifest.json'), 'utf8'))
+  .content_scripts.find((c) => c.world === 'MAIN').js;
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
 const auth = new Auth({ cvatUrl: config.cvatUrl, qcUsers: config.qcUsers, store });
 
@@ -394,7 +397,7 @@ async function route(req, res) {
   // Trang dùng chung merge / diff guideline với extension.
   if (req.method === 'GET' && p === '/vendor/guideline.js') return send(res, 200, fs.readFileSync(require.resolve('../extension/src/annotator/guideline.js')), TYPES['.js']);
   // Bảng annotator cho plugin trong CVAT: đúng các script MAIN world của extension, theo thứ tự manifest, gộp một file.
-  if (req.method === 'GET' && p === '/annotator-panel.js') return send(res, 200, ANNOTATOR_SCRIPTS.map((f) => fs.readFileSync(path.join(EXTENSION, f), 'utf8')).join(';\n'), TYPES['.js']);
+  if (req.method === 'GET' && p === '/annotator-panel.js') return send(res, 200, annotatorScripts().map((f) => fs.readFileSync(path.join(EXTENSION, f), 'utf8')).join(';\n'), TYPES['.js']);
   if (req.method === 'GET' && !p.startsWith('/api/')) {
     const file = path.join(PUBLIC, p === '/' ? 'index.html' : path.normalize(p).replace(/^([\\/])+/, ''));
     if (!file.startsWith(PUBLIC + path.sep) || !fs.existsSync(file)) return send(res, 404, { error: 'Không có' });

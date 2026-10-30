@@ -484,11 +484,12 @@
   }
 
   /**
-   * z mặt đất dưới box ở frame `f` (mức đáy box cần chạm), đo như nút Hạ đáy nhưng trên point cloud của chính frame đó
-   * (đọc gói frame từ CVAT). Hạ / nâng không đổi chân box, nên nhớ theo frame + tâm XY / góc / kích thước: lượt kiểm tra
-   * lại sau khi ghi không phải đọc lại point cloud. null: không đo được đủ tin cậy.
+   * Mức đáy box cần chạm ở frame `f`, đo như nút Hạ đáy nhưng trên point cloud của chính frame đó (frame khác frame
+   * đang mở thì đọc gói frame từ CVAT): đáy đã nằm trên mặt đất đo được thì giữ nguyên, không thì đặt giữa mặt đất dưới
+   * các góc đáy. Hạ / nâng không đổi chân box, nên nhớ theo frame + tâm XY / góc / kích thước: lượt kiểm tra lại sau khi
+   * ghi không phải đọc lại point cloud. null: không đo được đủ tin cậy.
    */
-  async function groundAt(ctx, f) {
+  async function snapTargetAt(ctx, f) {
     const g = S.guideline, b = f.box;
     if (S.groundCache?.jobId !== ctx.job.id || S.groundCache.version !== S.settingsVersion) {
       S.groundCache = { jobId: ctx.job.id, version: S.settingsVersion, byKey: new Map() };
@@ -497,7 +498,8 @@
     if (!S.groundCache.byKey.has(key)) {
       const frame = Measure.buildFrame(await A.frameCloud(ctx, f.frame), await A.frameBoxes(ctx.job, f.frame), g);
       const contact = Checks.usableContact(Terrain.measureContact(frame.terrain, frame.grid, b), b, g);
-      S.groundCache.byKey.set(key, contact ? B.bottomZ(b) + contact.snapDzM : null);
+      const bottom = B.bottomZ(b);
+      S.groundCache.byKey.set(key, !contact ? null : Math.abs(contact.gapM) < SNAP_EPS_M ? bottom : bottom + contact.snapDzM);
     }
     return S.groundCache.byKey.get(key);
   }
@@ -511,53 +513,73 @@
   }
 
   const SNAP_PASSES = 3;
+  // Đáy lệch mặt đất đo được dưới mức này coi như đã chạm đất (nút Hạ đáy một frame và Hạ đáy mọi frame cùng ngưỡng).
+  const SNAP_EPS_M = 0.005;
 
   /**
-   * Hạ đáy cả track bằng một nút, không xem trước: đo mặt đất ở mọi frame track xuất hiện (cả frame nội suy), dời
-   * keyframe lệch và thêm keyframe ở frame nội suy còn lệch rồi ghi luôn vào CVAT (chưa Save, Hoàn tác được). Ghi xong
-   * đọc lại từng frame đúng như CVAT nội suy và lặp tối đa SNAP_PASSES lượt cho tới khi mọi frame đo được đều sát đất.
+   * Hạ đáy mọi frame track xuất hiện bằng một nút, không xem trước: như bấm Hạ đáy ở từng frame (cả frame nội suy).
+   * Keyframe thì dời; frame nội suy mà nội suy chưa đưa đáy về đúng mặt đất thì thêm keyframe (chỉ ở frame cần, frame
+   * nội suy đã khớp thì để CVAT tự nội suy). Ghi luôn vào CVAT (chưa Save, Hoàn tác được), đọc lại từng frame đúng như
+   * CVAT nội suy và lặp tối đa SNAP_PASSES lượt cho tới khi mọi frame đo được đều chạm đất.
    */
   async function snapTrack(ctx, objectState) {
-    const g = S.guideline, title = 'Hạ đáy cả track', merged = new Map(), failed = new Set();
-    let frames = [], ground = new Map(), maxShiftM = 0, locked = 0;
+    const title = 'Hạ đáy mọi frame', merged = new Map(), failed = new Set();
+    let frames = [], first = null, ground = new Map(), locked = 0, readError = '';
     S.busy = true;
     try {
       for (let pass = 0; ; pass += 1) {
         frames = await A.trackFrames(ctx.job, objectState);
+        if (!first) first = new Map(frames.map((f) => [f.frame, B.bottomZ(f.box)]));
         ground = new Map();
         for (const [i, f] of frames.entries()) {
           if (!pass && i % 5 === 0) notify({ kind: 'info', text: `${title}: đang đo mặt đất ${i + 1}/${frames.length} frame (frame ${f.frame})…` });
           let z = null;
-          try { z = await groundAt(ctx, f); } catch (_) { failed.add(f.frame); }
+          try {
+            z = await snapTargetAt(ctx, f);
+          } catch (error) {
+            failed.add(f.frame);
+            readError = readError || error.message;
+          }
           ground.set(f.frame, z);
         }
-        const { edits, summary } = Ops.planGroundSnap(frames, ground, g.ground.okM);
+        const { edits } = Ops.planGroundSnap(frames, ground, SNAP_EPS_M);
         if (!edits.length || pass === SNAP_PASSES) break;
         const result = await A.applyEdits(ctx.job, new Map(frames.map((f) => [f.frame, f])), edits);
         mergeRecords(merged, result.record);
         locked = Math.max(locked, result.locked);
-        maxShiftM = Math.max(maxShiftM, summary.maxShiftM);
         if (!result.saved) break;
       }
     } finally {
       S.busy = false;
     }
-    const record = [...merged.values()];
+    if (!frames.length) {
+      notify({ kind: 'error', text: `${title}: không đọc được frame nào của track trong job này.` });
+      return;
+    }
     const measured = frames.filter((f) => Number.isFinite(ground.get(f.frame)));
-    const off = measured.filter((f) => Math.abs(ground.get(f.frame) - B.bottomZ(f.box)) > g.ground.okM).length;
+    const why = failed.size ? `; ${failed.size} frame không đọc được point cloud: ${readError}` : '';
+    if (!measured.length) {
+      notify({ kind: 'error', text: `${title}: không đo được mặt đất ở frame nào trong ${frames.length} frame (ít điểm đất, quá xa${why}). Chưa ghi gì.` });
+      return;
+    }
     const unmeasured = frames.length - measured.length;
-    const skipped = unmeasured ? ` ${unmeasured} frame không đo được mặt đất (ít điểm đất, quá xa${failed.size ? `; ${failed.size} frame không đọc được point cloud` : ''}) nên giữ theo nội suy, căn bằng mắt.` : '';
+    const skipped = unmeasured ? ` ${unmeasured} frame không đo được mặt đất (ít điểm đất, quá xa${why}) nên giữ theo nội suy, căn bằng mắt.` : '';
+    const record = [...merged.values()];
     if (!record.length) {
-      notify({ kind: 'ok', text: `${title}: ${measured.length}/${frames.length} frame đo được, đều đã sát đất (lệch ≤ ${cm(g.ground.okM)}).${skipped}` });
+      notify({ kind: 'ok', text: `${title}: ${measured.length}/${frames.length} frame đo được, đáy đều đã nằm trên mặt đất.${skipped}` });
       return;
     }
     // Hoàn tác của PointSnap phủ cả lượt ghi một frame (CVAT tự hoàn tác được) để một nút trả lại hết.
     rememberUndo(ctx.job, 'pointsnap', record, title);
+    const moved = frames.filter((f) => first.has(f.frame) && Math.abs(B.bottomZ(f.box) - first.get(f.frame)) > 0.001);
+    const maxShiftM = Math.max(0, ...moved.map((f) => Math.abs(B.bottomZ(f.box) - first.get(f.frame))));
+    const off = measured.filter((f) => Math.abs(ground.get(f.frame) - B.bottomZ(f.box)) > SNAP_EPS_M).length;
     const added = record.filter((e) => !e.before.keyframe).length;
-    const still = off ? `, ${off} frame còn lệch > ${cm(g.ground.okM)} (xem dải track)` : '';
+    const still = off ? ` ${off} frame vẫn lệch (xem dải track).` : '';
     const lock = locked ? ` ${locked} keyframe bị khóa (lock) nên bỏ qua.` : '';
-    notify({ kind: 'ok', text: `${title}: dời ${record.length - added} keyframe, thêm ${added} keyframe ở frame nội suy (dời nhiều nhất ${cm(maxShiftM)}); `
-      + `${measured.length - off}/${frames.length} frame sát đất${still}.${skipped} Chưa Save; ${undoHint('pointsnap')}.${lock}` });
+    notify({ kind: off ? 'info' : 'ok', text: `${title}: hạ / nâng đáy ${moved.length}/${frames.length} frame xuất hiện, dời nhiều nhất ${cm(maxShiftM)} `
+      + `(sửa ${record.length - added} keyframe, thêm ${added} keyframe ở frame nội suy); ${measured.length - off} frame đã chạm đất.${still}${skipped}`
+      + ` Chưa Save; ${undoHint('pointsnap')}.${lock}` });
     markTrackChanged();
   }
 
@@ -613,7 +635,7 @@
       notify({ kind: 'error', text: 'Chưa đo được mặt đất đủ tin cậy quanh box này (ít điểm đất hoặc quá xa); căn bằng mắt ở view Side / Front.' });
       return;
     }
-    if (Math.abs(contact.gapM) < 0.005) {
+    if (Math.abs(contact.gapM) < SNAP_EPS_M) {
       notify({ kind: 'ok', text: 'Đáy box đã nằm trên mặt đất đo được.' });
       return;
     }

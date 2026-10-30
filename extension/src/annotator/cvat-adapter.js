@@ -172,6 +172,7 @@
     const now = context();
     const live = now && now.frame === frame ? pointCloud(now) : null;
     if (live) return live;
+    if (!root.PointSnapZip || !root.PointSnapPcd) throw new Error('thiếu zip.js / pcd.js trong trang: tải lại extension (hoặc dịch vụ QC) rồi F5 trang CVAT');
     const job = ctx.job;
     if (chunkCache.meta?.jobId !== job.id) {
       chunkCache.meta = { jobId: job.id, ...(await (await cvatGet(`/api/jobs/${job.id}/data/meta`)).json()) };
