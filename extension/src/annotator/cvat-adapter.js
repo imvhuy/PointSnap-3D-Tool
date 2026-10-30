@@ -169,8 +169,9 @@
   /** Mảng x, y, z (Float32Array) của `frame`, cùng hệ tọa độ với box. Frame đang mở thì lấy luôn cloud đang vẽ. */
   async function frameCloud(ctx, frame) {
     // Đọc lại ngữ cảnh: người dùng có thể đã đổi frame trong lúc đo các frame trước.
+    // Chỉ dùng cloud đang vẽ khi cùng job: đổi sang job khác có cùng số frame thì cloud đó là của job khác.
     const now = context();
-    const live = now && now.frame === frame ? pointCloud(now) : null;
+    const live = now && now.job.id === ctx.job.id && now.frame === frame ? pointCloud(now) : null;
     if (live) return live;
     if (!root.PointSnapZip || !root.PointSnapPcd) throw new Error('thiếu zip.js / pcd.js trong trang: tải lại extension (hoặc dịch vụ QC) rồi F5 trang CVAT');
     const job = ctx.job;
@@ -191,14 +192,22 @@
     return root.PointSnapPcd.parse(file.method === 8 ? await inflateRaw(file.raw) : file.raw);
   }
 
-  /** Vẽ lại frame hiện tại theo bộ nhớ cvat-core, như `fetchAnnotationsAsync` của CVAT. */
+  let refreshGen = 0;
+
+  /**
+   * Vẽ lại frame hiện tại theo bộ nhớ cvat-core, như `fetchAnnotationsAsync` của CVAT. Người dùng đổi frame / job trong
+   * lúc chờ, hoặc có lần vẽ lại mới hơn, thì bỏ kết quả này: không ghi nhãn của frame cũ vào màn hình frame mới.
+   */
   async function refresh() {
     const ctx = context();
     if (!ctx) return;
+    const gen = ++refreshGen;
     const s = store.getState();
     // shortcut: không nạp lại lớp Ground Truth (chỉ có khi bật "Show ground truth"); bật lớp đó thì đổi frame để CVAT nạp lại.
     const states = await ctx.job.annotations.get(ctx.frame, s.settings?.workspace?.showAllInterpolationTracks, s.annotation.annotations.filters);
     const history = await ctx.job.actions.get();
+    const now = context();
+    if (gen !== refreshGen || !now || now.job !== ctx.job || now.frame !== ctx.frame) return;
     store.dispatch({ type: 'FETCH_ANNOTATIONS_SUCCESS', payload: { states, intervals: [], history } });
   }
 
@@ -212,26 +221,46 @@
    * bước, nên một thao tác 38 keyframe vừa không Undo hết được vừa đẩy mất lịch sử của annotator. Khi đó tạm dừng ghi
    * lịch sử CVAT trong lúc lưu, và PointSnap giữ bản ghi để tự hoàn tác (`undoEdits`).
    */
-  async function saveGroup(job, states) {
+  /**
+   * `onSaved(i)` báo state thứ i đã lưu xong (đường tạm dừng lịch sử lưu từng state; `saveStates` là một giao dịch nên
+   * báo cả nhóm khi xong): lỗi giữa chừng thì người gọi biết frame nào đã đổi để trả lại.
+   */
+  async function saveGroup(job, states, onSaved = () => {}) {
     // CVAT 2.77 có `saveStates` nhưng một giao dịch lịch sử chỉ được chứa thay đổi của một frame ("All history actions
     // in a transaction must target the same frame"): thao tác nhiều keyframe đi đường tạm dừng lịch sử bên dưới.
     if (typeof job.annotations.saveStates === 'function' && new Set(states.map((s) => s.frame)).size <= 1) {
       await job.annotations.saveStates(states);
+      states.forEach((_, i) => onSaved(i));
       return 'cvat';
     }
     await job.actions.freeze(true);
     try {
-      for (const state of states) await state.save();
+      for (const [i, state] of states.entries()) {
+        await state.save();
+        onSaved(i);
+      }
     } finally {
       await job.actions.freeze(false);
     }
     return 'pointsnap';
   }
 
+  /** Trạng thái đã lưu của một object ở `frame` (đọc lại từ cvat-core); đọc lỗi thì null. */
+  async function savedSnapshot(job, frame, clientID) {
+    try {
+      const state = (await job.annotations.get(frame, true, [])).find((s) => s.clientID === clientID);
+      return state ? snapshot(state) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /**
    * Ghi các thay đổi `edits` ({ frame, box }, { frame, keyframe: false } hoặc { frame, attributes: { id: giá trị } })
    * cho các keyframe trong `byFrame`.
    * Trả về { saved, locked, undo: 'cvat' | 'pointsnap', record } — `record` dùng cho `undoEdits` khi undo = 'pointsnap'.
+   * Lưu lỗi giữa chừng: trả các frame đã lưu về trạng thái trước rồi ném lỗi. Trả lại không hết thì lỗi mang
+   * `record` của phần còn đổi (`error.record`) để nút Hoàn tác vẫn phục hồi được, không để thay đổi mồ côi.
    */
   async function applyEdits(job, byFrame, edits) {
     const states = [], record = [];
@@ -246,17 +275,49 @@
       // cvat-core gộp vào thuộc tính sẵn có (chỉ đổi id được gán).
       if (edit.attributes) state.attributes = edit.attributes;
       states.push(state);
-      record.push({ frame: edit.frame, clientID: state.clientID, before });
+      record.push({ frame: edit.frame, clientID: state.clientID, before, local: snapshot(state) });
     }
-    const undo = await saveGroup(job, states);
+    const done = new Set();
+    let undo;
+    try {
+      undo = await saveGroup(job, states, (i) => done.add(i));
+    } catch (error) {
+      throw await rollback(job, record.filter((_, i) => done.has(i)), error);
+    }
     // Đọc lại sau khi lưu: ghi vào frame nội suy làm cvat-core tạo keyframe mới, bản ghi phải thấy đúng trạng thái đó để
-    // Hoàn tác nhận ra frame chưa bị sửa tiếp.
+    // Hoàn tác nhận ra frame chưa bị sửa tiếp. Đọc lỗi thì dùng trạng thái vừa gán (không làm mất bản ghi).
     for (const entry of record) {
-      const saved = (await job.annotations.get(entry.frame, true, [])).find((s) => s.clientID === entry.clientID);
-      entry.after = saved ? snapshot(saved) : entry.before;
+      entry.after = (await savedSnapshot(job, entry.frame, entry.clientID)) || entry.local;
+      delete entry.local;
     }
-    await refresh();
+    // Vẽ lại lỗi không phải lỗi ghi: dữ liệu đã nằm trong cvat-core, đổi frame là CVAT tự vẽ.
+    await refresh().catch(() => {});
     return { saved: states.length, locked, undo, record };
+  }
+
+  /**
+   * Lưu lỗi giữa batch: trả các frame đã lưu (`savedEntries`) về trạng thái trước. Trả về lỗi để ném: nêu số frame đã
+   * trả lại; còn frame chưa trả được thì gắn `record` của chúng (Hoàn tác của PointSnap) vào lỗi.
+   */
+  async function rollback(job, savedEntries, cause) {
+    for (const entry of savedEntries) {
+      entry.after = (await savedSnapshot(job, entry.frame, entry.clientID)) || entry.local;
+      delete entry.local;
+    }
+    let left = savedEntries;
+    if (savedEntries.length) {
+      try {
+        const { skipped } = await undoEdits(job, savedEntries);
+        left = skipped ? savedEntries : [];
+      } catch (_) {
+        left = savedEntries;
+      }
+    }
+    const error = new Error(left.length
+      ? `${cause.message}. ${left.length} keyframe đã ghi mà chưa trả lại được: bấm "Hoàn tác" của PointSnap để phục hồi`
+      : `${cause.message}${savedEntries.length ? ` (đã trả lại ${savedEntries.length} keyframe vừa ghi)` : ''}`);
+    error.record = left;
+    return error;
   }
 
   /**

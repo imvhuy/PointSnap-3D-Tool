@@ -1,0 +1,47 @@
+{
+  "meaning": "Assertions xác nhận lỗi tái hiện; không phải test nghiệm thu sản phẩm",
+  "findings": [
+    {
+      "id": "ASYNC-01",
+      "expected": "Kết quả preparePlan của job cũ bị hủy; không được áp vào job mới.",
+      "actual": {
+        "previewRequestedForJob": 101,
+        "activeJob": 202,
+        "writes": [
+          {
+            "jobId": 202,
+            "frames": [
+              0
+            ],
+            "dims": [
+              6,
+              2,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ASYNC-02",
+      "expected": "refresh bỏ kết quả nếu job/frame đang mở đã đổi sau await.",
+      "actual": {
+        "playerFrame": 1,
+        "dispatchedStateFrame": 0
+      }
+    },
+    {
+      "id": "ASYNC-03",
+      "expected": "frameCloud chỉ dùng cloud đang vẽ khi cả job và frame trùng yêu cầu.",
+      "actual": {
+        "requestedJobId": 101,
+        "activeJobId": 202,
+        "returnedCloud": [
+          202,
+          0,
+          0
+        ]
+      }
+    }
+  ]
+}

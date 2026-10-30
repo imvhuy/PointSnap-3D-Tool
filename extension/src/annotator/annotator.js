@@ -39,6 +39,8 @@
     track: null,
     trackDirtyAt: 0,
     trackToken: 0,
+    // Vé của thao tác ghi / bản xem trước: đổi job thì tăng, kết quả về muộn của job cũ bị bỏ (clientID trùng giữa job).
+    opToken: 0,
     groundCache: null,
     attrDraft: null,
     plan: null,
@@ -88,15 +90,25 @@
 
   // ------------------------------------------------------------------ dữ liệu của frame
 
-  /** Chỉ mục điểm + bản đồ địa hình của frame đang mở; dựng lại khi đổi frame hoặc CVAT nạp point cloud khác. */
+  /**
+   * Chỉ mục điểm + bản đồ địa hình của frame đang mở. Chỉ mục điểm dựng lại khi đổi frame / CVAT nạp point cloud khác;
+   * bản đồ địa hình còn dựng lại khi các box của frame đổi (thêm, xoá, dời, đổi cỡ, outside), vì nó bỏ điểm nằm trong
+   * box khỏi mặt đất: số đo tiếp đất và nút Hạ đáy luôn khớp với một lần dựng mới (như QC).
+   */
   function frameData(ctx) {
     const positions = A.pointCloud(ctx);
     if (!positions) return null;
     const key = `${ctx.job.id}:${ctx.frame}:${S.settingsVersion}`;
-    if (S.frameCache?.key === key && S.frameCache.positions === positions) return S.frameCache;
     const boxes = A.frameStates().filter((s) => !s.outside).map((s) => B.fromCvatPoints(s.points)).filter(Boolean);
+    const boxesKey = JSON.stringify(boxes.map((b) => [...b.center, ...b.rotation, ...b.dims].map((v) => Math.round(v * 1000))));
+    const same = S.frameCache?.key === key && S.frameCache.positions === positions;
+    if (same && S.frameCache.boxesKey === boxesKey) return S.frameCache;
+    if (same) {
+      S.frameCache = { ...S.frameCache, boxesKey, terrain: Terrain.build(S.frameCache.grid, boxes, { origin: S.guideline.sensorOrigin }) };
+      return S.frameCache;
+    }
     const frameChanged = S.frameCache?.frame !== ctx.frame;
-    S.frameCache = { key, frame: ctx.frame, ...Measure.buildFrame(positions, boxes, S.guideline) };
+    S.frameCache = { key, boxesKey, frame: ctx.frame, ...Measure.buildFrame(positions, boxes, S.guideline) };
     if (frameChanged) onFrameChanged(ctx);
     return S.frameCache;
   }
@@ -115,6 +127,7 @@
     S.dismissCache = null;
     S.track = null;
     S.trackToken += 1;
+    S.opToken += 1;
     S.plan = null;
     S.measureKey = '';
     S.measure = null;
@@ -164,13 +177,14 @@
       .map((s) => ({ box: B.fromCvatPoints(s.points), label: s.label?.name || '', attributes: A.attributesOf(s), clientId: s.clientID, state: s }))
       .filter((o) => o.box);
     const trackReady = S.track?.clientID === objectState.clientID && !S.track.loading;
-    const key = JSON.stringify([cache.key, objectState.clientID, box, others.map((o) => o.box),
-      trackReady && S.track.keyframes.length, JSON.stringify(objectState.attributes)]);
-    if (key === S.measureKey) return S.measure;
-
     const label = objectState.label?.name || '';
     const trackDims = trackReady
       ? S.track.keyframes.filter((k) => !k.outside && k.frame !== ctx.frame).map((k) => k.box.dims) : null;
+    // Khoá theo mọi dữ liệu bộ luật đọc: class, occluded, thuộc tính, box và nhãn / thuộc tính của box khác, bản đồ địa
+    // hình, và nội dung kích thước các keyframe (không phải số keyframe: sửa keyframe khác giữ nguyên số lượng).
+    const key = JSON.stringify([cache.key, cache.boxesKey, objectState.clientID, label, !!objectState.occluded, box,
+      others.map((o) => [o.clientId, o.box, o.label, o.attributes]), trackDims, objectState.attributes]);
+    if (key === S.measureKey) return S.measure;
     const { input, issues, contact, classKey, points } = Measure.measureBox(cache,
       { box, label, attributes: A.attributesOf(objectState), occluded: objectState.occluded, clientId: objectState.clientID },
       others, trackDims, S.guideline);
@@ -425,16 +439,19 @@
   async function preparePlan(ctx, kind, params) {
     const objectState = activeObject();
     if (!objectState || objectState.objectType !== 'track') return;
+    const token = S.opToken;
     S.busy = true;
     try {
       const keyframes = await A.trackKeyframes(ctx.job, objectState);
+      // Đổi job trong lúc chờ: clientID có thể trùng object của job mới, không tạo lại bản xem trước.
+      if (token !== S.opToken) return;
       const plan = planFor(kind, params, keyframes);
       if (!plan.edits.length) {
         S.plan = null;
         notify({ kind: 'ok', text: `${plan.title}: ${plan.emptyText}` });
         return;
       }
-      S.plan = { ...plan, kind, params, clientID: objectState.clientID, signature: signature(plan.edits), canApply: true };
+      S.plan = { ...plan, kind, params, jobId: ctx.job.id, token, clientID: objectState.clientID, signature: signature(plan.edits), canApply: true };
       S.notice = null;
     } finally {
       S.busy = false;
@@ -444,14 +461,20 @@
   /** Lập lại kế hoạch trên keyframe mới nhất; khác bản xem trước (track vừa bị sửa) thì không ghi. */
   async function applyPlan(ctx) {
     const plan = S.plan, objectState = activeObject();
-    if (!plan || objectState?.clientID !== plan.clientID) {
+    const sameTarget = () => plan.token === S.opToken && plan.jobId === A.context()?.job.id && activeObject()?.clientID === plan.clientID;
+    if (!plan || plan.jobId !== ctx.job.id || !sameTarget()) {
       S.plan = null;
-      notify({ kind: 'error', text: 'Box đang chọn đã đổi; lập lại bản xem trước.' });
+      notify({ kind: 'error', text: 'Box hoặc job đang mở đã đổi; lập lại bản xem trước.' });
       return;
     }
     S.busy = true;
     try {
       const keyframes = await A.trackKeyframes(ctx.job, objectState);
+      if (!sameTarget()) {
+        if (S.plan === plan) S.plan = null;
+        notify({ kind: 'error', text: 'Box hoặc job đang mở đã đổi trong lúc đọc track; chưa ghi gì, lập lại bản xem trước.' });
+        return;
+      }
       const fresh = planFor(plan.kind, plan.params, keyframes);
       if (!fresh.edits.length) {
         S.plan = null;
@@ -478,8 +501,22 @@
     S.lastUndo = kind === 'pointsnap' && record.length ? { jobId: job.id, clientID: record[0].clientID, title, record } : null;
   }
 
+  /** Ghi lỗi giữa batch mà còn keyframe chưa trả lại được: giữ Hoàn tác cho phần đó (lỗi vẫn được báo như thường). */
+  function keepUndoOnError(job, error, title) {
+    if (error?.record?.length) {
+      rememberUndo(job, 'pointsnap', error.record, `${title} (ghi dở)`);
+      markTrackChanged();
+    }
+    return error;
+  }
+
   async function commit(job, byFrame, edits, title) {
-    const result = await A.applyEdits(job, byFrame, edits);
+    let result;
+    try {
+      result = await A.applyEdits(job, byFrame, edits);
+    } catch (error) {
+      throw keepUndoOnError(job, error, title);
+    }
     rememberUndo(job, result.undo, result.record, title);
     const locked = result.locked ? ` ${result.locked} keyframe bị khóa (lock) nên bỏ qua.` : '';
     notify({ kind: 'ok', text: `${title}: đã ghi ${result.saved} keyframe vào CVAT, chưa Save; ${undoHint(result.undo)}.${locked}` });
@@ -526,11 +563,12 @@
    * CVAT nội suy và lặp tối đa SNAP_PASSES lượt cho tới khi mọi frame đo được đều chạm đất.
    */
   async function snapTrack(ctx, objectState) {
-    const title = 'Hạ đáy mọi frame', merged = new Map(), failed = new Set();
-    let frames = [], first = null, ground = new Map(), locked = 0, readError = '';
+    const title = 'Hạ đáy mọi frame', merged = new Map(), failed = new Set(), token = S.opToken;
+    let frames = [], first = null, ground = new Map(), locked = 0, readError = '', writeError = null, aborted = false;
     S.busy = true;
     try {
       for (let pass = 0; ; pass += 1) {
+        if (token !== S.opToken) { aborted = true; break; }
         frames = await A.trackFrames(ctx.job, objectState);
         if (!first) first = new Map(frames.map((f) => [f.frame, B.bottomZ(f.box)]));
         ground = new Map();
@@ -545,15 +583,36 @@
           }
           ground.set(f.frame, z);
         }
+        // Đổi job trong lúc đo: không ghi kế hoạch của job cũ.
+        if (token !== S.opToken) { aborted = true; break; }
         const { edits } = Ops.planGroundSnap(frames, ground, SNAP_EPS_M);
         if (!edits.length || pass === SNAP_PASSES) break;
-        const result = await A.applyEdits(ctx.job, new Map(frames.map((f) => [f.frame, f])), edits);
+        let result;
+        try {
+          result = await A.applyEdits(ctx.job, new Map(frames.map((f) => [f.frame, f])), edits);
+        } catch (error) {
+          mergeRecords(merged, error.record || []);
+          writeError = error;
+          break;
+        }
         mergeRecords(merged, result.record);
         locked = Math.max(locked, result.locked);
         if (!result.saved) break;
       }
     } finally {
       S.busy = false;
+    }
+    // Hoàn tác của PointSnap phủ cả lượt ghi một frame (CVAT tự hoàn tác được) để một nút trả lại hết; giữ cả khi lỗi
+    // giữa chừng hoặc dừng vì đổi job (phần các lượt trước đã ghi).
+    const record = [...merged.values()];
+    if (record.length) {
+      rememberUndo(ctx.job, 'pointsnap', record, title);
+      markTrackChanged();
+    }
+    if (writeError || aborted) {
+      const done = record.length ? ` ${record.length} keyframe đã ghi ở các lượt trước, bấm "Hoàn tác" để trả lại.` : ' Chưa ghi gì.';
+      notify({ kind: 'error', text: `${title}: ${writeError ? `ghi lỗi: ${writeError.message}` : 'đã dừng vì job đang mở đã đổi'}.${done}` });
+      return;
     }
     if (!frames.length) {
       notify({ kind: 'error', text: `${title}: không đọc được frame nào của track trong job này.` });
@@ -567,13 +626,10 @@
     }
     const unmeasured = frames.length - measured.length;
     const skipped = unmeasured ? ` ${unmeasured} frame không đo được mặt đất (ít điểm đất, quá xa${why}) nên giữ theo nội suy, căn bằng mắt.` : '';
-    const record = [...merged.values()];
     if (!record.length) {
       notify({ kind: 'ok', text: `${title}: ${measured.length}/${frames.length} frame đo được, đáy đều đã nằm trên mặt đất.${skipped}` });
       return;
     }
-    // Hoàn tác của PointSnap phủ cả lượt ghi một frame (CVAT tự hoàn tác được) để một nút trả lại hết.
-    rememberUndo(ctx.job, 'pointsnap', record, title);
     const moved = frames.filter((f) => first.has(f.frame) && Math.abs(B.bottomZ(f.box) - first.get(f.frame)) > 0.001);
     const maxShiftM = Math.max(0, ...moved.map((f) => Math.abs(B.bottomZ(f.box) - first.get(f.frame))));
     const off = measured.filter((f) => Math.abs(ground.get(f.frame) - B.bottomZ(f.box)) > SNAP_EPS_M).length;
@@ -583,7 +639,6 @@
     notify({ kind: off ? 'info' : 'ok', text: `${title}: hạ / nâng đáy ${moved.length}/${frames.length} frame xuất hiện, dời nhiều nhất ${cm(maxShiftM)} `
       + `(sửa ${record.length - added} keyframe, thêm ${added} keyframe ở frame nội suy); ${measured.length - off} frame đã chạm đất.${still}${skipped}`
       + ` Chưa Save; ${undoHint('pointsnap')}.${lock}` });
-    markTrackChanged();
   }
 
   /**
@@ -593,16 +648,25 @@
   async function setTrackAttributes(ctx, objectState, values) {
     const specs = A.attributeSpecs(objectState).filter((a) => a.id in values);
     const immutable = new Set(specs.filter((a) => !a.mutable).map((a) => a.id));
-    const title = `Gán ${specs.map((a) => `${a.name} = ${values[a.id]}`).join(', ')}`;
+    const title = `Gán ${specs.map((a) => `${a.name} = ${values[a.id]}`).join(', ')}`, token = S.opToken;
     S.busy = true;
     try {
       const frames = await A.trackFrames(ctx.job, objectState);
+      if (token !== S.opToken) {
+        notify({ kind: 'error', text: `${title}: job đang mở đã đổi trong lúc đọc track; chưa ghi gì.` });
+        return false;
+      }
       const { edits } = Ops.planAttributes(frames, values, immutable);
       if (!edits.length) {
         notify({ kind: 'ok', text: `${title}: cả ${frames.length} frame track xuất hiện đã đúng giá trị.` });
         return true;
       }
-      const result = await A.applyEdits(ctx.job, new Map(frames.map((f) => [f.frame, f])), edits);
+      let result;
+      try {
+        result = await A.applyEdits(ctx.job, new Map(frames.map((f) => [f.frame, f])), edits);
+      } catch (error) {
+        throw keepUndoOnError(ctx.job, error, title);
+      }
       rememberUndo(ctx.job, result.undo, result.record, title);
       const after = await A.trackFrames(ctx.job, objectState);
       const wrong = Ops.planAttributes(after, values, immutable).summary.wrongFrames;

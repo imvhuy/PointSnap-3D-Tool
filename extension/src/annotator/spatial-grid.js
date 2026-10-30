@@ -5,6 +5,7 @@
 (function (root) {
   'use strict';
 
+  const B = root.PointSnapBox || require('./box.js');
   const MAX_CELLS = 4_000_000;
 
   /**
@@ -63,8 +64,15 @@
     return Number.isFinite(positions[3 * i]) && Number.isFinite(positions[3 * i + 1]) && Number.isFinite(positions[3 * i + 2]);
   }
 
-  /** Các điểm (chỉ số) quanh footprint xoay của box, nới `margin` mét; lọc chính xác theo hệ box. */
+  const TILT_EPS = 1e-6;
+
+  /**
+   * Các điểm (chỉ số) quanh footprint xoay của box, nới `margin` mét; lọc chính xác theo hệ box. Box đứng thẳng (chỉ
+   * yaw): cột theo footprint, mọi độ cao. Box có pitch / roll: footprint theo yaw không bao được hình chiếu của box, nên
+   * vùng tìm lấy từ 8 góc thế giới rồi lọc trong hệ box, nới `margin` mọi chiều.
+   */
   function pointsNearBox(grid, box, margin) {
+    if (Math.abs(box.rotation[0]) > TILT_EPS || Math.abs(box.rotation[1]) > TILT_EPS) return pointsNearTiltedBox(grid, box, margin);
     const reach = Math.hypot(box.dims[0] / 2 + margin, box.dims[1] / 2 + margin);
     const [cx, cy] = box.center, c = Math.cos(box.rotation[2]), s = Math.sin(box.rotation[2]);
     const hl = box.dims[0] / 2 + margin, hw = box.dims[1] / 2 + margin;
@@ -73,6 +81,19 @@
     grid.forEachIn(cx - reach, cy - reach, cx + reach, cy + reach, (i) => {
       const dx = p[3 * i] - cx, dy = p[3 * i + 1] - cy;
       if (Math.abs(c * dx + s * dy) <= hl && Math.abs(-s * dx + c * dy) <= hw) out.push(i);
+    });
+    return out;
+  }
+
+  function pointsNearTiltedBox(grid, box, margin) {
+    const half = box.dims.map((d) => d / 2 + margin);
+    const corners = [-1, 1].flatMap((sx) => [-1, 1].flatMap((sy) => [-1, 1].map((sz) => B.toWorld(box, [sx * half[0], sy * half[1], sz * half[2]]))));
+    const xs = corners.map((q) => q[0]), ys = corners.map((q) => q[1]);
+    const out = [];
+    const p = grid.positions;
+    grid.forEachIn(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), (i) => {
+      const local = B.toLocal(box, [p[3 * i], p[3 * i + 1], p[3 * i + 2]]);
+      if (local.every((v, k) => Math.abs(v) <= half[k])) out.push(i);
     });
     return out;
   }

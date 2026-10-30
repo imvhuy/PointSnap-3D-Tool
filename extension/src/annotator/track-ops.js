@@ -44,6 +44,9 @@
       });
       shift.push((dims[2] - k.box.dims[2]) / 2);
       const center = B.toWorld(k.box, shift);
+      // Box có pitch / roll: dịch trong hệ box làm đáy (góc thấp nhất) trôi theo Z thế giới; bù lại cho đáy đứng yên.
+      // Box chỉ xoay yaw thì phần bù bằng 0.
+      center[2] += B.bottomZ(k.box) - B.bottomZ({ ...k.box, center, dims });
       maxShiftM = Math.max(maxShiftM, Math.hypot(...center.map((v, i) => v - k.box.center[i])));
       edits.push({ frame: k.frame, box: { ...k.box, center, dims: [...dims] } });
     }
