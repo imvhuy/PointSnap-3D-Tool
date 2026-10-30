@@ -1,7 +1,8 @@
 'use strict';
 /*
  * Side panel của extension (bấm biểu tượng PointSnap hoặc Alt+Shift+P): gắn ở mép phải trình duyệt, ngoài trang CVAT,
- * luôn mở khi thao tác trên CVAT; tự đổi theo tab đang xem.
+ * luôn mở khi thao tác trên CVAT; tự đổi theo tab đang xem. Opera: cùng trang này ở sidebar của Opera (sidebar_action),
+ * hoặc dạng popup khi bấm biểu tượng (`?popup=1`).
  * - PointSnap đang chạy trên một job 3D: hiện bảng PointSnap của tab đó (checklist, dải track, sửa cả track…), nối vào
  *   trang qua chrome.tabs.connect tới panel-bridge.js; bảng dựng bằng chính panel.js. Trang tải lại thì tự nối lại.
  * - Còn lại: nhận ra tab có phải CVAT không, bật PointSnap cho địa chỉ đó bằng một nút, cho biết PointSnap đã chạy đúng
@@ -251,6 +252,8 @@ async function refresh() {
 }
 
 function main() {
+  // Mở dạng popup (Opera, bấm biểu tượng): popup co theo nội dung nên cần cỡ cố định.
+  if (new URLSearchParams(location.search).has('popup')) document.body.classList.add('in-popup');
   $('version').textContent = `v${chrome.runtime.getManifest().version}`;
   $('open-options').onclick = () => chrome.runtime.openOptionsPage();
   // Đang ở bảng: xem / sửa cài đặt của trang (bật / tắt, bộ ngưỡng) rồi quay lại.

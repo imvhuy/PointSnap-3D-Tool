@@ -50,7 +50,8 @@ passes per-CVAT-host config (from `hosts.js` / `chrome.storage`) into the page. 
 `panel-link.js` (MAIN) posts the view-model to `panel-bridge.js` (ISOLATED), which forwards it over a
 `chrome.tabs.connect` port to `sidepanel.js` (it follows the active tab and reconnects on reload). Canvas overlays run
 whether or not the side panel is open. The toolbar icon / Alt+Shift+P (`_execute_action`) opens it via
-`sidePanel.setPanelBehavior`. In the QC plugin (no extension)
+`sidePanel.setPanelBehavior`. Opera has no `chrome.sidePanel`: the same page is its sidebar (`sidebar_action` in the
+manifest) and `background.js` falls back to it as the action popup (`sidepanel.html?popup=1`). In the QC plugin (no extension)
 the same `panel.js` renders into a "Hỗ trợ" tab of CVAT's sidebar instead. Panels use shadow DOM. Edits go into
 CVAT's in-memory annotations like a user drag; the user still presses CVAT's Save. Undo uses
 `job.annotations.saveStates` when CVAT has it, otherwise PointSnap pauses CVAT history and offers its own ↶ button

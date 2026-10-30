@@ -71,9 +71,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-// Bấm biểu tượng PointSnap (hoặc Alt+Shift+P, lệnh _execute_action) mở side panel: bảng luôn mở cạnh CVAT, không tự
-// đóng khi bấm vào trang như popup.
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+// Bấm biểu tượng PointSnap (hoặc Alt+Shift+P, lệnh _execute_action): manifest đặt sẵn popup (chạy ở mọi trình duyệt,
+// kể cả khi phần dưới lỗi). Chrome / Edge: bỏ popup, mở side panel: bảng luôn mở cạnh CVAT, không tự đóng khi bấm vào
+// trang. Opera không có side panel của Chrome (có sidebar riêng, sidebar_action trong manifest): giữ popup.
+const isOpera = navigator.userAgent.includes('OPR/');
+if (chrome.sidePanel?.setPanelBehavior && !isOpera) {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+    .then(() => chrome.action.setPopup({ popup: '' }))
+    .catch(() => {});
+}
 
 chrome.runtime.onInstalled.addListener(() => { syncContentScripts(); });
 chrome.storage.onChanged.addListener((changes, area) => {

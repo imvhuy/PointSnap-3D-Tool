@@ -44,7 +44,11 @@ khác thì xin phép chủ hệ thống trước.
   job khác. Phần trên canvas (mặt đất, tô điểm của vật, khoá box) luôn chạy, kể cả khi đóng side panel; phím tắt
   <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> / F / D bấm được cả trong trang lẫn trong side panel. Đổi phím mở ở
   `chrome://extensions/shortcuts`. Trang chưa phải job 3D, hoặc PointSnap chưa bật: side panel hiện phần cài đặt (bật
-  cho địa chỉ, tình trạng, bộ ngưỡng). Bản nhúng thẳng vào CVAT (dịch vụ QC, không có extension) vẫn hiện bảng ở
+  cho địa chỉ, tình trạng, bộ ngưỡng).
+- **Opera**: Opera không có side panel của Chrome; bảng nằm ở **sidebar của Opera**. Bật một lần: bấm ⋯ ở cuối thanh
+  sidebar bên trái (Cài đặt sidebar) → mục Tiện ích → bật **PointSnap**; biểu tượng PointSnap hiện trên sidebar, bấm là
+  mở bảng, bảng luôn mở cạnh CVAT. Bấm biểu tượng PointSnap trên thanh địa chỉ (hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>)
+  thì mở cùng bảng đó dạng popup, popup tự đóng khi bấm vào trang. Bản nhúng thẳng vào CVAT (dịch vụ QC, không có extension) vẫn hiện bảng ở
   tab **Hỗ trợ** của thanh bên phải; tab **PointSnap** của bản nhúng dành cho QC và phiếu sửa lỗi.
 - **Thanh tiêu đề**: chấm trạng thái (xanh ổn / cam cần xem / đỏ lỗi), box đang chọn,
   khoảng cách, số mục cần xem, tiến độ `xong/tổng`, ◎ khoá box, ⏮ / ⏭ track chưa xong trước / kế tiếp, ⚙ spec.
