@@ -1,0 +1,85 @@
+{
+  "baseline": "e845e7d",
+  "syntheticOnly": true,
+  "confirmed": [
+    {
+      "id": "SCAN-01",
+      "expected": "Không thể pass khi không đọc được point cloud nào; cần trạng thái incomplete/review độc lập với finding.",
+      "actual": {
+        "gate": {
+          "verdict": "pass",
+          "maxWarningsPer100": 5
+        },
+        "boxes": 0,
+        "summaryObjects": 0,
+        "actualObjects": 1,
+        "framesWithoutPoints": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "chunkErrors": [
+          "frame 0–3: Synthetic CVAT 500"
+        ]
+      }
+    },
+    {
+      "id": "SCAN-02",
+      "expected": "Frame đã xóa không tham gia luật duplicate, danh sách object và tiến độ duyệt.",
+      "actual": {
+        "gate": {
+          "verdict": "fail",
+          "maxWarningsPer100": 5
+        },
+        "summaryFrames": 1,
+        "scannedBoxes": 0,
+        "duplicate": {
+          "rule": "track.duplicate",
+          "frames": [
+            0,
+            1,
+            2
+          ]
+        },
+        "objects": [
+          {
+            "key": "track:1",
+            "first": 0,
+            "last": 2,
+            "boxes": 3
+          },
+          {
+            "key": "track:2",
+            "first": 0,
+            "last": 2,
+            "boxes": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "SCAN-03",
+      "expected": "Từ chối luồng LZF giải nén thiếu byte; không tạo điểm từ vùng zero-fill.",
+      "actual": {
+        "decodedLength": 12,
+        "validPointsReturned": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "id": "SCAN-04",
+      "expected": "Luật heading.jump chỉ so trong mỗi đoạn visible liên tục; đoạn chỉ có 1 keyframe không đủ bằng chứng báo hướng nhảy.",
+      "actual": [
+        {
+          "frame": 0,
+          "rule": "heading.jump",
+          "severity": "warning"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "id": "INT-01",
+  "expected": {
+    "kind": "track",
+    "clientID": 202
+  },
+  "actual": {
+    "success": true,
+    "selectedClientID": 101,
+    "selectedKind": "shape"
+  },
+  "scope": "VM dùng hàm goTo nguyên bản; store CVAT giả có shape/track trùng serverID, chưa chạy browser/CVAT thật"
+}

@@ -1,0 +1,1012 @@
+TAP version 13
+# Subtest: toLocal đảo ngược toWorld với box xoay ba trục
+ok 1 - toLocal đảo ngược toWorld với box xoay ba trục
+  ---
+  duration_ms: 2.6345
+  type: 'test'
+  ...
+# Subtest: bottomZ là góc đáy thấp nhất
+ok 2 - bottomZ là góc đáy thấp nhất
+  ---
+  duration_ms: 0.6599
+  type: 'test'
+  ...
+# Subtest: toCvatPoints giữ phần đuôi 7 số của points gốc
+ok 3 - toCvatPoints giữ phần đuôi 7 số của points gốc
+  ---
+  duration_ms: 1.3675
+  type: 'test'
+  ...
+# Subtest: overlapRatio: trùng = 1, rời = 0, box nhỏ nằm trong box lớn = 1
+ok 4 - overlapRatio: trùng = 1, rời = 0, box nhỏ nằm trong box lớn = 1
+  ---
+  duration_ms: 1.979
+  type: 'test'
+  ...
+# Subtest: overlapRatio: chồng chút ít theo chiều cao vẫn tính, chạm mép (≤ 1 cm) thì không
+ok 5 - overlapRatio: chồng chút ít theo chiều cao vẫn tính, chạm mép (≤ 1 cm) thì không
+  ---
+  duration_ms: 0.6821
+  type: 'test'
+  ...
+# Subtest: overlapRatio với box xoay 45°: hình vuông 2×2 và hình thoi cùng tâm chung diện tích 8(√2 − 1)
+ok 6 - overlapRatio với box xoay 45°: hình vuông 2×2 và hình thoi cùng tâm chung diện tích 8(√2 − 1)
+  ---
+  duration_ms: 0.3348
+  type: 'test'
+  ...
+# Subtest: wrapAngle / angleDiff đi theo cung ngắn nhất
+ok 7 - wrapAngle / angleDiff đi theo cung ngắn nhất
+  ---
+  duration_ms: 0.3456
+  type: 'test'
+  ...
+# Subtest: box đúng không có vấn đề
+ok 8 - box đúng không có vấn đề
+  ---
+  duration_ms: 4.2003
+  type: 'test'
+  ...
+# Subtest: kích thước ngoài ngưỡng: vượt 25% là Lỗi, vượt 10% là Cảnh báo
+ok 9 - kích thước ngoài ngưỡng: vượt 25% là Lỗi, vượt 10% là Cảnh báo
+  ---
+  duration_ms: 1.0892
+  type: 'test'
+  ...
+# Subtest: scale không đồng bộ so với trung vị track; người đi bộ không xét
+ok 10 - scale không đồng bộ so với trung vị track; người đi bộ không xét
+  ---
+  duration_ms: 0.9538
+  type: 'test'
+  ...
+# Subtest: lơ lửng: Cảnh báo > 20 cm, Lỗi > 35 cm; điểm dưới đáy box là Lỗi
+ok 11 - lơ lửng: Cảnh báo > 20 cm, Lỗi > 35 cm; điểm dưới đáy box là Lỗi
+  ---
+  duration_ms: 0.5749
+  type: 'test'
+  ...
+# Subtest: box xa hơn 50 m không đánh giá cao độ
+ok 12 - box xa hơn 50 m không đánh giá cao độ
+  ---
+  duration_ms: 0.3925
+  type: 'test'
+  ...
+# Subtest: thiếu bằng chứng mặt đất chỉ là Thông tin
+ok 13 - thiếu bằng chứng mặt đất chỉ là Thông tin
+  ---
+  duration_ms: 0.3362
+  type: 'test'
+  ...
+# Subtest: Z ngoài ngưỡng so với mặt đất chung của vùng, chỉ trong 35 m
+ok 14 - Z ngoài ngưỡng so với mặt đất chung của vùng, chỉ trong 35 m
+  ---
+  duration_ms: 1.7262
+  type: 'test'
+  ...
+# Subtest: quá xa chỉ kiểm khi guideline có maxDistanceM
+ok 15 - quá xa chỉ kiểm khi guideline có maxDistanceM
+  ---
+  duration_ms: 1.9833
+  type: 'test'
+  ...
+# Subtest: chồng lấn: cứ chồng là Lỗi, cặp spec cho phép chỉ Thông tin
+ok 16 - chồng lấn: cứ chồng là Lỗi, cặp spec cho phép chỉ Thông tin
+  ---
+  duration_ms: 2.2268
+  type: 'test'
+  ...
+# Subtest: box rỗng và box occluded
+ok 17 - box rỗng và box occluded
+  ---
+  duration_ms: 0.5165
+  type: 'test'
+  ...
+# Subtest: thiếu thuộc tính bắt buộc theo spec-vn
+ok 18 - thiếu thuộc tính bắt buộc theo spec-vn
+  ---
+  duration_ms: 0.3829
+  type: 'test'
+  ...
+# Subtest: angleOutliers bắt keyframe lật đúng 180° (unwrap không bắt được) và không đánh dấu xe rẽ
+ok 19 - angleOutliers bắt keyframe lật đúng 180° (unwrap không bắt được) và không đánh dấu xe rẽ
+  ---
+  duration_ms: 0.8214
+  type: 'test'
+  ...
+# Subtest: madOutliers đánh dấu frame lệch, không báo khi cả track gần như bằng nhau
+ok 20 - madOutliers đánh dấu frame lệch, không báo khi cả track gần như bằng nhau
+  ---
+  duration_ms: 0.2848
+  type: 'test'
+  ...
+# Subtest: tô điểm trong box xanh lá, điểm lòi ra đỏ, rồi trả lại màu gốc khi bỏ chọn
+ok 21 - tô điểm trong box xanh lá, điểm lòi ra đỏ, rồi trả lại màu gốc khi bỏ chọn
+  ---
+  duration_ms: 1.7931
+  type: 'test'
+  ...
+# Subtest: đổi box: màu của box trước được trả lại trước khi tô box mới
+ok 22 - đổi box: màu của box trước được trả lại trước khi tô box mới
+  ---
+  duration_ms: 0.3783
+  type: 'test'
+  ...
+# Subtest: cloud không có màu theo điểm: báo để vẽ lớp phủ thay thế
+ok 23 - cloud không có màu theo điểm: báo để vẽ lớp phủ thay thế
+  ---
+  duration_ms: 0.242
+  type: 'test'
+  ...
+# Subtest: box: points CVAT hỏng (thiếu phần tử, NaN, kích thước 0 / âm) thì không thành box
+ok 24 - box: points CVAT hỏng (thiếu phần tử, NaN, kích thước 0 / âm) thì không thành box
+  ---
+  duration_ms: 3.1903
+  type: 'test'
+  ...
+# Subtest: box: ghi lại points giữ đủ 16 phần tử kể cả khi mảng gốc ngắn
+ok 25 - box: ghi lại points giữ đủ 16 phần tử kể cả khi mảng gốc ngắn
+  ---
+  duration_ms: 1.3654
+  type: 'test'
+  ...
+# Subtest: box: góc quanh ±180° lấy hiệu ngắn nhất
+ok 26 - box: góc quanh ±180° lấy hiệu ngắn nhất
+  ---
+  duration_ms: 0.5202
+  type: 'test'
+  ...
+# Subtest: box: toLocal ∘ toWorld là đồng nhất kể cả khi box có pitch / roll
+ok 27 - box: toLocal ∘ toWorld là đồng nhất kể cả khi box có pitch / roll
+  ---
+  duration_ms: 0.5561
+  type: 'test'
+  ...
+# Subtest: box: chồng lấn – trùng khít, nằm gọn trong, xếp chồng theo chiều cao, chạm mép, xoay 90°
+ok 28 - box: chồng lấn – trùng khít, nằm gọn trong, xếp chồng theo chiều cao, chạm mép, xoay 90°
+  ---
+  duration_ms: 1.3358
+  type: 'test'
+  ...
+# Subtest: grid: cloud rỗng không lỗi, không trả điểm
+ok 29 - grid: cloud rỗng không lỗi, không trả điểm
+  ---
+  duration_ms: 0.8718
+  type: 'test'
+  ...
+# Subtest: grid: điểm NaN (PCD có tia không phản xạ) bị bỏ qua, điểm thật vẫn tra được
+ok 30 - grid: điểm NaN (PCD có tia không phản xạ) bị bỏ qua, điểm thật vẫn tra được
+  ---
+  duration_ms: 0.8696
+  type: 'test'
+  ...
+# Subtest: grid / terrain: điểm Infinity không làm treo trang
+ok 31 - grid / terrain: điểm Infinity không làm treo trang
+  ---
+  duration_ms: 109.2608
+  type: 'test'
+  ...
+# Subtest: grid: một điểm lạc rất xa (1e6 m) không làm hỏng tra cứu quanh box
+ok 32 - grid: một điểm lạc rất xa (1e6 m) không làm hỏng tra cứu quanh box
+  ---
+  duration_ms: 19.1464
+  type: 'test'
+  ...
+# Subtest: terrain: cloud rỗng hoặc toàn điểm của box thì không đo, không lỗi
+ok 33 - terrain: cloud rỗng hoặc toàn điểm của box thì không đo, không lỗi
+  ---
+  duration_ms: 1.6001
+  type: 'test'
+  ...
+# Subtest: terrain: điểm NaN lẫn trong mặt đường không làm độ cao thành NaN
+ok 34 - terrain: điểm NaN lẫn trong mặt đường không làm độ cao thành NaN
+  ---
+  duration_ms: 54.4482
+  type: 'test'
+  ...
+# Subtest: terrain: box nằm ngoài vùng có điểm thì không đo (không ngoại suy bừa)
+ok 35 - terrain: box nằm ngoài vùng có điểm thì không đo (không ngoại suy bừa)
+  ---
+  duration_ms: 4.7249
+  type: 'test'
+  ...
+# Subtest: terrain: quá ít điểm đất quanh box thì số đo không đủ tin để báo
+ok 36 - terrain: quá ít điểm đất quanh box thì số đo không đủ tin để báo
+  ---
+  duration_ms: 0.544
+  type: 'test'
+  ...
+# Subtest: terrain: box xoay 45° trên dốc 5% nằm sát mặt dốc thì không báo lơ lửng / lún
+ok 37 - terrain: box xoay 45° trên dốc 5% nằm sát mặt dốc thì không báo lơ lửng / lún
+  ---
+  duration_ms: 103.7443
+  type: 'test'
+  ...
+# Subtest: checks: class không có trong guideline thì không báo kích thước / mặt đất, không lỗi
+ok 38 - checks: class không có trong guideline thì không báo kích thước / mặt đất, không lỗi
+  ---
+  duration_ms: 2.097
+  type: 'test'
+  ...
+# Subtest: checks: box occluded không bị báo lơ lửng / rỗng / Z
+ok 39 - checks: box occluded không bị báo lơ lửng / rỗng / Z
+  ---
+  duration_ms: 0.6455
+  type: 'test'
+  ...
+# Subtest: checks: thuộc tính bắt buộc rỗng ("") cũng là thiếu; giá trị "false" là đã chọn
+ok 40 - checks: thuộc tính bắt buộc rỗng ("") cũng là thiếu; giá trị "false" là đã chọn
+  ---
+  duration_ms: 0.4474
+  type: 'test'
+  ...
+# Subtest: checks: track 1–2 keyframe, hoặc người đi bộ, thì không kiểm scale theo track
+ok 41 - checks: track 1–2 keyframe, hoặc người đi bộ, thì không kiểm scale theo track
+  ---
+  duration_ms: 0.4148
+  type: 'test'
+  ...
+# Subtest: checks: box rất xa – không đo cao độ (Thông tin), quá phạm vi gán nhãn khi cấu hình maxDistanceM
+ok 42 - checks: box rất xa – không đo cao độ (Thông tin), quá phạm vi gán nhãn khi cấu hình maxDistanceM
+  ---
+  duration_ms: 2.0881
+  type: 'test'
+  ...
+# Subtest: checks: chồng lấn với class không kiểm thì bỏ qua
+ok 43 - checks: chồng lấn với class không kiểm thì bỏ qua
+  ---
+  duration_ms: 1.7967
+  type: 'test'
+  ...
+# Subtest: checks: ngoại lai – mảng rỗng / 1–2 phần tử / toàn bằng nhau không báo
+ok 44 - checks: ngoại lai – mảng rỗng / 1–2 phần tử / toàn bằng nhau không báo
+  ---
+  duration_ms: 1.1284
+  type: 'test'
+  ...
+# Subtest: checks: yaw dao động quanh ±180° không bị coi là bước nhảy; một frame quay ngang thì bị bắt
+ok 45 - checks: yaw dao động quanh ±180° không bị coi là bước nhảy; một frame quay ngang thì bị bắt
+  ---
+  duration_ms: 0.88
+  type: 'test'
+  ...
+# Subtest: checks: xe rẽ gắt ở ngã tư (nuScenes scene-1077, 2 Hz) không bị đánh dấu yaw
+ok 46 - checks: xe rẽ gắt ở ngã tư (nuScenes scene-1077, 2 Hz) không bị đánh dấu yaw
+  ---
+  duration_ms: 0.3359
+  type: 'test'
+  ...
+# Subtest: checks: keyframe lật 180° ở đầu hoặc cuối track vẫn bị bắt; keyframe thưa tính theo frame
+ok 47 - checks: keyframe lật 180° ở đầu hoặc cuối track vẫn bị bắt; keyframe thưa tính theo frame
+  ---
+  duration_ms: 0.5188
+  type: 'test'
+  ...
+# Subtest: guideline: ghi đè không phải object (null, mảng, chuỗi) thì dùng mặc định, không lỗi
+ok 48 - guideline: ghi đè không phải object (null, mảng, chuỗi) thì dùng mặc định, không lỗi
+  ---
+  duration_ms: 0.998
+  type: 'test'
+  ...
+# Subtest: guideline: ghi đè sai kiểu ở mọi phần luật dùng thì báo lỗi, không làm sập vòng vẽ
+ok 49 - guideline: ghi đè sai kiểu ở mọi phần luật dùng thì báo lỗi, không làm sập vòng vẽ
+  ---
+  duration_ms: 2.699
+  type: 'test'
+  ...
+# Subtest: tỉa keyframe: track 0 / 1 / 2 keyframe không bỏ gì
+ok 50 - tỉa keyframe: track 0 / 1 / 2 keyframe không bỏ gì
+  ---
+  duration_ms: 1.2395
+  type: 'test'
+  ...
+# Subtest: tỉa keyframe: chuyển động đều (pre-label mọi frame) chỉ giữ đầu và cuối
+ok 51 - tỉa keyframe: chuyển động đều (pre-label mọi frame) chỉ giữ đầu và cuối
+  ---
+  duration_ms: 1.0664
+  type: 'test'
+  ...
+# Subtest: tỉa keyframe: giữ keyframe outside và hai bên chỗ đổi thuộc tính / occluded
+ok 52 - tỉa keyframe: giữ keyframe outside và hai bên chỗ đổi thuộc tính / occluded
+  ---
+  duration_ms: 0.4504
+  type: 'test'
+  ...
+# Subtest: tỉa keyframe: quay đều qua ±180° vẫn nội suy được (cung ngắn nhất) nên được tỉa
+ok 53 - tỉa keyframe: quay đều qua ±180° vẫn nội suy được (cung ngắn nhất) nên được tỉa
+  ---
+  duration_ms: 0.4809
+  type: 'test'
+  ...
+# Subtest: mượt yaw: dưới 3 keyframe hoặc yaw quanh ±180° ổn định thì không đổi gì
+ok 54 - mượt yaw: dưới 3 keyframe hoặc yaw quanh ±180° ổn định thì không đổi gì
+  ---
+  duration_ms: 0.8037
+  type: 'test'
+  ...
+# Subtest: mượt yaw: một keyframe lật 180° được xoay lại; xe quay đầu thật (dần 0 → 180°) không bị lật
+ok 55 - mượt yaw: một keyframe lật 180° được xoay lại; xe quay đầu thật (dần 0 → 180°) không bị lật
+  ---
+  duration_ms: 0.5354
+  type: 'test'
+  ...
+# Subtest: đồng bộ kích thước: bỏ qua keyframe outside, giữ đáy box, không đổi keyframe đã đúng cỡ
+ok 56 - đồng bộ kích thước: bỏ qua keyframe outside, giữ đáy box, không đổi keyframe đã đúng cỡ
+  ---
+  duration_ms: 0.5281
+  type: 'test'
+  ...
+# Subtest: đồng bộ kích thước: trung vị của track toàn outside là không có
+ok 57 - đồng bộ kích thước: trung vị của track toàn outside là không có
+  ---
+  duration_ms: 0.2965
+  type: 'test'
+  ...
+# Subtest: hạ đáy: box có pitch / roll vẫn đặt đúng đáy lên mặt đất
+ok 58 - hạ đáy: box có pitch / roll vẫn đặt đúng đáy lên mặt đất
+  ---
+  duration_ms: 1.0112
+  type: 'test'
+  ...
+# Subtest: điểm của vật: không có điểm nào thì trả rỗng, không đo mặt
+ok 59 - điểm của vật: không có điểm nào thì trả rỗng, không đo mặt
+  ---
+  duration_ms: 0.8206
+  type: 'test'
+  ...
+# Subtest: điểm của vật: LiDAR nằm trong box (box của xe thu) không lỗi, không đo mặt
+ok 60 - điểm của vật: LiDAR nằm trong box (box của xe thu) không lỗi, không đo mặt
+  ---
+  duration_ms: 2.5745
+  type: 'test'
+  ...
+# Subtest: điểm của vật: 60 000 điểm quanh box đo xong dưới 300 ms
+ok 61 - điểm của vật: 60 000 điểm quanh box đo xong dưới 300 ms
+  ---
+  duration_ms: 163.0863
+  type: 'test'
+  ...
+# Subtest: tô màu: cùng số điểm và cùng điểm đầu / cuối nhưng khác điểm giữa vẫn tô lại đúng
+ok 62 - tô màu: cùng số điểm và cùng điểm đầu / cuối nhưng khác điểm giữa vẫn tô lại đúng
+  ---
+  duration_ms: 0.4494
+  type: 'test'
+  ...
+# Subtest: tô màu: đổi frame (geometry mới) không ghi màu cũ vào cloud mới; bỏ chọn trả màu cloud mới
+ok 63 - tô màu: đổi frame (geometry mới) không ghi màu cũ vào cloud mới; bỏ chọn trả màu cloud mới
+  ---
+  duration_ms: 0.1709
+  type: 'test'
+  ...
+# Subtest: spec: ghi with_rider mà box không gồm người (1,1 m), hoặc without_rider mà box gồm người (1,75 m), đều bị báo
+ok 64 - spec: ghi with_rider mà box không gồm người (1,1 m), hoặc without_rider mà box gồm người (1,75 m), đều bị báo
+  ---
+  duration_ms: 0.3582
+  type: 'test'
+  ...
+# Subtest: spec: xe có người lái mà người lái còn box riêng thì báo ở cả hai box; người dắt xe không người thì được chồng
+ok 65 - spec: xe có người lái mà người lái còn box riêng thì báo ở cả hai box; người dắt xe không người thì được chồng
+  ---
+  duration_ms: 0.4712
+  type: 'test'
+  ...
+# Subtest: spec: người trong xe con bị báo; người đứng trên thùng xe tải (đáy cao hơn 0,6 m) thì không
+ok 66 - spec: người trong xe con bị báo; người đứng trên thùng xe tải (đáy cao hơn 0,6 m) thì không
+  ---
+  duration_ms: 0.27
+  type: 'test'
+  ...
+# Subtest: ghi đè chỉ thay phần được ghi, giữ phần còn lại của mặc định
+ok 67 - ghi đè chỉ thay phần được ghi, giữ phần còn lại của mặc định
+  ---
+  duration_ms: 3.0752
+  type: 'test'
+  ...
+# Subtest: ghi đè sai kiểu thì dùng mặc định và trả lỗi đọc được
+ok 68 - ghi đè sai kiểu thì dùng mặc định và trả lỗi đọc được
+  ---
+  duration_ms: 1.6634
+  type: 'test'
+  ...
+# Subtest: classKey dùng Class/subtype khi có khoảng kích thước cho khóa đó
+ok 69 - classKey dùng Class/subtype khi có khoảng kích thước cho khóa đó
+  ---
+  duration_ms: 0.3837
+  type: 'test'
+  ...
+# Subtest: diff: chỉ lưu phần khác mặc định; merge lại cho đúng bản đã sửa, kể cả khi bỏ một khoảng kích thước
+ok 70 - diff: chỉ lưu phần khác mặc định; merge lại cho đúng bản đã sửa, kể cả khi bỏ một khoảng kích thước
+  ---
+  duration_ms: 2.7779
+  type: 'test'
+  ...
+# Subtest: classKey: thuộc tính checkbox chia ngưỡng theo "true" / "false"
+ok 71 - classKey: thuộc tính checkbox chia ngưỡng theo "true" / "false"
+  ---
+  duration_ms: 0.5939
+  type: 'test'
+  ...
+# Subtest: hosts: địa chỉ dán nguyên URL trang job vẫn lấy đúng origin; URL có tài khoản bị từ chối
+ok 72 - hosts: địa chỉ dán nguyên URL trang job vẫn lấy đúng origin; URL có tài khoản bị từ chối
+  ---
+  duration_ms: 2.6109
+  type: 'test'
+  ...
+# Subtest: hosts: origin chưa có cấu hình riêng dùng cấu hình chung cũ; có cấu hình riêng thì chỉ dùng nó
+ok 73 - hosts: origin chưa có cấu hình riêng dùng cấu hình chung cũ; có cấu hình riêng thì chỉ dùng nó
+  ---
+  duration_ms: 1.6009
+  type: 'test'
+  ...
+# Subtest: hosts: project có bộ ngưỡng riêng thì dùng nó; chưa có thì dùng của địa chỉ CVAT; bật / tắt luôn theo địa chỉ
+ok 74 - hosts: project có bộ ngưỡng riêng thì dùng nó; chưa có thì dùng của địa chỉ CVAT; bật / tắt luôn theo địa chỉ
+  ---
+  duration_ms: 0.4698
+  type: 'test'
+  ...
+# Subtest: box ôm khít vật: mọi điểm trong box, mặt nhìn thấy gần như không hở
+ok 75 - box ôm khít vật: mọi điểm trong box, mặt nhìn thấy gần như không hở
+  ---
+  duration_ms: 14.394
+  type: 'test'
+  ...
+# Subtest: box nhỏ hơn vật: điểm lòi ra tô đỏ, mặt đó báo lòi
+ok 76 - box nhỏ hơn vật: điểm lòi ra tô đỏ, mặt đó báo lòi
+  ---
+  duration_ms: 5.5972
+  type: 'test'
+  ...
+# Subtest: box dư so với vật: mặt nhìn thấy báo dư
+ok 77 - box dư so với vật: mặt nhìn thấy báo dư
+  ---
+  duration_ms: 3.5848
+  type: 'test'
+  ...
+# Subtest: vật rời bên cạnh (cột cách 0,45 m) và điểm mặt đất không bị tính là điểm của vật
+ok 78 - vật rời bên cạnh (cột cách 0,45 m) và điểm mặt đất không bị tính là điểm của vật
+  ---
+  duration_ms: 4.1075
+  type: 'test'
+  ...
+# Subtest: điểm thuộc box khác không bị tính
+ok 79 - điểm thuộc box khác không bị tính
+  ---
+  duration_ms: 4.9474
+  type: 'test'
+  ...
+# Subtest: vỉa hè cao hơn mặt đường cạnh box: điểm mặt đất không bị tính là điểm của vật, không loang theo vệt tia
+ok 80 - vỉa hè cao hơn mặt đường cạnh box: điểm mặt đất không bị tính là điểm của vật, không loang theo vệt tia
+  ---
+  duration_ms: 4.3141
+  type: 'test'
+  ...
+# Subtest: mặt bị nhìn xiên quá 70° hoặc bị vật khác che thì không đo khoảng hở
+ok 81 - mặt bị nhìn xiên quá 70° hoặc bị vật khác che thì không đo khoảng hở
+  ---
+  duration_ms: 9.8374
+  type: 'test'
+  ...
+# Subtest: pointsNearBox lấy đúng điểm trong footprint xoay nới margin
+ok 82 - pointsNearBox lấy đúng điểm trong footprint xoay nới margin
+  ---
+  duration_ms: 4.2954
+  type: 'test'
+  ...
+# Subtest: segmentBlocked: có điểm chắn giữa đoạn thì bị che, điểm được bỏ qua thì không
+ok 83 - segmentBlocked: có điểm chắn giữa đoạn thì bị che, điểm được bỏ qua thì không
+  ---
+  duration_ms: 0.9453
+  type: 'test'
+  ...
+# Subtest: ô khoảng: nhận "1.2–2.8", "1,2 - 2,8"; trống là không kiểm; sai dạng hoặc min > max là lỗi
+ok 84 - ô khoảng: nhận "1.2–2.8", "1,2 - 2,8"; trống là không kiểm; sai dạng hoặc min > max là lỗi
+  ---
+  duration_ms: 5.0865
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/core.js
+ok 85 - cú pháp: src/core.js
+  ---
+  duration_ms: 94.3213
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/cvat-dom.js
+ok 86 - cú pháp: src/cvat-dom.js
+  ---
+  duration_ms: 124.457
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/cvat-api.js
+ok 87 - cú pháp: src/cvat-api.js
+  ---
+  duration_ms: 102.435
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/seed.js
+ok 88 - cú pháp: src/seed.js
+  ---
+  duration_ms: 68.6457
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/annotator/box.js
+ok 89 - cú pháp: src/annotator/box.js
+  ---
+  duration_ms: 81.2585
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/annotator/spatial-grid.js
+ok 90 - cú pháp: src/annotator/spatial-grid.js
+  ---
+  duration_ms: 64.3181
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/annotator/terrain.js
+ok 91 - cú pháp: src/annotator/terrain.js
+  ---
+  duration_ms: 60.538
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/annotator/guideline.js
+ok 92 - cú pháp: src/annotator/guideline.js
+  ---
+  duration_ms: 64.3271
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/annotator/checks.js
+ok 93 - cú pháp: src/annotator/checks.js
+  ---
+  duration_ms: 61.4447
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/annotator/track-ops.js
+ok 94 - cú pháp: src/annotator/track-ops.js
+  ---
+  duration_ms: 63.3983
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/annotator/object-points.js
+ok 95 - cú pháp: src/annotator/object-points.js
+  ---
+  duration_ms: 70.9771
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/annotator/measure.js
+ok 96 - cú pháp: src/annotator/measure.js
+  ---
+  duration_ms: 67.6552
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/annotator/cvat-adapter.js
+ok 97 - cú pháp: src/annotator/cvat-adapter.js
+  ---
+  duration_ms: 62.1291
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/annotator/overlay.js
+ok 98 - cú pháp: src/annotator/overlay.js
+  ---
+  duration_ms: 61.8253
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/annotator/cloud-colors.js
+ok 99 - cú pháp: src/annotator/cloud-colors.js
+  ---
+  duration_ms: 64.4907
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/annotator/panel.js
+ok 100 - cú pháp: src/annotator/panel.js
+  ---
+  duration_ms: 59.9392
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/annotator/spec-editor.js
+ok 101 - cú pháp: src/annotator/spec-editor.js
+  ---
+  duration_ms: 62.9583
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/annotator/annotator.js
+ok 102 - cú pháp: src/annotator/annotator.js
+  ---
+  duration_ms: 63.057
+  type: 'test'
+  ...
+# Subtest: cú pháp: hosts.js
+ok 103 - cú pháp: hosts.js
+  ---
+  duration_ms: 59.6137
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/annotator/settings-bridge.js
+ok 104 - cú pháp: src/annotator/settings-bridge.js
+  ---
+  duration_ms: 55.855
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/panel-css.js
+ok 105 - cú pháp: src/panel-css.js
+  ---
+  duration_ms: 51.9548
+  type: 'test'
+  ...
+# Subtest: cú pháp: src/content.js
+ok 106 - cú pháp: src/content.js
+  ---
+  duration_ms: 52.5572
+  type: 'test'
+  ...
+# Subtest: cú pháp: background.js
+ok 107 - cú pháp: background.js
+  ---
+  duration_ms: 50.6075
+  type: 'test'
+  ...
+# Subtest: cú pháp: options.js
+ok 108 - cú pháp: options.js
+  ---
+  duration_ms: 51.9904
+  type: 'test'
+  ...
+# Subtest: cú pháp: popup.js
+ok 109 - cú pháp: popup.js
+  ---
+  duration_ms: 53.2579
+  type: 'test'
+  ...
+# Subtest: nội suy được mặt đất dưới gầm xe và đo box sát đất ≈ 0
+ok 110 - nội suy được mặt đất dưới gầm xe và đo box sát đất ≈ 0
+  ---
+  duration_ms: 60.2746
+  type: 'test'
+  ...
+# Subtest: box lơ lửng 30 cm: gapM ≈ +0,30
+ok 111 - box lơ lửng 30 cm: gapM ≈ +0,30
+  ---
+  duration_ms: 40.0599
+  type: 'test'
+  ...
+# Subtest: điểm phản xạ dưới mặt đất không kéo mặt đất xuống
+ok 112 - điểm phản xạ dưới mặt đất không kéo mặt đất xuống
+  ---
+  duration_ms: 77.8952
+  type: 'test'
+  ...
+# Subtest: điểm của vật nằm dưới đáy box là bằng chứng lơ lửng
+ok 113 - điểm của vật nằm dưới đáy box là bằng chứng lơ lửng
+  ---
+  duration_ms: 26.9139
+  type: 'test'
+  ...
+# Subtest: đường dốc: tiếp đất tính ở góc thấp nhất của footprint
+ok 114 - đường dốc: tiếp đất tính ở góc thấp nhất của footprint
+  ---
+  duration_ms: 54.9488
+  type: 'test'
+  ...
+# Subtest: mặt phẳng trên cao (mái hiên, nóc vật chưa gán) không thành mặt đất của box
+ok 115 - mặt phẳng trên cao (mái hiên, nóc vật chưa gán) không thành mặt đất của box
+  ---
+  duration_ms: 5.2218
+  type: 'test'
+  ...
+# Subtest: bờ vỉa dưới footprint: đáy box giữa mặt đường và vỉa hè không bị báo, điểm vỉa hè không bị coi là điểm của vật
+ok 116 - bờ vỉa dưới footprint: đáy box giữa mặt đường và vỉa hè không bị báo, điểm vỉa hè không bị coi là điểm của vật
+  ---
+  duration_ms: 29.4076
+  type: 'test'
+  ...
+# Subtest: không có điểm đất quanh box thì không đoán
+ok 117 - không có điểm đất quanh box thì không đoán
+  ---
+  duration_ms: 1.1992
+  type: 'test'
+  ...
+# Subtest: thân vật chưa gán nhãn không bị coi là mặt đất
+ok 118 - thân vật chưa gán nhãn không bị coi là mặt đất
+  ---
+  duration_ms: 9.0128
+  type: 'test'
+  ...
+# Subtest: interpolate đi theo cung ngắn nhất qua ±180° như CVAT
+ok 119 - interpolate đi theo cung ngắn nhất qua ±180° như CVAT
+  ---
+  duration_ms: 2.2885
+  type: 'test'
+  ...
+# Subtest: đồng bộ kích thước giữ mặt nhìn thấy từ LiDAR, kéo dài về phía bị che, giữ đáy
+ok 120 - đồng bộ kích thước giữ mặt nhìn thấy từ LiDAR, kéo dài về phía bị che, giữ đáy
+  ---
+  duration_ms: 1.1696
+  type: 'test'
+  ...
+# Subtest: đồng bộ kích thước bỏ qua keyframe đã đúng cỡ và keyframe outside
+ok 121 - đồng bộ kích thước bỏ qua keyframe đã đúng cỡ và keyframe outside
+  ---
+  duration_ms: 2.8857
+  type: 'test'
+  ...
+# Subtest: tỉa keyframe: chuyển động thẳng đều chỉ giữ hai đầu
+ok 122 - tỉa keyframe: chuyển động thẳng đều chỉ giữ hai đầu
+  ---
+  duration_ms: 0.9978
+  type: 'test'
+  ...
+# Subtest: tỉa keyframe: giữ đỉnh của đoạn rẽ và sai số sau tỉa ≤ dung sai
+ok 123 - tỉa keyframe: giữ đỉnh của đoạn rẽ và sai số sau tỉa ≤ dung sai
+  ---
+  duration_ms: 0.7535
+  type: 'test'
+  ...
+# Subtest: tỉa keyframe: không bỏ keyframe kề chỗ đổi thuộc tính, occluded hoặc outside
+ok 124 - tỉa keyframe: không bỏ keyframe kề chỗ đổi thuộc tính, occluded hoặc outside
+  ---
+  duration_ms: 0.414
+  type: 'test'
+  ...
+# Subtest: làm mượt yaw: sửa keyframe lật 180°, giữ đoạn rẽ thật
+ok 125 - làm mượt yaw: sửa keyframe lật 180°, giữ đoạn rẽ thật
+  ---
+  duration_ms: 0.8971
+  type: 'test'
+  ...
+# Subtest: hạ đáy box: đáy chạm mặt đất, giữ XY và kích thước
+ok 126 - hạ đáy box: đáy chạm mặt đất, giữ XY và kích thước
+  ---
+  duration_ms: 1.537
+  type: 'test'
+  ...
+# Subtest: đăng nhập CVAT, vai trò, phiếu giao việc QC → annotator → QC
+ok 127 - đăng nhập CVAT, vai trò, phiếu giao việc QC → annotator → QC
+  ---
+  duration_ms: 1555.4721
+  type: 'test'
+  ...
+# Subtest: đứt track: bắt — xe chạy, đứt ngay frame sau
+ok 128 - đứt track: bắt — xe chạy, đứt ngay frame sau
+  ---
+  duration_ms: 16.706
+  type: 'test'
+  ...
+# Subtest: đứt track: bắt — xe chạy, bị che 3 frame rồi ID mới
+ok 129 - đứt track: bắt — xe chạy, bị che 3 frame rồi ID mới
+  ---
+  duration_ms: 7.2598
+  type: 'test'
+  ...
+# Subtest: đứt track: bắt — đoạn đầu chỉ 1 keyframe
+ok 130 - đứt track: bắt — đoạn đầu chỉ 1 keyframe
+  ---
+  duration_ms: 5.5203
+  type: 'test'
+  ...
+# Subtest: đứt track: bắt — xe đang rẽ (đường cong)
+ok 131 - đứt track: bắt — xe đang rẽ (đường cong)
+  ---
+  duration_ms: 5.828
+  type: 'test'
+  ...
+# Subtest: đứt track: bắt — nón đứng yên, đứt 2 frame
+ok 132 - đứt track: bắt — nón đứng yên, đứt 2 frame
+  ---
+  duration_ms: 4.9131
+  type: 'test'
+  ...
+# Subtest: đứt track: bắt — nón đứng yên, xe thu chạy 8 m/frame
+ok 133 - đứt track: bắt — nón đứng yên, xe thu chạy 8 m/frame
+  ---
+  duration_ms: 6.6369
+  type: 'test'
+  ...
+# Subtest: đứt track: bắt — người đi bộ, đứt 2 frame
+ok 134 - đứt track: bắt — người đi bộ, đứt 2 frame
+  ---
+  duration_ms: 7.7449
+  type: 'test'
+  ...
+# Subtest: đứt track: bắt — pre-label: kích thước đoạn sau lệch 15%
+ok 135 - đứt track: bắt — pre-label: kích thước đoạn sau lệch 15%
+  ---
+  duration_ms: 6.3105
+  type: 'test'
+  ...
+# Subtest: đứt track: bắt — đoạn trước không có keyframe outside (CVAT giữ box tới hết job)
+ok 136 - đứt track: bắt — đoạn trước không có keyframe outside (CVAT giữ box tới hết job)
+  ---
+  duration_ms: 5.9882
+  type: 'test'
+  ...
+# Subtest: đứt track: bắt — nhãn rung ±20 cm, đứt 2 frame
+ok 137 - đứt track: bắt — nhãn rung ±20 cm, đứt 2 frame
+  ---
+  duration_ms: 6.2255
+  type: 'test'
+  ...
+# Subtest: đứt track: bắt — cách đúng 5 frame (biên)
+ok 138 - đứt track: bắt — cách đúng 5 frame (biên)
+  ---
+  duration_ms: 4.8382
+  type: 'test'
+  ...
+# Subtest: đứt track: bắt — xe buýt 12 m, đứt 1 frame
+ok 139 - đứt track: bắt — xe buýt 12 m, đứt 1 frame
+  ---
+  duration_ms: 3.7268
+  type: 'test'
+  ...
+# Subtest: đứt track: bắt — xe nhanh 15 m/frame, đứt 2 frame
+ok 140 - đứt track: bắt — xe nhanh 15 m/frame, đứt 2 frame
+  ---
+  duration_ms: 3.4922
+  type: 'test'
+  ...
+# Subtest: đứt track: không báo — xe nhanh 15 m/frame, xe khác làn bên cạnh (3,5 m)
+ok 141 - đứt track: không báo — xe nhanh 15 m/frame, xe khác làn bên cạnh (3,5 m)
+  ---
+  duration_ms: 4.6415
+  type: 'test'
+  ...
+# Subtest: đứt track: không báo — xe nhanh: xe khác cùng làn chậm hơn 40%
+ok 142 - đứt track: không báo — xe nhanh: xe khác cùng làn chậm hơn 40%
+  ---
+  duration_ms: 4.5304
+  type: 'test'
+  ...
+# Subtest: đứt track: không báo — cách 6 frame
+ok 143 - đứt track: không báo — cách 6 frame
+  ---
+  duration_ms: 4.1827
+  type: 'test'
+  ...
+# Subtest: đứt track: không báo — hai nón cách 0,6 m
+ok 144 - đứt track: không báo — hai nón cách 0,6 m
+  ---
+  duration_ms: 4.928
+  type: 'test'
+  ...
+# Subtest: đứt track: không báo — hai nón cạnh nhau 1,3 m, thay nhau hiện
+ok 145 - đứt track: không báo — hai nón cạnh nhau 1,3 m, thay nhau hiện
+  ---
+  duration_ms: 9.0416
+  type: 'test'
+  ...
+# Subtest: đứt track: không báo — xe sau chạy tới chỗ xe trước vừa rời (kẹt xe 0,3 m/frame)
+ok 146 - đứt track: không báo — xe sau chạy tới chỗ xe trước vừa rời (kẹt xe 0,3 m/frame)
+  ---
+  duration_ms: 4.8312
+  type: 'test'
+  ...
+# Subtest: đứt track: không báo — xe khác làn cách 3,5 m
+ok 147 - đứt track: không báo — xe khác làn cách 3,5 m
+  ---
+  duration_ms: 4.8497
+  type: 'test'
+  ...
+# Subtest: đứt track: không báo — xe khác chạy ngược chiều
+ok 148 - đứt track: không báo — xe khác chạy ngược chiều
+  ---
+  duration_ms: 4.6814
+  type: 'test'
+  ...
+# Subtest: đứt track: không báo — cách quá 5 frame
+ok 149 - đứt track: không báo — cách quá 5 frame
+  ---
+  duration_ms: 4.9277
+  type: 'test'
+  ...
+# Subtest: đứt track: không báo — hai track cùng có mặt một lúc
+ok 150 - đứt track: không báo — hai track cùng có mặt một lúc
+  ---
+  duration_ms: 4.1049
+  type: 'test'
+  ...
+# Subtest: đứt track: không báo — khác class (car → truck)
+ok 151 - đứt track: không báo — khác class (car → truck)
+  ---
+  duration_ms: 3.7661
+  type: 'test'
+  ...
+# Subtest: đứt track: không báo — cùng một track ra rồi vào lại (đúng, cùng ID)
+ok 152 - đứt track: không báo — cùng một track ra rồi vào lại (đúng, cùng ID)
+  ---
+  duration_ms: 4.6296
+  type: 'test'
+  ...
+# Subtest: đứt track: không báo — track kết thúc ở frame cuối job
+ok 153 - đứt track: không báo — track kết thúc ở frame cuối job
+  ---
+  duration_ms: 4.1248
+  type: 'test'
+  ...
+# Subtest: đứt track: không báo — người đi cùng nhóm: người khác xuất hiện cách 1 m
+ok 154 - đứt track: không báo — người đi cùng nhóm: người khác xuất hiện cách 1 m
+  ---
+  duration_ms: 4.5338
+  type: 'test'
+  ...
+# Subtest: zip: đọc file stored và deflate theo thứ tự
+ok 155 - zip: đọc file stored và deflate theo thứ tự
+  ---
+  duration_ms: 8.4262
+  type: 'test'
+  ...
+# Subtest: pcd: binary, ascii và binary_compressed; bỏ điểm NaN
+ok 156 - pcd: binary, ascii và binary_compressed; bỏ điểm NaN
+  ---
+  duration_ms: 2.5917
+  type: 'test'
+  ...
+# Subtest: tracks: nội suy giữa keyframe như CVAT (góc theo cung ngắn), giữ box sau keyframe cuối, outside thì biến mất
+ok 157 - tracks: nội suy giữa keyframe như CVAT (góc theo cung ngắn), giữ box sau keyframe cuối, outside thì biến mất
+  ---
+  duration_ms: 2.4509
+  type: 'test'
+  ...
+# Subtest: scan: quét đủ frame theo gói, bắt xe lơ lửng và keyframe lật, gộp theo object + luật, gate KHÔNG ĐẠT / CẦN XEM
+ok 158 - scan: quét đủ frame theo gói, bắt xe lơ lửng và keyframe lật, gộp theo object + luật, gate KHÔNG ĐẠT / CẦN XEM
+  ---
+  duration_ms: 723.5158
+  type: 'test'
+  ...
+# Subtest: scan: hai box chồng nhau là một mục theo cặp, không phải hai mục
+ok 159 - scan: hai box chồng nhau là một mục theo cặp, không phải hai mục
+  ---
+  duration_ms: 208.0035
+  type: 'test'
+  ...
+# Subtest: scan: gói frame lỗi thì ghi vào coverage, không dừng cả job
+ok 160 - scan: gói frame lỗi thì ghi vào coverage, không dừng cả job
+  ---
+  duration_ms: 124.5831
+  type: 'test'
+  ...
+# Subtest: server: lệnh ghi thiếu header riêng bị từ chối; file tĩnh không thoát khỏi thư mục public
+ok 161 - server: lệnh ghi thiếu header riêng bị từ chối; file tĩnh không thoát khỏi thư mục public
+  ---
+  duration_ms: 15.9378
+  type: 'test'
+  ...
+# Subtest: trackrules: bắt box lệch một frame, đổi ID, đứt track, vẽ hai lần; nhãn sạch không báo
+ok 162 - trackrules: bắt box lệch một frame, đổi ID, đứt track, vẽ hai lần; nhãn sạch không báo
+  ---
+  duration_ms: 16.697
+  type: 'test'
+  ...
+# Subtest: trackrules: box lệch ngang 1,2 m vẫn bắt khi xe thu chạy nhanh; lệch dọc hướng đi được nới theo quãng đường
+ok 163 - trackrules: box lệch ngang 1,2 m vẫn bắt khi xe thu chạy nhanh; lệch dọc hướng đi được nới theo quãng đường
+  ---
+  duration_ms: 6.0941
+  type: 'test'
+  ...
+# Subtest: guideline: lưu phiên bản, khôi phục, đọc file kiểu cũ; ghi đè sai bị từ chối
+ok 164 - guideline: lưu phiên bản, khôi phục, đọc file kiểu cũ; ghi đè sai bị từ chối
+  ---
+  duration_ms: 8.4812
+  type: 'test'
+  ...
+# Subtest: icp: tìm lại chuyển động xe thu từ nền tĩnh (tường, cột), bỏ điểm trong box
+ok 165 - icp: tìm lại chuyển động xe thu từ nền tĩnh (tường, cột), bỏ điểm trong box
+  ---
+  duration_ms: 41.3546
+  type: 'test'
+  ...
+# Subtest: evidence: chỗ nối có một cụm điểm là một vật; có thêm cụm ở chỗ vật cũ lẽ ra tới là hai vật
+ok 166 - evidence: chỗ nối có một cụm điểm là một vật; có thêm cụm ở chỗ vật cũ lẽ ra tới là hai vật
+  ---
+  duration_ms: 5.0639
+  type: 'test'
+  ...
+# Subtest: trackrules: ghép một-một (Hungarian) chọn tổng chi phí nhỏ nhất, bỏ cặp không được ghép
+ok 167 - trackrules: ghép một-một (Hungarian) chọn tổng chi phí nhỏ nhất, bỏ cặp không được ghép
+  ---
+  duration_ms: 0.2732
+  type: 'test'
+  ...
+1..167
+# tests 167
+# suites 0
+# pass 167
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1913.9571

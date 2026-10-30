@@ -1,0 +1,87 @@
+{
+  "baseline": "e845e7d",
+  "meaning": "Assertions xác nhận lỗi tái hiện, không phải test nghiệm thu sản phẩm",
+  "findings": [
+    {
+      "id": "GEO-01",
+      "expected": "Thất bại giữa batch phải rollback phần đã ghi, hoặc trả journal có thể Undo cả phần đã ghi.",
+      "actual": {
+        "persistedFrames": [
+          0
+        ],
+        "undoRecordReturned": false,
+        "historyFrozenDuringSave": [
+          true,
+          false
+        ],
+        "error": "Lỗi lưu frame 1 được cài có chủ đích"
+      }
+    },
+    {
+      "id": "GEO-02",
+      "expected": "Đồng bộ kích thước giữ đáy theo mô tả, hoặc từ chối box roll/pitch chưa hỗ trợ.",
+      "actual": {
+        "pitchDeg": 30,
+        "dimsBefore": [
+          4,
+          2,
+          2
+        ],
+        "dimsAfter": [
+          6,
+          2,
+          2
+        ],
+        "bottomBeforeM": 1.1339745962155612,
+        "bottomAfterM": 0.13397459621556151,
+        "driftM": -0.9999999999999997
+      }
+    },
+    {
+      "id": "GEO-03",
+      "expected": "Truy vấn ứng viên phải chứa mọi điểm thực sự trong OBB nếu chấp nhận roll/pitch.",
+      "actual": {
+        "point": [
+          3,
+          0,
+          0
+        ],
+        "localPoint": [
+          1.8369701987210297e-16,
+          0,
+          3
+        ],
+        "actuallyInside": true,
+        "candidates": []
+      }
+    },
+    {
+      "id": "GEO-04a",
+      "expected": "Đổi class phải tính lại checklist ngay, kể cả không đổi hình học/thuộc tính.",
+      "actual": {
+        "labelOnCVAT": "pedestrian",
+        "labelInCachedMeasurement": "car",
+        "cachedSizeError": false,
+        "freshSizeError": true
+      }
+    },
+    {
+      "id": "GEO-04b",
+      "expected": "Sau reload track phải tính lại theo nội dung keyframe, không chỉ theo số lượng.",
+      "actual": {
+        "keyframeCount": 3,
+        "cachedTrackSizeError": false,
+        "freshTrackSizeError": true
+      }
+    },
+    {
+      "id": "GEO-05",
+      "expected": "Đổi box dùng để loại điểm phải invalidation terrain, hoặc báo số đo tạm cũ đến khi rebuild.",
+      "actual": {
+        "sameFrameSameCloud": true,
+        "cachedGroundCells": 100,
+        "recomputedGroundCells": 0
+      }
+    }
+  ]
+}

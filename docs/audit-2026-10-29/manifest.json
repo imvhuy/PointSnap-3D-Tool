@@ -1,0 +1,102 @@
+{
+  "date": "2026-10-29",
+  "timezone": "Asia/Saigon",
+  "revision": "e845e7d8cc258acd35e89925212cbea51cdac749",
+  "node": "v24.20.0",
+  "scope": "docs and audit probes only; no product edits",
+  "existingTests": {
+    "tests": 167,
+    "pass": 167,
+    "fail": 0,
+    "includesSyntaxChecks": 25
+  },
+  "additionalCases": {
+    "geometry": 6,
+    "scan": 4,
+    "workflow": 7,
+    "integration": 1,
+    "note": "Reproduction assertions, not product acceptance tests; workflow includes one policy-dependent ACL case, integration uses mock ID collision."
+  },
+  "artifacts": [
+    {
+      "path": "docs/DANH_GIA_MODULE_VA_LO_TRINH_CHAT_LUONG_2026-10-29.md",
+      "bytes": 15360,
+      "sha256": "e0bceef058154b0a36472224b073b17023fd0e79033b8595b40c499527104504"
+    },
+    {
+      "path": "docs/audit-2026-10-29/baseline-tests.tap",
+      "bytes": 36850,
+      "sha256": "96407b5d73f3002f09338cd3e2d2768d55103cccc9dc7b6d0bbdd8b6a3d925b8"
+    },
+    {
+      "path": "docs/audit-2026-10-29/geometry/probe.cjs",
+      "bytes": 8886,
+      "sha256": "a9d98afe1f3d9ea1400d8f540ced399f3e69a165d35fd4eaf3dadd6470be02ca"
+    },
+    {
+      "path": "docs/audit-2026-10-29/geometry/results.json",
+      "bytes": 2480,
+      "sha256": "345144f6b0cce5330cd43752280b8c24cd3a29df4a6e072ea2081e4add9b5272"
+    },
+    {
+      "path": "docs/audit-2026-10-29/geometry/REVIEW.md",
+      "bytes": 11449,
+      "sha256": "9685688c67dc8614c9c47e28ac80548470aef0145fc21503b0475dfd0edf7445"
+    },
+    {
+      "path": "docs/audit-2026-10-29/integration/probe.cjs",
+      "bytes": 2070,
+      "sha256": "ab9d16bff56dc490cc3bcf48b3437c46b71976b7637dd5d40192ab65dab8635a"
+    },
+    {
+      "path": "docs/audit-2026-10-29/integration/results.json",
+      "bytes": 311,
+      "sha256": "85f71aee1f58c9825a6c780ed0f2522a0836f8f9ee2400d72c0efd308432616c"
+    },
+    {
+      "path": "docs/audit-2026-10-29/integration/REVIEW.md",
+      "bytes": 4818,
+      "sha256": "b4e9f3613a6d8d9f4c654dbdfc672cfe1ad537e66f5970ccb851306cceb53fbe"
+    },
+    {
+      "path": "docs/audit-2026-10-29/KE_HOACH_NANG_CAP_VA_NGHIEM_THU.md",
+      "bytes": 15908,
+      "sha256": "0b9eb136da18d05248931e065b0bd8d744b6f53d1a0a98ec9883e6fe762ba70d"
+    },
+    {
+      "path": "docs/audit-2026-10-29/NGHIEN_CUU_DOI_CHIEU.md",
+      "bytes": 10715,
+      "sha256": "04cffca4983c6b6b6964987e6848a9516b296887b728db9530b93677a22544c5"
+    },
+    {
+      "path": "docs/audit-2026-10-29/scan/probes.cjs",
+      "bytes": 4992,
+      "sha256": "1004e58025b5f6b66fbeadafb761bffcee87c664a1a1f234631cfcf169d82d84"
+    },
+    {
+      "path": "docs/audit-2026-10-29/scan/README.md",
+      "bytes": 10870,
+      "sha256": "f4e6779ecba15d79f477ef3aefa771c4b31a2018e22085c93d789428396be559"
+    },
+    {
+      "path": "docs/audit-2026-10-29/scan/results.json",
+      "bytes": 2091,
+      "sha256": "ddf6784bbfa8a1f30e375b253a339f742d107c216fefbdc63aae3a0afc075eec"
+    },
+    {
+      "path": "docs/audit-2026-10-29/workflow/probe-results.json",
+      "bytes": 2344,
+      "sha256": "ec231cae2c7fff625f04b3e34080a7ccc6e16376ea0b71c18915a95548c1259f"
+    },
+    {
+      "path": "docs/audit-2026-10-29/workflow/probe-workflow.js",
+      "bytes": 11311,
+      "sha256": "b9c6eb5c65cbc29e9ec19d16cae36f1e46cdd662ad90a83ae63979c8c5363d18"
+    },
+    {
+      "path": "docs/audit-2026-10-29/workflow/REPORT.md",
+      "bytes": 14885,
+      "sha256": "f921bce5c8444b3537a4585d02b71505a43d31c502987998f7916bed304c707a"
+    }
+  ]
+}
