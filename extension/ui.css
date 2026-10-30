@@ -47,22 +47,11 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; font-size: 11px; l
 
 /* ---- Popup ---- */
 .popup { width: 340px; }
-/* Side panel: rộng theo khung người dùng kéo; có bảng thì bảng cao hết khung, cuộn bên trong. */
-.popup.side { width: auto; min-width: 280px; }
-.popup.with-panel { background: #fff; }
-.popup #panel { height: calc(100vh - 31px); }
-/* Opera: bấm biểu tượng mở trang này dạng popup (tối đa 800 × 600), cần cỡ cố định. */
-.popup.side.in-popup { width: 380px; }
-.popup.in-popup #panel { height: 560px; }
-.popup #panel #pointsnap-annotator { display: block; height: 100%; }
-.popup .panel-foot { display: flex; justify-content: space-between; gap: 8px; padding: 6px 10px; font-size: 12px; color: #68717D; border-top: 1px solid #f0f0f0; background: #fafafa; }
-.popup .panel-foot .link { color: #1677ff; }
-.popup .keys .k { flex: none; display: inline-flex; gap: 3px; width: 92px; }
 .popup main { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px; }
 .popup .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .popup .keys { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-2); }
 .popup .keys li { display: flex; align-items: center; gap: 10px; }
-.popup .keys .k { flex: none; display: inline-flex; gap: 3px; width: 46px; }
+.popup .keys .k { flex: none; display: inline-flex; gap: 3px; width: 92px; }
 .popup .foot { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--text-3); }
 .popup .foot button { border: 0; background: none; padding: 0; color: var(--primary-text); font: inherit; cursor: pointer; }
 .section-title { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }

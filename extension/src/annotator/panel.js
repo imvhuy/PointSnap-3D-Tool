@@ -1,8 +1,8 @@
 /*
  * Bảng PointSnap cho annotator (shadow DOM, không lẫn CSS với CVAT). Chỉ hiển thị view-model do controller đưa vào
  * và báo lại thao tác qua `onAction(name, data)`; không tự đọc CVAT.
- * Hai nơi hiện bảng dùng chung `mount`: side panel của extension (sidepanel.js, view-model gửi qua panel-link.js) và tab
- * "Hỗ trợ" trong thanh bên CVAT cho plugin QC không có extension (`create`).
+ * Hai nơi hiện bảng dùng chung `mount`: bảng nổi trên trang CVAT của extension (`createFloating`: kéo đi đâu cũng
+ * được, thu thành nút tròn, không mất khi thao tác CVAT) và tab "Hỗ trợ" trong thanh bên CVAT của plugin QC (`create`).
  * Bố cục: phần trên đứng yên (tiêu đề: chấm trạng thái + box đang chọn + nút chung; dòng job / frame; thông báo; hàng
  * nút dùng nhiều nhất: Hạ đáy, Hạ đáy mọi frame, Xong) → phần dưới cuộn: checklist từng khía cạnh, mỗi dòng có nút sửa
  * đúng vấn đề của nó → dải track một ô mỗi keyframe, bấm ô để tới frame → sửa cả track, thuộc tính → bản xem trước.
@@ -12,7 +12,7 @@
   'use strict';
 
   const STORAGE_KEY = 'pointsnap.annotator.panel';
-  const SHORTCUTS = 'Alt+Shift+P: mở bảng PointSnap · Alt+Shift+G: hạ đáy box · Alt+Shift+F: khoá box · Alt+Shift+D: đánh dấu track xong. Save / Undo bằng CVAT.';
+  const SHORTCUTS = 'Alt+Shift+P: thu nhỏ / mở bảng PointSnap · Alt+Shift+G: hạ đáy box · Alt+Shift+F: khoá box · Alt+Shift+D: đánh dấu track xong. Save / Undo bằng CVAT.';
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const ICON = { ok: '✓', warning: '!', error: '✕', na: '–', muted: '–' };
   // Phím tắt ghi bằng chữ: annotator dùng Windows / Linux, ký hiệu ⌥⇧ của Mac khó đọc.
@@ -37,7 +37,7 @@
     .count { font-weight: 600; font-size: 11px; line-height: 18px; padding: 0 6px; border-radius: 9px; background: #fff7e6; color: #d46b08; border: 1px solid #ffd591; }
     .count.error { background: #fff1f0; color: #cf1322; border-color: #ffa39e; }
     .muted { color: rgba(0,0,0,.45); }
-    .body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 8px 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 8px; }
+    .body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 8px 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: max-content; align-content: start; gap: 8px; }
     .ctx { display: flex; align-items: center; gap: 6px; padding: 3px 10px; font-size: 11.5px; color: rgba(0,0,0,.45); border-bottom: 1px solid #f0f0f0; background: #fafafa; }
     .ctx .busy { margin-left: auto; color: #1677ff; }
     .top { flex: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 8px 10px 0; }
@@ -109,6 +109,31 @@
   `;
 
   /*
+   * Bảng nổi (extension): khung trắng đổ bóng như hộp thoại antd, nằm trên lớp vẽ của PointSnap (z-index 1001) để đường
+   * mặt đất không vắt qua bảng. Kéo thanh tiêu đề để dời, kéo góc dưới phải để đổi cỡ; thu nhỏ thành nút tròn.
+   */
+  const FLOAT_CSS = `
+    .float { position: fixed; z-index: 1002; box-sizing: border-box; display: flex; flex-direction: column; width: 340px; height: 600px; min-width: 260px;
+      min-height: 200px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); resize: both; overflow: hidden;
+      border: 1px solid #d9d9d9; border-radius: 8px; background: #fff;
+      box-shadow: 0 6px 16px rgba(0,0,0,.08), 0 3px 6px -4px rgba(0,0,0,.12), 0 9px 28px 8px rgba(0,0,0,.05); }
+    .float[hidden], .bubble[hidden] { display: none; }
+    .float .panel { flex: 1 1 auto; min-height: 0; }
+    .float .head { cursor: move; touch-action: none; }
+    .float .head .min { margin-left: 2px; background: transparent; border-color: transparent; box-shadow: none; padding: 0 6px;
+      font-size: 15px; line-height: 20px; color: rgba(0,0,0,.65); cursor: pointer; }
+    .float .head .min:hover { background: rgba(0,0,0,.06); color: rgba(0,0,0,.88); }
+    .float.dragging { opacity: .92; user-select: none; }
+    .bubble { position: fixed; z-index: 1002; width: 42px; height: 42px; padding: 0; border-radius: 50%; display: grid; place-items: center;
+      background: #fff; border: 1px solid #d9d9d9; color: #1f1f1f; cursor: pointer; touch-action: none;
+      box-shadow: 0 6px 16px rgba(0,0,0,.12), 0 3px 6px -4px rgba(0,0,0,.16); }
+    .bubble:hover { border-color: #4096ff; }
+    .bubble .logo { width: 26px; height: 26px; }
+    .bubble .dot { position: absolute; top: 3px; right: 3px; border: 2px solid #fff; width: 10px; height: 10px; }
+  `;
+  const FLOAT_SIZE = { width: 340, height: 600, margin: 8 };
+
+  /*
    * Tab "Hỗ trợ" trong thanh bên phải của CVAT, cạnh Objects / Labels (và tab PointSnap QC của bản nhúng): không nổi đè
    * lên canvas. CVAT chưa có chỗ cắm cho thanh bên nên chèn một tab cùng kiểu antd; bật tab thì ẩn nội dung của CVAT (không
    * gỡ, React vẫn giữ) và hiện `.psa-pane`. Cùng một code cho extension và bản nhúng thẳng vào CVAT.
@@ -130,11 +155,15 @@
    * Dựng bảng trong `container` (shadow DOM riêng): trả về { host, render(vm) }. Vẽ lại chỉ khi HTML đổi và giữ vị trí
    * cuộn; bấm nút / đổi ô chọn gọi `onAction(tên, data-*)`.
    */
-  function mount(container, onAction) {
+  function mount(container, onAction, { floating = false } = {}) {
     const host = document.createElement('div');
     host.id = 'pointsnap-annotator';
     const shadow = host.attachShadow({ mode: 'open' });
-    shadow.innerHTML = `<style>${CSS}</style><div class="panel" role="complementary" aria-label="PointSnap annotator"></div>`;
+    const panelEl = '<div class="panel" role="complementary" aria-label="PointSnap annotator"></div>';
+    shadow.innerHTML = floating
+      ? `<style>${CSS}${FLOAT_CSS}</style><div class="float">${panelEl}</div>`
+        + `<button class="bubble" type="button" title="Mở bảng PointSnap (Alt+Shift+P) · kéo để dời" aria-label="Mở bảng PointSnap" hidden>${LOGO}<span class="dot"></span></button>`
+      : `<style>${CSS}</style>${panelEl}`;
     const panel = shadow.querySelector('.panel');
     if (container) container.appendChild(host);
     let lastHtml = '';
@@ -149,7 +178,7 @@
       if (el && !el.disabled) onAction(el.dataset.action, { ...el.dataset, value: el.value });
     });
     function render(vm) {
-      const html = head(vm) + `<div class="top">${top(vm)}</div><div class="body">${body(vm)}</div>`;
+      const html = head(vm, floating) + `<div class="top">${top(vm)}</div><div class="body">${body(vm)}</div>`;
       if (html === lastHtml) return;
       const scroller = panel.querySelector('.body'), scroll = scroller ? scroller.scrollTop : 0;
       panel.innerHTML = html;
@@ -158,6 +187,92 @@
       if (next) next.scrollTop = scroll;
     }
     return { host, render };
+  }
+
+  /**
+   * Bảng nổi trên trang CVAT (extension): không nhúng vào thanh bên của CVAT, không mất khi thao tác trên CVAT. Kéo
+   * thanh tiêu đề để dời, kéo góc dưới phải để đổi cỡ, nút – (hoặc Alt+Shift+P) thu thành nút tròn, bấm nút tròn để mở
+   * lại. Vị trí, cỡ, thu nhỏ được nhớ; bảng luôn nằm trong khung nhìn.
+   */
+  function createFloating(onAction) {
+    const view = mount(document.body, (name, data) => (name === 'collapse-panel' ? setCollapsed(true) : onAction(name, data)), { floating: true });
+    const shadow = view.host.shadowRoot, frame = shadow.querySelector('.float'), bubble = shadow.querySelector('.bubble');
+    const saved = readPosition().float || {};
+    const M = FLOAT_SIZE.margin;
+    let pos = { left: saved.left, top: saved.top }, collapsed = saved.collapsed === true;
+    if (saved.width) frame.style.width = `${saved.width}px`;
+    if (saved.height) frame.style.height = `${saved.height}px`;
+
+    const save = () => writePosition({ float: { ...pos, collapsed, width: frame.offsetWidth || saved.width, height: frame.offsetHeight || saved.height } });
+    // Giữ bảng trong khung nhìn (cửa sổ thu nhỏ, đổi màn hình): ít nhất thanh tiêu đề luôn bấm / kéo được.
+    function place() {
+      const w = frame.offsetWidth || FLOAT_SIZE.width, h = collapsed ? 42 : (frame.offsetHeight || FLOAT_SIZE.height);
+      if (!Number.isFinite(pos.left)) pos.left = innerWidth - w - 16;
+      if (!Number.isFinite(pos.top)) pos.top = 64;
+      pos.left = Math.max(M, Math.min(pos.left, innerWidth - (collapsed ? 42 : w) - M));
+      pos.top = Math.max(M, Math.min(pos.top, innerHeight - (collapsed ? 42 : Math.min(h, 40)) - M));
+      frame.style.left = bubble.style.left = `${pos.left}px`;
+      frame.style.top = bubble.style.top = `${pos.top}px`;
+    }
+    function setCollapsed(value) {
+      collapsed = value;
+      frame.hidden = collapsed;
+      bubble.hidden = !collapsed;
+      place();
+      save();
+    }
+
+    // Kéo: thanh tiêu đề của bảng (trừ nút) hoặc nút tròn. Nút tròn bấm không kéo thì mở bảng.
+    let drag = null;
+    function start(event, el) {
+      if (event.button !== 0) return;
+      drag = { el, x: event.clientX, y: event.clientY, left: pos.left, top: pos.top, moved: false };
+      el.setPointerCapture(event.pointerId);
+    }
+    frame.addEventListener('pointerdown', (event) => {
+      if (event.target.closest('.head') && !event.target.closest('button')) start(event, frame);
+    });
+    bubble.addEventListener('pointerdown', (event) => start(event, bubble));
+    for (const el of [frame, bubble]) {
+      el.addEventListener('pointermove', (event) => {
+        if (!drag || drag.el !== el) return;
+        const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+        if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+        drag.moved = true;
+        frame.classList.add('dragging');
+        pos = { left: drag.left + dx, top: drag.top + dy };
+        place();
+      });
+      el.addEventListener('pointerup', () => {
+        if (!drag || drag.el !== el) return;
+        const clicked = el === bubble && !drag.moved;
+        drag = null;
+        frame.classList.remove('dragging');
+        save();
+        if (clicked) setCollapsed(false);
+      });
+    }
+    // Đổi cỡ bằng góc dưới phải (CSS resize): nhớ cỡ mới.
+    let sizeTimer = 0;
+    new ResizeObserver(() => { clearTimeout(sizeTimer); sizeTimer = setTimeout(() => { if (!collapsed) save(); }, 300); }).observe(frame);
+    const onResize = () => place();
+    window.addEventListener('resize', onResize);
+    setCollapsed(collapsed);
+
+    return {
+      render(vm) {
+        // Nút tròn mang màu trạng thái của box đang chọn, thu nhỏ vẫn biết box ổn hay cần xem.
+        bubble.querySelector('.dot').className = `dot ${vm.box?.level || ''}`;
+        view.render(vm);
+      },
+      // Bảng nổi luôn có mặt (thu nhỏ chỉ ẩn khung): mặt đất, tô điểm, khoá box trên canvas luôn chạy.
+      isOpen: () => true,
+      toggle: () => setCollapsed(!collapsed),
+      destroy() {
+        window.removeEventListener('resize', onResize);
+        view.host.remove();
+      },
+    };
   }
 
   /** Bảng trong tab "Hỗ trợ" của thanh bên CVAT (plugin QC, không có extension). */
@@ -230,7 +345,7 @@
   }
 
   /** Thanh tiêu đề: chấm trạng thái + box đang chọn + số dòng cần xem + nút chung. */
-  function head(vm) {
+  function head(vm, floating = false) {
     const b = vm.box;
     const title = b ? `${esc(b.label)} #${esc(b.clientId)} <small>· ${b.rangeM.toFixed(0)} m</small>` : 'PointSnap';
     const status = b ? `<span class="dot ${b.level}" title="${LEVEL_TEXT[b.level]}"></span>` : '<span class="dot"></span>';
@@ -245,7 +360,8 @@
       ? `<div class="ctx"><span>Job ${esc(vm.job)} · frame ${esc(vm.frame)}</span>${vm.progress ? `<span>· ${vm.progress.done}/${vm.progress.total} track xong</span>` : ''}`
         + `${vm.busy ? '<span class="busy">Đang chạy…</span>' : ''}</div>`
       : '';
-    return `<div class="head" title="${esc(SHORTCUTS)}">${status}<span class="title">${title}</span>${count}</div>${where}${tools}`;
+    const min = floating ? '<button class="min" data-action="collapse-panel" title="Thu nhỏ thành nút tròn (Alt+Shift+P)" aria-label="Thu nhỏ bảng">–</button>' : '';
+    return `<div class="head" title="${esc(SHORTCUTS)}">${status}<span class="title">${title}</span>${count}${min}</div>${where}${tools}`;
   }
 
   /** Phần đứng yên dưới tiêu đề: thông báo, Hoàn tác, lỗi bộ ngưỡng, hàng nút dùng nhiều nhất của box đang chọn. */
@@ -375,5 +491,5 @@
       + `<div class="row"><button class="primary" data-action="apply-plan" ${plan.canApply ? '' : 'disabled'}>Áp dụng (chưa Save)</button><button data-action="cancel-plan">Hủy</button></div></div>`;
   }
 
-  root.PointSnapAnnotatorPanel = { create, mount };
+  root.PointSnapAnnotatorPanel = { create, createFloating, mount };
 })(globalThis);

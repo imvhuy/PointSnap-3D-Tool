@@ -50,7 +50,7 @@
     lastPanelAt: 0,
     lastUndo: null,
     specOpen: false,
-    // Cửa sổ bảng đủ chỗ: phần sửa cả track mở sẵn.
+    // Bảng đủ chỗ: phần sửa cả track mở sẵn.
     trackOpen: true,
   };
   let panel = null;
@@ -657,12 +657,6 @@
     const ctx = A.context();
     if (name === 'rerender') { S.lastPanelAt = 0; return; }
     if (name === 'toggle-panel') { panel?.toggle(); S.lastPanelAt = 0; return; }
-    // Phím tắt bấm khi đang ở side panel PointSnap: side panel gửi mã phím, làm như bấm trong trang CVAT.
-    if (name === 'shortcut') {
-      const action = SHORTCUTS[data.code];
-      if (action && action !== 'toggle-panel') await onAction(action);
-      return;
-    }
     if (!ctx || S.busy) return;
     if (A.isSaving()) { notify({ kind: 'info', text: 'CVAT đang Save; thử lại sau khi Save xong.' }); return; }
     const objectState = activeObject();
@@ -950,7 +944,7 @@
     try {
       const ctx = S.enabled ? A.context() : null;
       if (ctx && ctx.job.id !== S.jobId) onJobChanged(ctx.job.id, ctx.job.projectId);
-      // Plugin QC: tab Hỗ trợ không chọn thì không đo, không vẽ gì lên canvas. Extension: luôn đo (side panel chỉ để xem / bấm).
+      // Plugin QC: tab Hỗ trợ không chọn thì không đo, không vẽ gì lên canvas. Extension: bảng nổi luôn có mặt, luôn đo.
       const shown = !panel || panel.isOpen();
       const cache = shown && ctx && frameData(ctx);
       const m = cache && measureActive(ctx, cache);
@@ -983,12 +977,11 @@
   }
 
   /**
-   * Extension: bảng ở side panel của extension (panel-link.js ↔ sidepanel.html), không nhúng vào CVAT. Plugin QC (không
-   * có extension): tab "Hỗ trợ" trong thanh bên CVAT.
+   * Extension: bảng nổi trên trang CVAT (kéo đi được, thu thành nút tròn, không mất khi thao tác CVAT). Plugin QC: tab
+   * "Hỗ trợ" trong thanh bên CVAT cạnh tab PointSnap QC.
    */
   function createPanel() {
-    const embedded = document.documentElement.dataset.pointsnapPlugin || !root.PointSnapPanelLink;
-    return embedded ? Panel.create(onAction) : root.PointSnapPanelLink.create(onAction);
+    return document.documentElement.dataset.pointsnapPlugin ? Panel.create(onAction) : Panel.createFloating(onAction);
   }
 
   function updatePanel(ctx, m) {
@@ -1006,8 +999,8 @@
   }
 
   /**
-   * Đọc bởi side panel (chrome.scripting, MAIN world) để báo extension đã chạy đúng trên CVAT này chưa. Gắn trước khi nối
-   * CVAT: lỗi lúc khởi động thì side panel vẫn đọc được và hiện lỗi đó, thay vì chỉ thấy "chưa chạy".
+   * Đọc bởi popup (chrome.scripting, MAIN world) để báo extension đã chạy đúng trên CVAT này chưa. Gắn trước khi nối
+   * CVAT: lỗi lúc khởi động thì popup vẫn đọc được và hiện lỗi đó, thay vì chỉ thấy "chưa chạy".
    */
   const health = () => ({ ...A.health(), enabled: S.enabled, guidelineErrors: S.guidelineErrors.length, startError: S.startError || null });
   root.PointSnapAnnotator = { state: S, health };

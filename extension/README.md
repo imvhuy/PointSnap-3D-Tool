@@ -38,18 +38,13 @@ khác thì xin phép chủ hệ thống trước.
 
 ## Bảng trong job
 
-- **Mở**: bấm biểu tượng PointSnap trên thanh trình duyệt, hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>. Bảng nằm
-  ở **side panel của extension** (mép phải trình duyệt), không nhúng vào trang CVAT: thao tác trên CVAT rồi bấm sang
-  bảng, bảng vẫn mở; kéo mép để đổi độ rộng. Side panel tự đổi theo tab đang xem và tự nối lại khi trang tải lại / mở
-  job khác. Phần trên canvas (mặt đất, tô điểm của vật, khoá box) luôn chạy, kể cả khi đóng side panel; phím tắt
-  <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> / F / D bấm được cả trong trang lẫn trong side panel. Đổi phím mở ở
-  `chrome://extensions/shortcuts`. Trang chưa phải job 3D, hoặc PointSnap chưa bật: side panel hiện phần cài đặt (bật
-  cho địa chỉ, tình trạng, bộ ngưỡng).
-- **Opera**: Opera không có side panel của Chrome; bảng nằm ở **sidebar của Opera**. Bật một lần: bấm ⋯ ở cuối thanh
-  sidebar bên trái (Cài đặt sidebar) → mục Tiện ích → bật **PointSnap**; biểu tượng PointSnap hiện trên sidebar, bấm là
-  mở bảng, bảng luôn mở cạnh CVAT. Bấm biểu tượng PointSnap trên thanh địa chỉ (hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>)
-  thì mở cùng bảng đó dạng popup, popup tự đóng khi bấm vào trang. Bản nhúng thẳng vào CVAT (dịch vụ QC, không có extension) vẫn hiện bảng ở
-  tab **Hỗ trợ** của thanh bên phải; tab **PointSnap** của bản nhúng dành cho QC và phiếu sửa lỗi.
+- **Bảng nổi trên CVAT**: mở job 3D là bảng hiện ở góc phải trên, nổi trên trang (không chiếm chỗ thanh bên của CVAT),
+  thao tác trên CVAT thế nào bảng cũng không mất. Kéo thanh tiêu đề để dời đi đâu cũng được, kéo góc dưới phải để đổi
+  cỡ; nút **–** (hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>) thu thành nút tròn mang màu trạng thái của box đang
+  chọn, bấm nút tròn để mở lại (kéo nút tròn để dời). Vị trí, cỡ, thu nhỏ được nhớ. Mặt đất, tô điểm, khoá box trên
+  canvas luôn chạy. Chạy như nhau trên Chrome, Edge, Opera. Popup của biểu tượng PointSnap trên thanh trình duyệt dùng để
+  bật cho địa chỉ CVAT, xem tình trạng, đổi bộ ngưỡng. Bản nhúng thẳng vào CVAT (dịch vụ QC, không có extension) hiện
+  bảng ở tab **Hỗ trợ** của thanh bên phải; tab **PointSnap** của bản nhúng dành cho QC và phiếu sửa lỗi.
 - **Thanh tiêu đề**: chấm trạng thái (xanh ổn / cam cần xem / đỏ lỗi), box đang chọn,
   khoảng cách, số mục cần xem, tiến độ `xong/tổng`, ◎ khoá box, ⏮ / ⏭ track chưa xong trước / kế tiếp, ⚙ spec.
 - **Checklist**, mỗi khía cạnh một dòng ✓ / ! / ✕ kèm một cụm từ ngắn (rê chuột xem đầy đủ) và **nút sửa nằm ngay trên
@@ -139,16 +134,14 @@ src/annotator/
   cvat-adapter.js   cầu nối duy nhất tới nội bộ CVAT
   overlay.js        vẽ SVG trên 4 view
   cloud-colors.js   tô màu chính các điểm của point cloud CVAT (A4), trả màu gốc khi bỏ chọn
-  panel.js          giao diện bảng: checklist, dải track, xem trước (shadow DOM); dùng ở side panel và tab Hỗ trợ
-  panel-link.js     gửi view-model của bảng sang side panel, nhận thao tác bấm về (MAIN world)
-  panel-bridge.js   nối trang với side panel qua cổng chrome.runtime (ISOLATED world)
+  panel.js          giao diện bảng: checklist, dải track, xem trước (shadow DOM); bảng nổi (extension) và tab Hỗ trợ (plugin QC)
   spec-editor.js    trình sửa spec của project (shadow DOM)
   annotator.js      bộ điều khiển
   settings-bridge.js  chuyển cấu hình của địa chỉ CVAT đang mở sang trang (ISOLATED world)
 src/cvat-dom.js     chuyển frame bằng ô chọn frame của CVAT (dải track)
 background.js       service worker: đăng ký content script cho các CVAT khác đã bật
 hosts.js            các CVAT đã bật + cấu hình theo từng địa chỉ (popup, Tùy chọn, service worker, bridge dùng chung)
-sidepanel.js        side panel: bảng PointSnap của tab đang xem; chưa chạy thì nhận ra CVAT, bật một nút, báo tình trạng
+popup.js            nhận ra CVAT, bật một nút, báo tình trạng
 options.js          danh sách CVAT, nhập / xuất bộ ngưỡng
 tests/*.test.js     node --test tests/*.test.js
 bench/              đo luật và tư thế xe theo khoảng cách trên dữ liệu công khai (Node, không nạp vào extension;
