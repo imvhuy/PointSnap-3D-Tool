@@ -125,3 +125,42 @@ test('hạ đáy mọi frame: track nối từ job trước thì ghim frame đ�
   assert.equal(pinned.edits[0].box.center[2], zBox(-1).center[2]);
   assert.deepEqual(Ops.planGroundSnap(frames, new Map([[10, -1.02], [11, -1], [12, -0.97]]), 0.05).edits, []);
 });
+
+test('hạ đáy mọi frame trên point cloud: đường lượn sóng, box nổi 25 cm chỉ có 2 keyframe → mọi frame chạm đất', () => {
+  const Measure = require('../src/annotator/measure.js');
+  const Terrain = require('../src/annotator/terrain.js');
+  const Checks = require('../src/annotator/checks.js');
+  const B = require('../src/annotator/box.js');
+  const g = require('../src/annotator/guideline.js').DEFAULT_GUIDELINE;
+  const road = (x) => -1.8 + 0.12 * Math.sin(x / 2.5);
+  const pts = [];
+  for (let x = -14; x <= 14; x += 0.12) for (let y = -8; y <= 8; y += 0.12) pts.push(x, y, road(x));
+  const cloud = new Float32Array(pts);
+  // Xe chạy dọc x; keyframe 0 và 20, đáy nổi 0,25 m trên mặt đường ở hai đầu, giữa là nội suy tuyến tính như CVAT.
+  const at = (i) => -8 + 0.8 * i;
+  const kfBox = (i) => ({ center: [at(i), 3, road(at(i)) + 0.25 + 0.8], dims: [4.5, 1.9, 1.6], rotation: [0, 0, 0] });
+  const ends = [kfBox(0), kfBox(20)];
+  const frames = Array.from({ length: 21 }, (_, i) => fr(i, Ops.interpolate(ends[0], ends[1], i / 20), i === 0 || i === 20));
+  // Mức đáy cần chạm ở từng frame, đo đúng như nút Hạ đáy (annotator.js snapTargetAt).
+  const target = (f) => {
+    const frame = Measure.buildFrame(cloud, [f.box], g);
+    const contact = Checks.usableContact(Terrain.measureContact(frame.terrain, frame.grid, f.box), f.box, g);
+    return !contact ? null : Math.abs(contact.gapM) < 0.005 ? B.bottomZ(f.box) : B.bottomZ(f.box) + contact.snapDzM;
+  };
+  const groundZ = new Map(frames.map((f) => [f.frame, target(f)]));
+  assert.ok(frames.every((f) => groundZ.get(f.frame) !== null), 'mọi frame đều đo được mặt đất');
+
+  const { edits } = Ops.planGroundSnap(frames, groundZ, 0.005);
+  // Dựng lại box mọi frame như CVAT sau khi ghi: keyframe cũ / mới, frame còn lại nội suy giữa hai keyframe kề.
+  const keys = new Map(frames.filter((f) => f.keyframe).map((f) => [f.frame, f.box]));
+  for (const e of edits) keys.set(e.frame, e.box);
+  const order = [...keys.keys()].sort((a, b) => a - b);
+  for (const f of frames) {
+    const a = order.filter((k) => k <= f.frame).pop(), b = order.find((k) => k >= f.frame);
+    const box = a === b ? keys.get(a) : Ops.interpolate(keys.get(a), keys.get(b), (f.frame - a) / (b - a));
+    const bottom = B.bottomZ(box);
+    assert.ok(Math.abs(bottom - groundZ.get(f.frame)) <= 0.005 + 1e-9, `frame ${f.frame} còn lệch ${(bottom - groundZ.get(f.frame)).toFixed(3)} m`);
+    assert.ok(Math.abs(bottom - road(box.center[0])) < 0.06, `frame ${f.frame}: đáy cách mặt đường ${(bottom - road(box.center[0])).toFixed(3)} m`);
+    assert.ok(B.bottomZ(f.box) - bottom > 0.1, `frame ${f.frame} phải được hạ`);
+  }
+});

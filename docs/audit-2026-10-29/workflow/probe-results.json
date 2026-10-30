@@ -1,0 +1,77 @@
+{
+  "baseline": "e845e7d",
+  "methodology": "Router thật, Store thật, CVAT fetch giả, config tiêm không đọc .env.local; assertion xác nhận lỗi hiện tại",
+  "reports": [
+    {
+      "id": "WF-01",
+      "severity": "P1",
+      "expected": "Từ chối hoàn thành hoặc yêu cầu quét lại khi nhãn live đổi/thêm object",
+      "actual": {
+        "http": 200,
+        "completedObjects": 1,
+        "liveObjects": 2,
+        "freshAnnotationReads": 0
+      }
+    },
+    {
+      "id": "WF-02",
+      "severity": "P2",
+      "expected": "Tạo phiếu mới phải vô hiệu trạng thái hoàn thành",
+      "actual": {
+        "completionApi": 409,
+        "listDone": true
+      }
+    },
+    {
+      "id": "WF-03",
+      "severity": "P1",
+      "expected": "ID phiếu không tái sử dụng; tab cũ không được cập nhật phiếu mới",
+      "actual": {
+        "oldId": "BUG-101",
+        "oldObject": "track:9",
+        "newId": "BUG-101",
+        "submittedObject": "track:10",
+        "status": "submitted"
+      }
+    },
+    {
+      "id": "WF-04",
+      "severity": "P1",
+      "expected": "Phiếu accepted không được request nộp chạy trước đó mở lại",
+      "actual": {
+        "afterAccept": "accepted",
+        "afterDelayedSubmit": "submitted",
+        "objectReview": "ok"
+      }
+    },
+    {
+      "id": "WF-05",
+      "severity": "P2",
+      "expected": "Theo dõi dấu vân tay mọi vật trong lỗi theo cặp",
+      "actual": {
+        "secondObjectChanged": true,
+        "ticketUnchanged": true
+      }
+    },
+    {
+      "id": "WF-06",
+      "severity": "P1 nếu nhiều project có ACL riêng",
+      "expected": "Phải chốt QC toàn cục hay kế thừa ACL CVAT",
+      "actual": {
+        "cvatUserAccess": 403,
+        "qcServiceAccess": 200,
+        "scanVisible": true
+      },
+      "note": "QC_USERS hiện cấp quyền QC toàn cục theo thiết kế; cần đổi nếu phải bảo toàn ACL theo project/job."
+    },
+    {
+      "id": "WF-07",
+      "severity": "P2",
+      "expected": "Chuẩn hoá username trước khi tính khóa dò mật khẩu",
+      "actual": {
+        "blockedRaw": 429,
+        "sameNormalizedUserWithSpace": 401
+      }
+    }
+  ]
+}

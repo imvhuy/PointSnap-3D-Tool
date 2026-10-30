@@ -1,30 +1,36 @@
 /*
  * Bảng PointSnap cho annotator (shadow DOM, không lẫn CSS với CVAT). Chỉ hiển thị view-model do controller đưa vào
  * và báo lại thao tác qua `onAction(name, data)`; không tự đọc CVAT.
- * Bố cục: thanh tiêu đề (chấm trạng thái + box đang chọn, luôn hiện kể cả khi thu gọn) → checklist từng khía cạnh,
- * mỗi dòng có nút sửa đúng vấn đề của nó → dải track một ô mỗi keyframe, bấm ô để tới frame → bản xem trước.
+ * Hai nơi hiện bảng dùng chung `mount`: bảng nổi trên trang CVAT của extension (`createFloating`: kéo đi đâu cũng
+ * được, thu thành nút tròn, không mất khi thao tác CVAT) và tab "Hỗ trợ" trong thanh bên CVAT của plugin QC (`create`).
+ * Bố cục: phần trên đứng yên (tiêu đề: chấm trạng thái + box đang chọn + nút chung; dòng job / frame; thông báo; hàng
+ * nút dùng nhiều nhất: Hạ đáy, Hạ đáy mọi frame, Xong) → phần dưới cuộn: checklist từng khía cạnh, mỗi dòng có nút sửa
+ * đúng vấn đề của nó → dải track một ô mỗi keyframe, bấm ô để tới frame → sửa cả track, thuộc tính → bản xem trước.
  * Nền sáng như thanh bên của CVAT; màu một nghĩa: xanh lá ổn, cam cần xem, đỏ lỗi.
  */
 (function (root) {
   'use strict';
 
   const STORAGE_KEY = 'pointsnap.annotator.panel';
-  const SHORTCUTS = 'Alt+Shift+P: mở / đóng tab Hỗ trợ · Alt+Shift+G: hạ đáy box · Alt+Shift+F: khoá box · Alt+Shift+D: đánh dấu track xong. Save / Undo bằng CVAT.';
+  const SHORTCUTS = 'Alt+Shift+P: thu nhỏ / mở bảng PointSnap · Alt+Shift+G: hạ đáy box · Alt+Shift+F: khoá box · Alt+Shift+D: đánh dấu track xong. Save / Undo bằng CVAT.';
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const ICON = { ok: '✓', warning: '!', error: '✕', na: '–', muted: '–' };
+  // Phím tắt ghi bằng chữ: annotator dùng Windows / Linux, ký hiệu ⌥⇧ của Mac khó đọc.
+  const key = (letter) => `Alt+Shift+${letter}`;
   const LEVEL_TEXT = { ok: 'Ổn', warning: 'Cần xem', error: 'Lỗi', na: 'Chưa đo được', muted: 'Đã bỏ qua' };
 
   // Logo PointSnap (qc/public/logo.svg), nét theo màu chữ.
   const LOGO = '<svg class="logo" viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path opacity=".4" d="M3.5 44.3H18.7M37.3 44.3H52.5"/><path d="M28 44.3 11.7 35V16.3L28 7l16.3 9.3V35L28 44.3Zm16.3-28L28 25.7m0 0L11.7 16.3M28 25.7v18.6"/><circle cx="28" cy="44.3" r="5.25" fill="#1677ff" stroke="none"/></svg>';
 
-  /* Theo kiểu Ant Design của CVAT: nền trắng như thanh bên của CVAT, viền #d9d9d9, xanh #1677ff. */
+  /* Theo kiểu Ant Design của CVAT (cùng thang với qc/public/plugin.css): nền trắng, viền #f0f0f0 / #d9d9d9, xanh #1677ff,
+   * chữ 13 px, nút cao 28 px (nhỏ 24 px), thẻ có sọc màu bên trái theo mức lỗi. */
   const CSS = `
     :host { all: initial; }
-    .panel { display: flex; flex-direction: column; background: #fff; color: rgba(0,0,0,.88);
-      font: 12.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; overflow: hidden; overflow-wrap: anywhere; }
-    .head { display: flex; align-items: center; gap: 6px; padding: 7px 8px 7px 10px; background: #fafafa; border-bottom: 1px solid #f0f0f0; user-select: none; }
+    .panel { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; background: #fff; color: rgba(0,0,0,.88);
+      font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; overflow: hidden; overflow-wrap: anywhere; }
+    .head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; background: #fff; border-bottom: 1px solid #f0f0f0; user-select: none; }
     .logo { flex: none; width: 20px; height: 20px; color: #1f1f1f; }
-    .head .title { font-weight: 600; margin-right: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .head .title { font-size: 14px; font-weight: 600; margin-right: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .head .title small { font-weight: 400; color: rgba(0,0,0,.45); }
     .head > .muted, .head .count { flex: none; white-space: nowrap; }
     .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #d9d9d9; }
@@ -32,7 +38,47 @@
     .count { font-weight: 600; font-size: 11px; line-height: 18px; padding: 0 6px; border-radius: 9px; background: #fff7e6; color: #d46b08; border: 1px solid #ffd591; }
     .count.error { background: #fff1f0; color: #cf1322; border-color: #ffa39e; }
     .muted { color: rgba(0,0,0,.45); }
-    .body { overflow-y: auto; overflow-x: hidden; padding: 8px 10px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    .body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 8px 12px 12px; display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: max-content; align-content: start; gap: 8px; }
+    .ctx { display: flex; align-items: center; gap: 6px; padding: 4px 12px; font-size: 12px; color: rgba(0,0,0,.45); border-bottom: 1px solid #f0f0f0; background: #fafafa; }
+    .ctx .busy { margin-left: auto; color: #1677ff; display: inline-flex; align-items: center; gap: 6px; }
+    .top { flex: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 8px 12px 0; }
+    .top:empty { display: none; }
+    .quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; padding-bottom: 8px; border-bottom: 1px solid #f0f0f0; }
+    .quick button { padding: 4px 6px; line-height: 18px; white-space: normal; display: grid; justify-items: center; align-content: center; min-height: 44px; }
+    .quick button small { font-size: 10.5px; line-height: 14px; color: rgba(0,0,0,.45); }
+    .quick button.primary small { color: rgba(255,255,255,.8); }
+    .quick button.attention:not(:disabled) { box-shadow: 0 0 0 2px #ffd591; }
+    .tools { display: flex; flex-wrap: wrap; gap: 2px; margin: 8px 12px 0; padding: 2px; border-radius: 6px; background: #f5f5f5; }
+    .tools button { flex: 1 1 auto; height: 24px; padding: 0 6px; border: 0; border-radius: 4px; background: none; box-shadow: none; font-size: 12px; color: rgba(0,0,0,.65); }
+    .tools button:hover:not(:disabled) { background: rgba(0,0,0,.04); color: rgba(0,0,0,.88); }
+    .tools button.on { background: #fff; color: #1677ff; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+    .sec { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; font-weight: 600;
+      color: rgba(0,0,0,.88); margin: 4px 0 -2px; }
+    .sec .link { font-size: 12px; font-weight: 400; }
+    button.sec { width: 100%; border: 0; border-radius: 0; background: none; box-shadow: none; padding: 0; cursor: pointer; }
+    button.sec:hover:not(:disabled) { background: none; color: #1677ff; }
+    .ticks { display: grid; grid-template-columns: 1fr auto 1fr; font-size: 10.5px; color: rgba(0,0,0,.45); margin-top: -5px; }
+    .ticks .now { color: #1677ff; font-weight: 600; } .ticks span:last-child { text-align: right; }
+    .reasons { display: grid; gap: 2px; margin-top: -2px; }
+    .reasons button { justify-self: start; border: 0; background: none; box-shadow: none; padding: 0; white-space: normal; text-align: left; font-size: 12px; }
+    .reasons button.warning { color: #d46b08; } .reasons button.error { color: #cf1322; }
+    .empty { padding: 24px 8px; text-align: center; color: rgba(0,0,0,.45); display: grid; gap: 10px; justify-items: center; }
+    .empty .logo { width: 44px; height: 44px; color: rgba(0,0,0,.25); }
+    /* Chờ job tải: logo vẽ nét lặp lại, chấm xanh nhịp, thanh chạy (tắt khi người dùng giảm chuyển động). */
+    .loading { padding: 40px 8px; display: grid; gap: 12px; justify-items: center; text-align: center; color: rgba(0,0,0,.65); }
+    .loading .logo { width: 64px; height: 64px; color: #1f1f1f; }
+    .loading .logo path:not([opacity]) { stroke-dasharray: 150; animation: ps-draw 1.8s ease-in-out infinite alternate; }
+    .loading .logo circle { transform-box: fill-box; transform-origin: center; animation: ps-pulse .9s ease-in-out infinite alternate; }
+    .loading .bar { position: relative; width: 140px; height: 3px; border-radius: 2px; background: #f0f0f0; overflow: hidden; }
+    .loading .bar::after { content: ''; position: absolute; top: 0; bottom: 0; width: 40%; border-radius: 2px; background: #1677ff; animation: ps-slide 1.2s ease-in-out infinite; }
+    .loading small { color: rgba(0,0,0,.45); }
+    .spin { display: inline-block; flex: none; width: 12px; height: 12px; border: 2px solid #bae0ff; border-top-color: #1677ff; border-radius: 50%; animation: ps-spin .8s linear infinite; }
+    .waiting { display: flex; align-items: center; gap: 8px; color: rgba(0,0,0,.45); }
+    @keyframes ps-draw { from { stroke-dashoffset: 150; } to { stroke-dashoffset: 0; } }
+    @keyframes ps-pulse { from { transform: scale(.7); opacity: .6; } to { transform: scale(1.15); opacity: 1; } }
+    @keyframes ps-slide { from { left: -40%; } to { left: 100%; } }
+    @keyframes ps-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .loading .logo path, .loading .logo circle, .loading .bar::after, .spin { animation: none; stroke-dasharray: none; } }
     button { font: inherit; border: 1px solid #d9d9d9; background: #fff; color: rgba(0,0,0,.88); border-radius: 6px; padding: 1px 8px; cursor: pointer; white-space: nowrap;
       box-shadow: 0 2px 0 rgba(0,0,0,.02); transition: color .2s, border-color .2s, background .2s; }
     button:hover:not(:disabled) { color: #4096ff; border-color: #4096ff; }
@@ -41,16 +87,20 @@
     button.primary { background: #1677ff; border-color: #1677ff; color: #fff; box-shadow: 0 2px 0 rgba(5,145,255,.1); }
     button.primary:hover:not(:disabled) { background: #4096ff; color: #fff; }
     button.on { background: #e6f4ff; border-color: #91caff; color: #1677ff; }
+    .grid2 button, .empty button, .top > button, .plan .row button, .attrs > button { min-height: 28px; padding: 0 10px; }
+    .check .acts button:not(.x) { height: 24px; padding: 0 7px; font-size: 12px; border-radius: 4px; }
     .head button { background: transparent; border-color: transparent; box-shadow: none; padding: 0 5px; font-size: 13px; line-height: 22px; color: rgba(0,0,0,.65); }
     .head button:hover:not(:disabled) { background: rgba(0,0,0,.06); border-color: transparent; color: rgba(0,0,0,.88); }
     .head button.on { background: #e6f4ff; color: #1677ff; }
-    kbd { font: 10px ui-monospace, Consolas, monospace; color: rgba(0,0,0,.45); background: #fafafa; border: 1px solid #d9d9d9; border-bottom-width: 2px; border-radius: 3px; padding: 0 3px; margin-left: 4px; }
-    .notice { padding: 5px 9px; border-radius: 6px; background: #e6f4ff; border: 1px solid #91caff; }
+    kbd { font: 10px ui-monospace, Consolas, monospace; white-space: nowrap; color: rgba(0,0,0,.45); background: #fafafa; border: 1px solid #d9d9d9; border-bottom-width: 2px; border-radius: 3px; padding: 0 3px; margin-left: 4px; }
+    .notice { padding: 6px 10px; border-radius: 6px; background: #e6f4ff; border: 1px solid #91caff; font-size: 12.5px; }
     .notice.error { background: #fff2f0; border-color: #ffccc7; } .notice.ok { background: #f6ffed; border-color: #b7eb8f; }
-    .checks { display: grid; grid-template-columns: minmax(0, 1fr); border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; }
-    .check { display: grid; grid-template-columns: 16px 66px minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 5px 8px; border-top: 1px solid #f0f0f0; }
-    .check:first-child { border-top: 0; }
-    .check:hover { background: #fafafa; }
+    .checks { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .check { display: grid; grid-template-columns: 16px 70px minmax(0, 1fr) auto; align-items: center; gap: 6px; min-height: 32px; padding: 3px 8px;
+      border: 1px solid #f0f0f0; border-left: 3px solid #d9d9d9; border-radius: 6px; background: #fff; }
+    .check.ok { border-left-color: #52c41a; } .check.warning { border-left-color: #faad14; background: #fffbe6; }
+    .check.error { border-left-color: #ff4d4f; background: #fff2f0; }
+    .check:hover { border-color: #d9d9d9; }
     .check i { font-style: normal; font-weight: 700; text-align: center; border-radius: 50%; width: 16px; height: 16px; line-height: 16px; font-size: 10px; }
     .check.ok i { background: #f6ffed; color: #389e0d; } .check.warning i { background: #fff7e6; color: #d46b08; }
     .check.error i { background: #fff1f0; color: #cf1322; } .check.na i, .check.muted i { background: #f5f5f5; color: rgba(0,0,0,.45); }
@@ -62,14 +112,15 @@
     .check .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .check.warning .text { color: #d46b08; } .check.error .text { color: #cf1322; }
     .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 6px; }
-    .strip { display: grid; gap: 1px; height: 16px; }
-    .strip button { padding: 0; border: 0; border-radius: 2px; background: #d9d9d9; min-width: 0; box-shadow: none; }
+    .strip { display: grid; gap: 1px; height: 22px; }
+    .strip button { padding: 0; border: 0; border-radius: 3px; background: #d9d9d9; min-width: 0; box-shadow: none; }
     .strip button:hover:not(:disabled) { background: #91caff; }
     .strip button.warning { background: #faad14; } .strip button.error { background: #ff4d4f; } .strip button.here { outline: 2px solid #1677ff; outline-offset: -1px; }
     .attrs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
     .attr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: center; gap: 6px; }
-    .attr span { color: rgba(0,0,0,.65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .attr select { font: inherit; min-width: 0; border: 1px solid #d9d9d9; border-radius: 6px; padding: 1px 4px; background: #fff; color: rgba(0,0,0,.88); }
+    .attr > span { color: rgba(0,0,0,.65); min-width: 0; overflow-wrap: anywhere; }
+    .attr select { font: inherit; min-width: 0; height: 28px; border: 1px solid #d9d9d9; border-radius: 6px; padding: 0 6px; background: #fff; color: rgba(0,0,0,.88); }
+    .attr select:hover:not(:disabled) { border-color: #4096ff; }
     .attr select:focus-visible { outline: 3px solid #91caff; outline-offset: 1px; }
     .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
     .plan, .spec { background: #fafafa; border: 1px solid #f0f0f0; border-radius: 8px; padding: 8px 9px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
@@ -80,6 +131,44 @@
     .link { border: 0; background: none; box-shadow: none; padding: 0; color: #1677ff; }
     .link:hover:not(:disabled) { background: none; color: #4096ff; }
   `;
+
+  /*
+   * Bảng nổi (extension): khung trắng đổ bóng như hộp thoại antd, nằm trên lớp vẽ của PointSnap (z-index 1001) để đường
+   * mặt đất không vắt qua bảng. Kéo thanh tiêu đề để dời; kéo mép / góc bất kỳ hoặc thanh kéo ở đáy để dài ra, ngắn lại,
+   * rộng ra, hẹp lại; thu nhỏ thành nút tròn.
+   */
+  const FLOAT_CSS = `
+    .float { position: fixed; z-index: 1002; box-sizing: border-box; display: flex; flex-direction: column; width: 340px; height: 600px; min-width: 260px;
+      min-height: 160px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: hidden;
+      border: 1px solid #d9d9d9; border-radius: 8px; background: #fff;
+      box-shadow: 0 6px 16px rgba(0,0,0,.08), 0 3px 6px -4px rgba(0,0,0,.12), 0 9px 28px 8px rgba(0,0,0,.05); }
+    .float[hidden], .bubble[hidden] { display: none; }
+    .float .panel { flex: 1 1 auto; min-height: 0; }
+    .float .head { cursor: move; touch-action: none; }
+    .float .head .min { margin-left: 2px; background: transparent; border-color: transparent; box-shadow: none; padding: 0 6px;
+      font-size: 15px; line-height: 20px; color: rgba(0,0,0,.65); cursor: pointer; }
+    .float .head .min:hover { background: rgba(0,0,0,.06); color: rgba(0,0,0,.88); }
+    .float.dragging { opacity: .92; user-select: none; }
+    .float .head .logo { width: 18px; height: 18px; }
+    .rz { position: absolute; z-index: 3; touch-action: none; }
+    .rz-t, .rz-b { left: 12px; right: 12px; height: 6px; cursor: ns-resize; } .rz-t { top: 0; } .rz-b { bottom: 0; }
+    .rz-l, .rz-r { top: 12px; bottom: 12px; width: 6px; cursor: ew-resize; } .rz-l { left: 0; } .rz-r { right: 0; }
+    .rz-tl, .rz-tr, .rz-bl, .rz-br { width: 12px; height: 12px; }
+    .rz-tl { left: 0; top: 0; cursor: nwse-resize; } .rz-br { right: 0; bottom: 0; cursor: nwse-resize; }
+    .rz-tr { right: 0; top: 0; cursor: nesw-resize; } .rz-bl { left: 0; bottom: 0; cursor: nesw-resize; }
+    .grip { flex: none; height: 12px; display: grid; place-items: center; cursor: ns-resize; touch-action: none; border-top: 1px solid #f0f0f0; background: #fafafa; }
+    .grip::before { content: ''; width: 40px; height: 4px; border-radius: 2px; background: #d9d9d9; }
+    .grip:hover::before { background: #4096ff; }
+    .float.resizing { user-select: none; }
+    .bubble { position: fixed; z-index: 1002; width: 42px; height: 42px; padding: 0; border-radius: 50%; display: grid; place-items: center;
+      background: #fff; border: 1px solid #d9d9d9; color: #1f1f1f; cursor: pointer; touch-action: none;
+      box-shadow: 0 6px 16px rgba(0,0,0,.12), 0 3px 6px -4px rgba(0,0,0,.16); }
+    .bubble:hover { border-color: #4096ff; }
+    .bubble .logo { width: 26px; height: 26px; }
+    .bubble .dot { position: absolute; top: 3px; right: 3px; border: 2px solid #fff; width: 10px; height: 10px; }
+  `;
+  const FLOAT_SIZE = { width: 340, height: 600, margin: 8, minWidth: 260, minHeight: 160 };
+  const RESIZE_EDGES = ['t', 'b', 'l', 'r', 'tl', 'tr', 'bl', 'br'];
 
   /*
    * Tab "Hỗ trợ" trong thanh bên phải của CVAT, cạnh Objects / Labels (và tab PointSnap QC của bản nhúng): không nổi đè
@@ -99,19 +188,161 @@
   `;
   const TAB_ICON = LOGO.replace('class="logo" ', '');
 
-  function create(onAction) {
+  /**
+   * Dựng bảng trong `container` (shadow DOM riêng): trả về { host, render(vm) }. Vẽ lại chỉ khi HTML đổi và giữ vị trí
+   * cuộn; bấm nút / đổi ô chọn gọi `onAction(tên, data-*)`.
+   */
+  function mount(container, onAction, { floating = false } = {}) {
     const host = document.createElement('div');
     host.id = 'pointsnap-annotator';
     const shadow = host.attachShadow({ mode: 'open' });
-    shadow.innerHTML = `<style>${CSS}</style><div class="panel" role="complementary" aria-label="PointSnap annotator"></div>`;
+    const panelEl = '<div class="panel" role="complementary" aria-label="PointSnap annotator"></div>';
+    shadow.innerHTML = floating
+      ? `<style>${CSS}${FLOAT_CSS}</style><div class="float">${panelEl}`
+        + '<div class="grip" data-rz="b" title="Kéo để dài ra / ngắn lại"></div>'
+        + `${RESIZE_EDGES.map((e) => `<div class="rz rz-${e}" data-rz="${e}"></div>`).join('')}</div>`
+        + `<button class="bubble" type="button" title="Mở bảng PointSnap (Alt+Shift+P) · kéo để dời" aria-label="Mở bảng PointSnap" hidden>${LOGO}<span class="dot"></span></button>`
+      : `<style>${CSS}</style>${panelEl}`;
     const panel = shadow.querySelector('.panel');
+    if (container) container.appendChild(host);
+    let lastHtml = '';
+    panel.addEventListener('click', (event) => {
+      const el = event.target.closest('[data-action]');
+      if (!el || el.disabled) return;
+      if (el.tagName === 'SELECT') return;
+      onAction(el.dataset.action, { ...el.dataset });
+    });
+    panel.addEventListener('change', (event) => {
+      const el = event.target.closest('select[data-action]');
+      if (el && !el.disabled) onAction(el.dataset.action, { ...el.dataset, value: el.value });
+    });
+    function render(vm) {
+      const html = head(vm, floating) + `<div class="top">${top(vm)}</div><div class="body">${body(vm)}</div>`;
+      if (html === lastHtml) return;
+      const scroller = panel.querySelector('.body'), scroll = scroller ? scroller.scrollTop : 0;
+      panel.innerHTML = html;
+      lastHtml = html;
+      const next = panel.querySelector('.body');
+      if (next) next.scrollTop = scroll;
+    }
+    return { host, render };
+  }
+
+  /**
+   * Bảng nổi trên trang CVAT (extension): không nhúng vào thanh bên của CVAT, không mất khi thao tác trên CVAT. Kéo
+   * thanh tiêu đề để dời; kéo mép / góc bất kỳ (hoặc thanh kéo ở đáy) để đổi cỡ; nút – (hoặc Alt+Shift+P) thu thành nút
+   * tròn, bấm nút tròn để mở lại. Vị trí, cỡ, thu nhỏ được nhớ; bảng luôn nằm trong khung nhìn.
+   */
+  function createFloating(onAction) {
+    const view = mount(document.body, (name, data) => (name === 'collapse-panel' ? setCollapsed(true) : onAction(name, data)), { floating: true });
+    const shadow = view.host.shadowRoot, frame = shadow.querySelector('.float'), bubble = shadow.querySelector('.bubble');
+    const saved = readPosition().float || {};
+    const M = FLOAT_SIZE.margin;
+    let pos = { left: saved.left, top: saved.top }, collapsed = saved.collapsed === true;
+    if (saved.width) frame.style.width = `${saved.width}px`;
+    if (saved.height) frame.style.height = `${saved.height}px`;
+
+    const save = () => writePosition({ float: { ...pos, collapsed, width: frame.offsetWidth || saved.width, height: frame.offsetHeight || saved.height } });
+    // Giữ bảng trong khung nhìn (cửa sổ thu nhỏ, đổi màn hình): ít nhất thanh tiêu đề luôn bấm / kéo được.
+    function place() {
+      const w = frame.offsetWidth || FLOAT_SIZE.width, h = collapsed ? 42 : (frame.offsetHeight || FLOAT_SIZE.height);
+      if (!Number.isFinite(pos.left)) pos.left = innerWidth - w - 16;
+      if (!Number.isFinite(pos.top)) pos.top = 64;
+      pos.left = Math.max(M, Math.min(pos.left, innerWidth - (collapsed ? 42 : w) - M));
+      pos.top = Math.max(M, Math.min(pos.top, innerHeight - (collapsed ? 42 : Math.min(h, 40)) - M));
+      frame.style.left = bubble.style.left = `${pos.left}px`;
+      frame.style.top = bubble.style.top = `${pos.top}px`;
+    }
+    function setCollapsed(value) {
+      collapsed = value;
+      frame.hidden = collapsed;
+      bubble.hidden = !collapsed;
+      place();
+      save();
+    }
+
+    // Kéo: thanh tiêu đề của bảng (trừ nút) hoặc nút tròn để dời; mép / góc / thanh kéo ở đáy để đổi cỡ. Nút tròn bấm
+    // không kéo thì mở bảng.
+    let drag = null;
+    function start(event, el, dir = '') {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      drag = { el, dir, x: event.clientX, y: event.clientY, left: pos.left, top: pos.top, w: frame.offsetWidth, h: frame.offsetHeight, moved: false };
+      el.setPointerCapture(event.pointerId);
+      frame.classList.toggle('resizing', !!dir);
+    }
+    function resize(dx, dy) {
+      const { dir } = drag, maxW = innerWidth - 2 * M, maxH = innerHeight - 2 * M;
+      let w = drag.w + (dir.includes('r') ? dx : dir.includes('l') ? -dx : 0);
+      let h = drag.h + (dir.includes('b') ? dy : dir.includes('t') ? -dy : 0);
+      w = Math.max(FLOAT_SIZE.minWidth, Math.min(w, maxW));
+      h = Math.max(FLOAT_SIZE.minHeight, Math.min(h, maxH));
+      // Kéo mép trái / trên: mép đối diện đứng yên.
+      pos = { left: dir.includes('l') ? drag.left + drag.w - w : drag.left, top: dir.includes('t') ? drag.top + drag.h - h : drag.top };
+      frame.style.width = `${w}px`;
+      frame.style.height = `${h}px`;
+    }
+    frame.addEventListener('pointerdown', (event) => {
+      const edge = event.target.closest('[data-rz]');
+      if (edge) start(event, frame, edge.dataset.rz);
+      else if (event.target.closest('.head') && !event.target.closest('button')) start(event, frame);
+    });
+    bubble.addEventListener('pointerdown', (event) => start(event, bubble));
+    for (const el of [frame, bubble]) {
+      el.addEventListener('pointermove', (event) => {
+        if (!drag || drag.el !== el) return;
+        const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+        if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+        drag.moved = true;
+        if (drag.dir) resize(dx, dy);
+        else {
+          frame.classList.add('dragging');
+          pos = { left: drag.left + dx, top: drag.top + dy };
+        }
+        place();
+      });
+      el.addEventListener('pointerup', () => {
+        if (!drag || drag.el !== el) return;
+        const clicked = el === bubble && !drag.moved;
+        drag = null;
+        frame.classList.remove('dragging', 'resizing');
+        save();
+        if (clicked) setCollapsed(false);
+      });
+    }
+    // Đổi cỡ xong (kéo mép / góc): nhớ cỡ mới.
+    let sizeTimer = 0;
+    new ResizeObserver(() => { clearTimeout(sizeTimer); sizeTimer = setTimeout(() => { if (!collapsed) save(); }, 300); }).observe(frame);
+    const onResize = () => place();
+    window.addEventListener('resize', onResize);
+    setCollapsed(collapsed);
+
+    return {
+      render(vm) {
+        // Nút tròn mang màu trạng thái của box đang chọn, thu nhỏ vẫn biết box ổn hay cần xem.
+        bubble.querySelector('.dot').className = `dot ${vm.box?.level || ''}`;
+        view.render(vm);
+      },
+      // Bảng nổi luôn có mặt (thu nhỏ chỉ ẩn khung): mặt đất, tô điểm, khoá box trên canvas luôn chạy.
+      isOpen: () => true,
+      toggle: () => setCollapsed(!collapsed),
+      destroy() {
+        window.removeEventListener('resize', onResize);
+        view.host.remove();
+      },
+    };
+  }
+
+  /** Bảng trong tab "Hỗ trợ" của thanh bên CVAT (plugin QC, không có extension). */
+  function create(onAction) {
+    const view = mount(null, onAction), host = view.host;
     if (!document.getElementById('pointsnap-annotator-tab-css')) {
       const style = document.createElement('style');
       style.id = 'pointsnap-annotator-tab-css';
       style.textContent = TAB_CSS;
       document.head.appendChild(style);
     }
-    let open = readPosition().open === true, lastHtml = '', listHooked = null;
+    let open = readPosition().open === true, listHooked = null;
 
     function setOpen(value) {
       open = value;
@@ -150,30 +381,10 @@
     }
     ensureTab();
 
-    panel.addEventListener('click', (event) => {
-      const el = event.target.closest('[data-action]');
-      if (!el || el.disabled) return;
-      if (el.tagName === 'SELECT') return;
-      onAction(el.dataset.action, { ...el.dataset });
-    });
-    panel.addEventListener('change', (event) => {
-      const el = event.target.closest('select[data-action]');
-      if (el && !el.disabled) onAction(el.dataset.action, { ...el.dataset, value: el.value });
-    });
-    function render(vm) {
-      ensureTab();
-      const html = head(vm) + `<div class="body">${body(vm)}</div>`;
-      if (html === lastHtml) return;
-      const scroller = panel.querySelector('.body'), scroll = scroller ? scroller.scrollTop : 0;
-      panel.innerHTML = html;
-      lastHtml = html;
-      const next = panel.querySelector('.body');
-      if (next) next.scrollTop = scroll;
-    }
-
     return {
+      render: (vm) => { ensureTab(); view.render(vm); },
       // Mở bằng phím tắt: bấm hộ tab để các tab khác (Objects / Labels / QC) tự tắt như khi người dùng bấm.
-      render, isOpen: () => open, toggle: () => { if (open) setOpen(false); else document.querySelector('.psa-tab')?.click(); },
+      isOpen: () => open, toggle: () => { if (open) setOpen(false); else document.querySelector('.psa-tab')?.click(); },
       destroy: () => {
         host.remove();
         document.querySelector('.psa-tab')?.remove();
@@ -192,22 +403,27 @@
   }
 
   /** Thanh tiêu đề: chấm trạng thái + box đang chọn + số dòng cần xem + nút chung. */
-  function head(vm) {
+  function head(vm, floating = false) {
     const b = vm.box;
     const title = b ? `${esc(b.label)} #${esc(b.clientId)} <small>· ${b.rangeM.toFixed(0)} m</small>` : 'PointSnap';
     const status = b ? `<span class="dot ${b.level}" title="${LEVEL_TEXT[b.level]}"></span>` : '<span class="dot"></span>';
-    const count = b && b.problems ? `<span class="count ${b.level === 'error' ? 'error' : ''}" title="Số mục cần xem">${b.problems}</span>` : '';
-    const progress = vm.progress ? `<span class="muted" title="Track đã xong / track trong frame">${vm.progress.done}/${vm.progress.total}</span>` : '';
+    const count = b && b.problems ? `<span class="count ${b.level === 'error' ? 'error' : ''}">${b.problems} ${b.level === 'error' ? 'lỗi' : 'cần xem'}</span>` : '';
     const tools = vm.status === 'ready'
-      ? `<button class="${vm.follow ? 'on' : ''}" data-action="toggle-follow" aria-pressed="${vm.follow}" aria-label="Khoá box" title="Khoá box: đổi frame thì camera đi theo box đang chọn (Alt+Shift+F)">◎</button>`
-        + '<button data-action="prev-undone" aria-label="Track chưa xong trước đó" title="Chọn track chưa xong trước đó trong frame">⏮</button>'
-        + '<button data-action="next-undone" aria-label="Track chưa xong kế tiếp" title="Chọn track chưa xong kế tiếp trong frame">⏭</button>'
-        + '<button data-action="open-spec" aria-label="Spec của project" title="Spec của project: ngưỡng theo class / thuộc tính">⚙</button>'
+      ? `<div class="tools"><button class="${vm.follow ? 'on' : ''}" data-action="toggle-follow" aria-pressed="${vm.follow}" title="Đổi frame thì camera đi theo box đang chọn (${key('F')})">◎ Khoá box</button>`
+        + '<button data-action="prev-undone" title="Chọn track chưa xong trước đó trong frame">⏮ Track trước</button>'
+        + '<button data-action="next-undone" title="Chọn track chưa xong kế tiếp trong frame">Track sau ⏭</button>'
+        + '<button data-action="open-spec" title="Spec của project: ngưỡng theo class / thuộc tính (mở trong trang CVAT)">⚙ Spec</button></div>'
       : '';
-    return `<div class="head" title="${esc(SHORTCUTS)}">${status}<span class="title">${title}</span>${count}${progress}${tools}</div>`;
+    const where = vm.status === 'ready'
+      ? `<div class="ctx"><span>Job ${esc(vm.job)} · frame ${esc(vm.frame)}</span>${vm.progress ? `<span>· ${vm.progress.done}/${vm.progress.total} track xong</span>` : ''}`
+        + `${vm.busy ? '<span class="busy"><span class="spin"></span>Đang chạy…</span>' : ''}</div>`
+      : '';
+    const min = floating ? '<button class="min" data-action="collapse-panel" title="Thu nhỏ thành nút tròn (Alt+Shift+P)" aria-label="Thu nhỏ bảng">–</button>' : '';
+    return `<div class="head" title="${esc(SHORTCUTS)}">${floating ? LOGO : ''}${status}<span class="title">${title}</span>${count}${min}</div>${where}${tools}`;
   }
 
-  function body(vm) {
+  /** Phần đứng yên dưới tiêu đề: thông báo, Hoàn tác, lỗi bộ ngưỡng, hàng nút dùng nhiều nhất của box đang chọn. */
+  function top(vm) {
     const parts = [];
     if (vm.notice) parts.push(`<div class="notice ${esc(vm.notice.kind)}" role="status">${esc(vm.notice.text)}</div>`);
     if (vm.undo) parts.push(`<button data-action="undo-last" title="Phục hồi các keyframe vừa sửa; keyframe đã bị sửa tiếp thì giữ nguyên">↶ Hoàn tác: ${esc(vm.undo.title)} (${vm.undo.count})</button>`);
@@ -217,12 +433,35 @@
       const more = errors.length > 1 ? ` (+${errors.length - 1} lỗi khác)` : '';
       parts.push(`<div class="notice error" title="${esc(errors.join('\n'))}">Bộ ngưỡng lỗi, đang dùng mặc định: ${esc(errors[0])}${more}</div>`);
     }
-    if (vm.status !== 'ready') return [...parts, `<div class="muted">${esc(vm.message || 'Chờ mở job 3D…')}</div>`].join('');
-    if (!vm.box) return [...parts, '<div class="muted">Chọn một cuboid để kiểm tra.</div>'].join('');
+    const b = vm.status === 'ready' ? vm.box : null;
+    if (b) {
+      const off = (reason) => `disabled title="${reason}"`;
+      const locked = b.locked ? off('Box đang khóa') : '';
+      const ground = b.rows.find((r) => r.key === 'ground');
+      const attention = ground && (ground.level === 'warning' || ground.level === 'error') ? ' attention' : '';
+      const snap = `<button class="primary${attention}" data-action="snap-ground" ${locked || (b.canSnap ? 'title="Đáy box chạm mặt đất đo được ở frame này"' : off('Chưa đo được mặt đất quanh box này'))}>Hạ đáy<small>${key('G')}</small></button>`;
+      const all = b.isTrack ? `<button data-action="snap-track" ${locked || 'title="Như bấm Hạ đáy ở từng frame track xuất hiện (cả frame nội suy); ghi luôn, chưa Save"'}>Hạ đáy mọi frame<small>cả track</small></button>` : '';
+      const done = b.isTrack ? `<button class="${b.done ? 'on' : ''}" data-action="toggle-done" aria-pressed="${b.done}" title="Đánh dấu track đã làm xong">${b.done ? '✓ Đã xong' : 'Xong'}<small>${key('D')}</small></button>` : '';
+      parts.push(`<div class="quick">${snap}${all}${done}</div>`);
+    }
+    return parts.join('');
+  }
+
+  function body(vm) {
+    const parts = [];
+    if (vm.status !== 'ready') {
+      return vm.loading
+        ? `<div class="loading" role="status">${LOGO}<div>${esc(vm.message || 'Đang tải job…')}</div><div class="bar"></div><small>PointSnap · hỗ trợ gán nhãn 3D</small></div>`
+        : `<div class="empty">${LOGO}<div>${esc(vm.message || 'Chờ mở job 3D…')}</div></div>`;
+    }
+    if (!vm.box) {
+      return '<div class="empty"><div>Chọn một cuboid trên CVAT để kiểm tra.</div>'
+        + '<button data-action="next-undone" title="Chọn track chưa xong kế tiếp trong frame">⏭ Track chưa xong kế tiếp</button></div>';
+    }
     if (vm.box.locked) parts.push('<div class="notice">🔒 Box đang khóa trong CVAT: chỉ xem, không sửa.</div>');
-    parts.push(checksSection(vm.box));
-    parts.push(`<div class="row"><span class="muted">${esc(vm.box.classKey !== vm.box.label ? vm.box.classKey : '')}</span>`
-      + `<button class="link" data-action="toggle-spec" aria-pressed="${vm.specOpen}">${vm.specOpen ? 'Ẩn spec' : 'Spec của class'}</button></div>`);
+    const cls = vm.box.classKey !== vm.box.label ? ` · ${esc(vm.box.classKey)}` : '';
+    parts.push(`<div class="sec"><span>Kiểm tra box${cls}</span><button class="link" data-action="toggle-spec" aria-pressed="${vm.specOpen}">${vm.specOpen ? 'Ẩn spec' : 'Spec của class'}</button></div>`,
+      checksSection(vm.box));
     if (vm.spec) parts.push(specSection(vm.spec));
     if (vm.box.isTrack) parts.push(trackSection(vm));
     if (vm.plan) parts.push(planSection(vm.plan));
@@ -232,8 +471,8 @@
   /** Checklist: mỗi khía cạnh một dòng, nút sửa nằm ngay trên dòng của vấn đề. */
   function checksSection(b) {
     const rows = b.rows.map((r) => {
-      const fix = r.fix
-        ? `<button data-action="${esc(r.fix.action)}"${r.fix.source ? ` data-source="${esc(r.fix.source)}"` : ''}>${esc(r.fix.label)}${r.fix.key ? `<kbd>${esc(r.fix.key)}</kbd>` : ''}</button>`
+      const fix = r.fix && r.fix.action !== 'snap-ground'
+        ? `<button data-action="${esc(r.fix.action)}"${r.fix.source ? ` data-source="${esc(r.fix.source)}"` : ''}${r.fix.key ? ` title="${key(esc(r.fix.key))}"` : ''}>${esc(r.fix.label)}</button>`
         : '';
       // Báo nhầm: bỏ qua dòng này cho box / track này; đã bỏ qua thì có nút hiện lại.
       const toggle = r.canDismiss
@@ -260,17 +499,23 @@
   /** Dải track: một ô mỗi keyframe (vàng: cảnh báo, đỏ: lỗi), ô đang đứng có viền; bấm ô để tới frame. */
   function trackSection(vm) {
     const t = vm.track;
-    if (!t || t.loading) return '<div class="muted">Track · đang đọc keyframe…</div>';
+    if (!t || t.loading) return '<div class="sec"><span>Track</span></div><div class="waiting"><span class="spin"></span>Đang đọc keyframe của track…</div>';
     const here = t.cells.reduce((best, c, i) => (c.frame <= vm.frame ? i : best), -1);
     const cells = t.cells.map((c, i) => `<button class="${c.level}${i === here ? ' here' : ''}" data-action="goto-frame" data-frame="${c.frame}" `
       + `title="Frame ${c.frame}${c.reasons.length ? `: ${esc(c.reasons.join(', '))}` : ''}" aria-label="Frame ${c.frame}"></button>`).join('');
     // Frame đang đứng có lỗi ở checklist thì báo ngay cả khi frame này là frame nội suy (không có ô trên dải).
     const cur = t.current?.count ? ` · <span class="${t.current.level === 'error' ? 'bad' : 'warn'}">frame này ${t.current.count} lỗi</span>` : '';
     const status = t.flagged ? ` · <span class="warn">${t.flagged} keyframe cần xem</span>` : cur ? '' : ' · ổn';
-    const summary = `<div class="row"><span>Track · ${t.cells.length} keyframe${status}${cur}</span>`
-      + `<button class="${t.done ? 'on' : ''}" data-action="toggle-done" aria-pressed="${t.done}" title="Đánh dấu track đã làm xong (Alt+Shift+D)">${t.done ? '✓ Xong' : 'Xong?'}</button></div>`;
-    const strip = `<div class="strip" style="grid-template-columns: repeat(${t.cells.length}, minmax(0, 1fr))${t.cells.length > 120 ? '; gap: 0' : ''}">${cells}</div>`;
-    const toggle = `<button class="link" data-action="toggle-track" aria-expanded="${vm.trackOpen}">${vm.trackOpen ? '▾' : '▸'} Sửa cả track</button>`;
+    const summary = `<div class="sec"><span>Track</span></div><div class="row"><span>${t.cells.length} keyframe${status}${cur}</span></div>`;
+    const ends = t.cells.length ? `<div class="ticks"><span>${t.cells[0].frame}</span><span class="now">▲ đang xem frame ${esc(vm.frame)}</span>`
+      + `<span>${t.cells[t.cells.length - 1].frame}</span></div>` : '';
+    const flagged = t.cells.filter((c) => c.level !== 'ok' && c.reasons.length);
+    const reasons = flagged.length
+      ? `<div class="reasons">${flagged.slice(0, 4).map((c) => `<button class="${c.level}" data-action="goto-frame" data-frame="${c.frame}" title="Tới frame ${c.frame}">`
+        + `Frame ${c.frame}: ${esc(c.reasons.join(', '))}</button>`).join('')}${flagged.length > 4 ? `<span class="muted">… và ${flagged.length - 4} keyframe khác</span>` : ''}</div>`
+      : '';
+    const strip = `<div class="strip" style="grid-template-columns: repeat(${t.cells.length}, minmax(0, 1fr))${t.cells.length > 120 ? '; gap: 0' : ''}">${cells}</div>${ends}${reasons}`;
+    const toggle = `<button class="sec" data-action="toggle-track" aria-expanded="${vm.trackOpen}"><span>Sửa cả track</span><span>${vm.trackOpen ? '▾' : '▸'}</span></button>`;
     if (!vm.trackOpen) return summary + strip + toggle;
     const off = (reason) => `disabled title="${reason}"`;
     const rigidOnly = (title) => (t.locked ? off('Box đang khóa') : t.rigid ? `title="${title}"` : off('Người / động vật đổi tư thế: không áp dụng'));
@@ -278,8 +523,7 @@
       + `<div class="grid2"><button data-action="plan-sync-size" data-source="current" ${rigidOnly('Cả track lấy kích thước box ở frame này')}>Cỡ = frame này</button>`
       + `<button data-action="plan-sync-size" data-source="median" ${rigidOnly('Cả track lấy trung vị kích thước các keyframe')}>Cỡ trung vị</button>`
       + `<button data-action="plan-smooth-yaw" ${rigidOnly('Sửa lật đầu, làm mượt hướng')}>Mượt yaw</button>`
-      + `<button data-action="plan-thin" ${t.locked ? off('Box đang khóa') : 'title="Bỏ keyframe mà CVAT tự nội suy lại được"'}>Tỉa keyframe</button>`
-      + `<button data-action="snap-track" ${t.locked ? off('Box đang khóa') : 'title="Một lần bấm: đo mặt đất ở mọi frame track xuất hiện, hạ / nâng đáy box chạm đất (thêm keyframe ở frame nội suy còn lệch), ghi luôn, chưa Save"'}>Hạ đáy mọi frame</button></div>`
+      + `<button data-action="plan-thin" ${t.locked ? off('Box đang khóa') : 'title="Bỏ keyframe mà CVAT tự nội suy lại được"'}>Tỉa keyframe</button></div>`
       + attrSection(t);
   }
 
@@ -300,7 +544,7 @@
     const picked = t.attrs.filter((a) => a.draft).length;
     const button = `<button class="primary" data-action="set-attrs" ${t.locked ? off('Box đang khóa') : picked ? `title="Gán ${picked} thuộc tính cho mọi frame track xuất hiện, ghi luôn, chưa Save"` : off('Chọn giá trị cho ít nhất một thuộc tính')}>`
       + `Gán ${picked || ''} thuộc tính cho mọi frame</button>`;
-    return `<div class="attrs"><div class="muted">Thuộc tính cả track:</div>${rows}${button}</div>`;
+    return `<div class="attrs"><div class="sec">Thuộc tính cả track</div>${rows}${button}</div>`;
   }
 
   function planSection(plan) {
@@ -309,5 +553,5 @@
       + `<div class="row"><button class="primary" data-action="apply-plan" ${plan.canApply ? '' : 'disabled'}>Áp dụng (chưa Save)</button><button data-action="cancel-plan">Hủy</button></div></div>`;
   }
 
-  root.PointSnapAnnotatorPanel = { create };
+  root.PointSnapAnnotatorPanel = { create, createFloating, mount };
 })(globalThis);

@@ -1,0 +1,83 @@
+{
+  "date": "2026-10-26",
+  "timezone": "Asia/Saigon",
+  "repositoryRevision": "0f9f8bece45bb9d34eeee84d3da4d632180adb3f",
+  "searchQueryCount": 37,
+  "uniqueCanonicalSourceCount": 37,
+  "sourceUrls": [
+    "https://argoverse.github.io/user-guide/api/hd_maps.html",
+    "https://argoverse.github.io/user-guide/datasets/sensor.html",
+    "https://arxiv.org/abs/1904.09085",
+    "https://arxiv.org/abs/2207.11919",
+    "https://arxiv.org/html/2405.15664v1",
+    "https://developer.chrome.com/docs/extensions/develop/concepts/messaging",
+    "https://developer.chrome.com/docs/extensions/develop/concepts/network-requests",
+    "https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle",
+    "https://developer.chrome.com/docs/extensions/reference/api/permissions",
+    "https://developer.chrome.com/docs/extensions/reference/api/storage",
+    "https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/scripting/ExecutionWorld",
+    "https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Transferable_objects",
+    "https://docs.cvat.ai/docs/account_management/user-roles",
+    "https://docs.cvat.ai/docs/annotation/manual-annotation/modes/3d-object-annotation",
+    "https://docs.cvat.ai/docs/api_sdk/access_tokens",
+    "https://docs.cvat.ai/docs/api_sdk/sdk/reference/apis/issues-api",
+    "https://docs.cvat.ai/docs/api_sdk/sdk/reference/apis/jobs-api",
+    "https://docs.cvat.ai/docs/qa-analytics/auto-qa",
+    "https://docs.cvat.ai/docs/qa-analytics/manual-qa",
+    "https://docs.segments.ai/guides/manage-qa-processes",
+    "https://docs.segments.ai/how-to-annotate/label-3d-point-clouds/3d-point-cloud-cuboid-interface",
+    "https://docs.segments.ai/how-to-annotate/label-3d-point-clouds/batch-mode-for-dynamic-objects",
+    "https://github.com/cvat-ai/cvat/blob/develop/cvat-core/src/annotations-collection.ts",
+    "https://github.com/cvat-ai/cvat/blob/develop/cvat-core/src/annotations-history.ts",
+    "https://github.com/cvat-ai/cvat/blob/develop/cvat-core/src/annotations-objects/cuboid-track.ts",
+    "https://github.com/cvat-ai/cvat/blob/develop/cvat-core/src/frames.ts",
+    "https://github.com/cvat-ai/cvat/blob/develop/cvat-ui/src/components/plugins-entrypoint.tsx",
+    "https://github.com/naurril/SUSTechPOINTS",
+    "https://github.com/nutonomy/nuscenes-devkit/blob/master/python-sdk/nuscenes/eval/detection/README.md",
+    "https://github.com/url-kaist/patchwork-plusplus/blob/master/USAGE.md",
+    "https://playwright.dev/docs/chrome-extensions",
+    "https://publications.ri.cmu.edu/efficient-l-shape-fitting-for-vehicle-detection-using-laser-scanners",
+    "https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.GroupKFold.html",
+    "https://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=3d",
+    "https://www.itl.nist.gov/div898/handbook/prc/section2/prc241.htm",
+    "https://www.nuscenes.org/tutorials/nuscenes_tutorial.html",
+    "https://www.w3.org/WAI/ARIA/apg/patterns/button"
+  ],
+  "documents": [
+    {
+      "path": "docs/NGHIEN_CUU_HOAN_THIEN_POINTSNAP_3D.md",
+      "sha256": "0ed7e4b5072f4ed74ea430426366665abd842be602c6fe396f2a33d78cd64544",
+      "lines": 271
+    },
+    {
+      "path": "docs/BAI_TOAN_VA_BAN_GIAO_PHAT_TRIEN.md",
+      "sha256": "eb2fbd0ce86caf828171e643ad2419c970c466747f79a0394f772cff70fc4aec",
+      "lines": 259
+    },
+    {
+      "path": "docs/research-2026-10-26/cvat-evidence.md",
+      "sha256": "b5743c7baace89098a2ab94e171cd5089d56338999bcd74df765dd7f52107f8c",
+      "lines": 131
+    },
+    {
+      "path": "docs/research-2026-10-26/extension-evidence.md",
+      "sha256": "62d450e8c420629803a61ccae17d0533f3cc8f269104622e8b757259741a3089",
+      "lines": 158
+    },
+    {
+      "path": "docs/research-2026-10-26/KE_HOACH_TRIEN_KHAI_VA_NGHIEM_THU.md",
+      "sha256": "f6d7e6d3fb28bc66a2e6323bedd8619895bee849d875bfb98ac2b10b83e13bc3",
+      "lines": 292
+    },
+    {
+      "path": "docs/research-2026-10-26/lidar-evidence.md",
+      "sha256": "b9c1705d70b597e38ba19b34fbdaef4ad780d8b6fd7692c0693e2ea2806d92fb",
+      "lines": 165
+    },
+    {
+      "path": "docs/research-2026-10-26/product-method-evidence.md",
+      "sha256": "2c2f2de73a5aacce2fd953894a7f4abfee2999865cd2991ea362ee9bfd191a7d",
+      "lines": 78
+    }
+  ]
+}

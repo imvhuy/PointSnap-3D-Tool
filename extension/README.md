@@ -38,10 +38,13 @@ khác thì xin phép chủ hệ thống trước.
 
 ## Bảng trong job
 
-- **Mở / đóng**: tab **Hỗ trợ** (logo PointSnap) ở thanh bên phải của CVAT, cạnh Objects / Labels, hoặc
-  <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>. Bảng nằm trong thanh bên, không nổi đè lên canvas; bấm Objects / Labels
-  để về danh sách của CVAT. Tab không mở thì PointSnap không đo, không vẽ gì lên canvas. Như nhau khi cài extension hay
-  khi dùng bản nhúng thẳng vào CVAT (dịch vụ QC); tab **PointSnap** của bản nhúng dành cho QC và phiếu sửa lỗi.
+- **Bảng nổi trên CVAT**: mở job 3D là bảng hiện ở góc phải trên, nổi trên trang (không chiếm chỗ thanh bên của CVAT),
+  thao tác trên CVAT thế nào bảng cũng không mất. Kéo thanh tiêu đề để dời đi đâu cũng được, kéo góc dưới phải để đổi
+  cỡ; nút **–** (hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>) thu thành nút tròn mang màu trạng thái của box đang
+  chọn, bấm nút tròn để mở lại (kéo nút tròn để dời). Vị trí, cỡ, thu nhỏ được nhớ. Mặt đất, tô điểm, khoá box trên
+  canvas luôn chạy. Chạy như nhau trên Chrome, Edge, Opera. Popup của biểu tượng PointSnap trên thanh trình duyệt dùng để
+  bật cho địa chỉ CVAT, xem tình trạng, đổi bộ ngưỡng. Bản nhúng thẳng vào CVAT (dịch vụ QC, không có extension) hiện
+  bảng ở tab **Hỗ trợ** của thanh bên phải; tab **PointSnap** của bản nhúng dành cho QC và phiếu sửa lỗi.
 - **Thanh tiêu đề**: chấm trạng thái (xanh ổn / cam cần xem / đỏ lỗi), box đang chọn,
   khoảng cách, số mục cần xem, tiến độ `xong/tổng`, ◎ khoá box, ⏮ / ⏭ track chưa xong trước / kế tiếp, ⚙ spec.
 - **Checklist**, mỗi khía cạnh một dòng ✓ / ! / ✕ kèm một cụm từ ngắn (rê chuột xem đầy đủ) và **nút sửa nằm ngay trên
@@ -131,7 +134,7 @@ src/annotator/
   cvat-adapter.js   cầu nối duy nhất tới nội bộ CVAT
   overlay.js        vẽ SVG trên 4 view
   cloud-colors.js   tô màu chính các điểm của point cloud CVAT (A4), trả màu gốc khi bỏ chọn
-  panel.js          giao diện bảng: checklist, dải track, xem trước (shadow DOM)
+  panel.js          giao diện bảng: checklist, dải track, xem trước (shadow DOM); bảng nổi (extension) và tab Hỗ trợ (plugin QC)
   spec-editor.js    trình sửa spec của project (shadow DOM)
   annotator.js      bộ điều khiển
   settings-bridge.js  chuyển cấu hình của địa chỉ CVAT đang mở sang trang (ISOLATED world)
