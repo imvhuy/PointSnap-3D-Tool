@@ -38,6 +38,8 @@
     track: null,
     trackDirtyAt: 0,
     trackToken: 0,
+    groundCache: null,
+    attrDraft: null,
     plan: null,
     notice: null,
     busy: false,
@@ -242,6 +244,36 @@
   const RANK = { error: 0, warning: 1, na: 2, ok: 3, muted: 3 };
 
   /**
+   * Thuộc tính chọn được của track: giá trị ở frame này, giá trị đang chọn sẵn (chưa ghi) và `mixed` khi các keyframe
+   * nhìn thấy đang mang nhiều giá trị khác nhau.
+   */
+  function trackAttrs(objectState, keyframes) {
+    const draft = S.attrDraft?.clientID === objectState.clientID ? S.attrDraft.values : {};
+    const shown = keyframes.filter((k) => !k.outside);
+    return A.attributeSpecs(objectState).map((a) => ({
+      ...a, current: String(objectState.attributes?.[a.id] ?? ''), draft: draft[a.id] || '',
+      mixed: new Set(shown.map((k) => String(k.attributes?.[a.id] ?? ''))).size > 1,
+    }));
+  }
+
+  /**
+   * Checklist chỉ đo được frame đang đứng (cần point cloud của frame đó), nên lỗi của checklist (lơ lửng, lòi điểm…) được
+   * tô lên ô keyframe của frame này; frame nội suy không có ô thì dòng tóm tắt vẫn báo. Dòng Hướng lấy từ chính dải nên
+   * không cộng lại.
+   */
+  function markCurrentFrame(track, rows, frame) {
+    const problems = rows.filter((r) => (r.level === 'warning' || r.level === 'error') && r.key !== 'heading');
+    const level = problems.some((r) => r.level === 'error') ? 'error' : problems.length ? 'warning' : 'ok';
+    track.current = { level, count: problems.length };
+    const cell = track.cells.find((c) => c.frame === frame);
+    if (cell && problems.length) {
+      cell.reasons = [...cell.reasons, ...problems.map((r) => `${r.name}: ${r.text}`)];
+      if (RANK[level] < RANK[cell.level]) cell.level = level;
+    }
+    track.flagged = track.cells.filter((c) => c.level !== 'ok').length;
+  }
+
+  /**
    * Checklist của box đang chọn: mỗi khía cạnh một dòng { name, level: ok | warning | error | na, text, tip, fix }.
    * `fix` là thao tác sửa đúng vấn đề của dòng đó (chỉ khi có vấn đề, box không khóa và thao tác áp dụng được).
    */
@@ -435,15 +467,129 @@
     }
   }
 
+  const undoHint = (kind) => (kind === 'cvat' ? 'Ctrl+Z một lần để hoàn tác'
+    : 'hoàn tác bằng nút "Hoàn tác" của PointSnap (Ctrl+Z của CVAT bản này không gộp được thao tác nhiều keyframe)');
+
+  // Nút Hoàn tác chỉ hiện khi đang chọn đúng track vừa sửa, để không tưởng nhầm là hoàn tác track khác.
+  function rememberUndo(job, kind, record, title) {
+    S.lastUndo = kind === 'pointsnap' && record.length ? { jobId: job.id, clientID: record[0].clientID, title, record } : null;
+  }
+
   async function commit(job, byFrame, edits, title) {
     const result = await A.applyEdits(job, byFrame, edits);
-    // Nút Hoàn tác chỉ hiện khi đang chọn đúng track vừa sửa, để không tưởng nhầm là hoàn tác track khác.
-    S.lastUndo = result.undo === 'pointsnap' && result.saved
-      ? { jobId: job.id, clientID: result.record[0].clientID, title, record: result.record } : null;
-    const undo = result.undo === 'cvat' ? 'Ctrl+Z một lần để hoàn tác' : 'hoàn tác bằng nút "Hoàn tác" của PointSnap (Ctrl+Z của CVAT bản này không gộp được thao tác nhiều keyframe)';
+    rememberUndo(job, result.undo, result.record, title);
     const locked = result.locked ? ` ${result.locked} keyframe bị khóa (lock) nên bỏ qua.` : '';
-    notify({ kind: 'ok', text: `${title}: đã ghi ${result.saved} keyframe vào CVAT, chưa Save; ${undo}.${locked}` });
+    notify({ kind: 'ok', text: `${title}: đã ghi ${result.saved} keyframe vào CVAT, chưa Save; ${undoHint(result.undo)}.${locked}` });
     markTrackChanged();
+  }
+
+  /**
+   * z mặt đất dưới box ở frame `f` (mức đáy box cần chạm), đo như nút Hạ đáy nhưng trên point cloud của chính frame đó
+   * (đọc gói frame từ CVAT). Hạ / nâng không đổi chân box, nên nhớ theo frame + tâm XY / góc / kích thước: lượt kiểm tra
+   * lại sau khi ghi không phải đọc lại point cloud. null: không đo được đủ tin cậy.
+   */
+  async function groundAt(ctx, f) {
+    const g = S.guideline, b = f.box;
+    if (S.groundCache?.jobId !== ctx.job.id || S.groundCache.version !== S.settingsVersion) {
+      S.groundCache = { jobId: ctx.job.id, version: S.settingsVersion, byKey: new Map() };
+    }
+    const key = `${f.frame}:${[b.center[0], b.center[1], ...b.rotation, ...b.dims].map((v) => v.toFixed(3)).join(',')}`;
+    if (!S.groundCache.byKey.has(key)) {
+      const frame = Measure.buildFrame(await A.frameCloud(ctx, f.frame), await A.frameBoxes(ctx.job, f.frame), g);
+      const contact = Checks.usableContact(Terrain.measureContact(frame.terrain, frame.grid, b), b, g);
+      S.groundCache.byKey.set(key, contact ? B.bottomZ(b) + contact.snapDzM : null);
+    }
+    return S.groundCache.byKey.get(key);
+  }
+
+  /** Gộp bản ghi Hoàn tác của nhiều lần ghi: mỗi frame giữ trạng thái trước lần ghi đầu và sau lần ghi cuối. */
+  function mergeRecords(into, record) {
+    for (const entry of record) {
+      const key = `${entry.clientID}:${entry.frame}`, old = into.get(key);
+      into.set(key, old ? { ...old, after: entry.after } : entry);
+    }
+  }
+
+  const SNAP_PASSES = 3;
+
+  /**
+   * Hạ đáy cả track bằng một nút, không xem trước: đo mặt đất ở mọi frame track xuất hiện (cả frame nội suy), dời
+   * keyframe lệch và thêm keyframe ở frame nội suy còn lệch rồi ghi luôn vào CVAT (chưa Save, Hoàn tác được). Ghi xong
+   * đọc lại từng frame đúng như CVAT nội suy và lặp tối đa SNAP_PASSES lượt cho tới khi mọi frame đo được đều sát đất.
+   */
+  async function snapTrack(ctx, objectState) {
+    const g = S.guideline, title = 'Hạ đáy cả track', merged = new Map(), failed = new Set();
+    let frames = [], ground = new Map(), maxShiftM = 0, locked = 0;
+    S.busy = true;
+    try {
+      for (let pass = 0; ; pass += 1) {
+        frames = await A.trackFrames(ctx.job, objectState);
+        ground = new Map();
+        for (const [i, f] of frames.entries()) {
+          if (!pass && i % 5 === 0) notify({ kind: 'info', text: `${title}: đang đo mặt đất ${i + 1}/${frames.length} frame (frame ${f.frame})…` });
+          let z = null;
+          try { z = await groundAt(ctx, f); } catch (_) { failed.add(f.frame); }
+          ground.set(f.frame, z);
+        }
+        const { edits, summary } = Ops.planGroundSnap(frames, ground, g.ground.okM);
+        if (!edits.length || pass === SNAP_PASSES) break;
+        const result = await A.applyEdits(ctx.job, new Map(frames.map((f) => [f.frame, f])), edits);
+        mergeRecords(merged, result.record);
+        locked = Math.max(locked, result.locked);
+        maxShiftM = Math.max(maxShiftM, summary.maxShiftM);
+        if (!result.saved) break;
+      }
+    } finally {
+      S.busy = false;
+    }
+    const record = [...merged.values()];
+    const measured = frames.filter((f) => Number.isFinite(ground.get(f.frame)));
+    const off = measured.filter((f) => Math.abs(ground.get(f.frame) - B.bottomZ(f.box)) > g.ground.okM).length;
+    const unmeasured = frames.length - measured.length;
+    const skipped = unmeasured ? ` ${unmeasured} frame không đo được mặt đất (ít điểm đất, quá xa${failed.size ? `; ${failed.size} frame không đọc được point cloud` : ''}) nên giữ theo nội suy, căn bằng mắt.` : '';
+    if (!record.length) {
+      notify({ kind: 'ok', text: `${title}: ${measured.length}/${frames.length} frame đo được, đều đã sát đất (lệch ≤ ${cm(g.ground.okM)}).${skipped}` });
+      return;
+    }
+    // Hoàn tác của PointSnap phủ cả lượt ghi một frame (CVAT tự hoàn tác được) để một nút trả lại hết.
+    rememberUndo(ctx.job, 'pointsnap', record, title);
+    const added = record.filter((e) => !e.before.keyframe).length;
+    const still = off ? `, ${off} frame còn lệch > ${cm(g.ground.okM)} (xem dải track)` : '';
+    const lock = locked ? ` ${locked} keyframe bị khóa (lock) nên bỏ qua.` : '';
+    notify({ kind: 'ok', text: `${title}: dời ${record.length - added} keyframe, thêm ${added} keyframe ở frame nội suy (dời nhiều nhất ${cm(maxShiftM)}); `
+      + `${measured.length - off}/${frames.length} frame sát đất${still}.${skipped} Chưa Save; ${undoHint('pointsnap')}.${lock}` });
+    markTrackChanged();
+  }
+
+  /**
+   * Gán nhiều thuộc tính (`values`: { id: giá trị }) cho mọi frame track xuất hiện, ghi luôn vào CVAT; ghi xong đọc lại
+   * từng frame để báo đúng số frame đã có giá trị mới.
+   */
+  async function setTrackAttributes(ctx, objectState, values) {
+    const specs = A.attributeSpecs(objectState).filter((a) => a.id in values);
+    const immutable = new Set(specs.filter((a) => !a.mutable).map((a) => a.id));
+    const title = `Gán ${specs.map((a) => `${a.name} = ${values[a.id]}`).join(', ')}`;
+    S.busy = true;
+    try {
+      const frames = await A.trackFrames(ctx.job, objectState);
+      const { edits } = Ops.planAttributes(frames, values, immutable);
+      if (!edits.length) {
+        notify({ kind: 'ok', text: `${title}: cả ${frames.length} frame track xuất hiện đã đúng giá trị.` });
+        return true;
+      }
+      const result = await A.applyEdits(ctx.job, new Map(frames.map((f) => [f.frame, f])), edits);
+      rememberUndo(ctx.job, result.undo, result.record, title);
+      const after = await A.trackFrames(ctx.job, objectState);
+      const wrong = Ops.planAttributes(after, values, immutable).summary.wrongFrames;
+      const added = result.record.filter((e) => !e.before.keyframe).length;
+      const lock = result.locked ? ` ${result.locked} keyframe bị khóa (lock) nên bỏ qua.` : '';
+      notify({ kind: wrong ? 'error' : 'ok', text: `${title}: ghi ${result.saved} keyframe${added ? ` (${added} keyframe mới ở đầu job)` : ''}; `
+        + `${after.length - wrong}/${after.length} frame track xuất hiện có giá trị mới. Chưa Save; ${undoHint(result.undo)}.${lock}` });
+      markTrackChanged();
+      return !wrong;
+    } finally {
+      S.busy = false;
+    }
   }
 
   function markTrackChanged() {
@@ -482,7 +628,7 @@
   // ------------------------------------------------------------------ hành động từ panel / phím tắt
 
   // Thao tác ghi vào CVAT: không chạy khi box đang khóa (CVAT không cho người dùng sửa box khóa, PointSnap cũng vậy).
-  const WRITE_ACTIONS = new Set(['snap-ground', 'plan-sync-size', 'plan-smooth-yaw', 'plan-thin', 'apply-plan']);
+  const WRITE_ACTIONS = new Set(['snap-ground', 'snap-track', 'set-attrs', 'plan-sync-size', 'plan-smooth-yaw', 'plan-thin', 'apply-plan']);
 
   async function onAction(name, data = {}) {
     const ctx = A.context();
@@ -547,6 +693,28 @@
           const dims = data.source === 'median' ? Ops.medianDims(S.track?.keyframes || []) : box?.dims;
           if (dims) await preparePlan(ctx, 'sync-size', { dims: [...dims], source: data.source });
           else notify({ kind: 'info', text: 'Chưa đọc xong keyframe của track; thử lại sau giây lát.' });
+          break;
+        }
+        case 'snap-track':
+          if (objectState?.objectType === 'track') { S.plan = null; await snapTrack(ctx, objectState); }
+          break;
+        case 'draft-attr':
+          // Giá trị chọn sẵn cho từng thuộc tính, chưa ghi; nút "Gán cho mọi frame" ghi cả lượt. Rỗng: giữ nguyên.
+          if (objectState) {
+            const values = S.attrDraft?.clientID === objectState.clientID ? { ...S.attrDraft.values } : {};
+            if (data.value) values[data.attr] = data.value;
+            else delete values[data.attr];
+            S.attrDraft = { clientID: objectState.clientID, values };
+          }
+          break;
+        case 'set-attrs': {
+          if (objectState?.objectType !== 'track' || S.attrDraft?.clientID !== objectState.clientID) break;
+          const specs = A.attributeSpecs(objectState);
+          const values = Object.fromEntries(Object.entries(S.attrDraft.values)
+            .filter(([id, v]) => specs.some((a) => a.id === id && a.values.includes(v))));
+          if (!Object.keys(values).length) break;
+          S.plan = null;
+          if (await setTrackAttributes(ctx, objectState, values)) S.attrDraft = null;
           break;
         }
         case 'plan-smooth-yaw':
@@ -615,6 +783,7 @@
       vm.track = !cells ? { loading: true } : {
         loading: false, cells, flagged: cells.filter((c) => c.level !== 'ok').length,
         done: done.has(trackId(m.objectState)), rigid, locked: !!m.objectState.lock,
+        attrs: trackAttrs(m.objectState, t.keyframes),
       };
     }
     const rows = checklist(m, g, vm.track, measured, ctx.frame);
@@ -625,6 +794,7 @@
       if (flagged && dismissed.has(r.key)) Object.assign(r, { level: 'muted', dismissed: true, fix: null, text: `đã bỏ qua · ${r.text}` });
       else r.canDismiss = flagged;
     }
+    if (vm.track && !vm.track.loading) markCurrentFrame(vm.track, rows, ctx.frame);
     vm.box = {
       label: m.label, classKey: m.classKey, clientId: m.objectState.clientID, isTrack, locked: !!m.objectState.lock,
       rangeM: B.rangeXY(m.box, g.sensorOrigin), rows,

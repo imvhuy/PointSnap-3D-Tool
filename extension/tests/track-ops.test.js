@@ -68,3 +68,60 @@ test('hạ đáy box: đáy chạm mặt đất, giữ XY và kích thước', (
   assert.ok(Math.abs(b.center[2] - b.dims[2] / 2 + 1.8) < 1e-9);
   assert.deepEqual(b.center.slice(0, 2), [3, 4]);
 });
+
+// Mọi frame nhìn thấy trong job như adapter trả về: `keyframe` đánh dấu keyframe, frame còn lại là frame nội suy.
+const fr = (frame, b, keyframe, extra = {}) => ({ frame, box: b, keyframe, outside: false, attributes: {}, ...extra });
+const zBox = (bottom) => box(0, 0, 0, [4.5, 1.9, 1.6], bottom + 0.8);
+
+test('gán nhiều thuộc tính: ghi keyframe đang khác và frame đầu job nối từ job trước, frame nội suy theo keyframe', () => {
+  const frames = [
+    fr(10, zBox(-1), false, { attributes: { 7: 'without_rider', 8: 'moving' } }), // keyframe chi phối nằm ở job trước
+    fr(11, zBox(-1), false, { attributes: { 7: 'without_rider', 8: 'moving' } }),
+    fr(12, zBox(-1), true, { attributes: { 7: 'with_rider', 8: 'moving' } }),
+    fr(13, zBox(-1), false, { attributes: { 7: 'with_rider', 8: 'moving' } }),
+    fr(20, zBox(-1), true, { attributes: { 7: 'without_rider', 8: 'parked' } }), // xuất hiện lại sau outside
+  ];
+  const { edits, summary } = Ops.planAttributes(frames, { 7: 'with_rider', 8: 'parked' });
+  assert.deepEqual(edits, [
+    { frame: 10, attributes: { 7: 'with_rider', 8: 'parked' } },
+    { frame: 12, attributes: { 8: 'parked' } },
+    { frame: 20, attributes: { 7: 'with_rider' } },
+  ]);
+  assert.deepEqual(summary, { changed: 3, wrongFrames: 5, total: 5 });
+});
+
+test('gán thuộc tính không đổi theo frame: ghi một lần cho cả track', () => {
+  const frames = [fr(0, zBox(-1), true, { attributes: { 9: 'sedan' } }), fr(1, zBox(-1), true, { attributes: { 9: 'sedan' } })];
+  assert.deepEqual(Ops.planAttributes(frames, { 9: 'suv' }, new Set(['9'])).edits, [{ frame: 0, attributes: { 9: 'suv' } }]);
+  assert.deepEqual(Ops.planAttributes(frames, { 9: 'sedan' }, new Set(['9'])).edits, []);
+});
+
+test('hạ đáy mọi frame: dời keyframe, thêm keyframe ở frame nội suy còn lệch, sau đó mọi frame đo được sát đất', () => {
+  // Đường dốc: đất hạ dần từ -1 xuống -1,6 qua 13 frame; box chỉ có keyframe 0 và 12, đều nổi 0,3 m; giữa có chỗ gồ.
+  const groundZ = new Map(Array.from({ length: 13 }, (_, i) => [i, -1 - 0.05 * i + (i === 6 ? 0.2 : 0)]));
+  groundZ.set(9, null); // frame không đo được mặt đất
+  const frames = Array.from({ length: 13 }, (_, i) => fr(i, zBox(-0.7 - 0.05 * i), i === 0 || i === 12));
+  const { edits, summary } = Ops.planGroundSnap(frames, groundZ, 0.05);
+  const keys = new Map([[0, -1], [12, -1.6], ...edits.map((e) => [e.frame, e.box.center[2] - e.box.dims[2] / 2])]);
+  const anchors = [...keys.keys()].sort((a, b) => a - b);
+  for (let f = 0; f <= 12; f += 1) {
+    const z = groundZ.get(f);
+    if (z === null) continue;
+    const a = anchors.filter((k) => k <= f).pop(), b = anchors.find((k) => k >= f);
+    const bottom = a === b ? keys.get(a) : keys.get(a) + (keys.get(b) - keys.get(a)) * (f - a) / (b - a);
+    assert.ok(Math.abs(bottom - z) <= 0.05 + 1e-9, `frame ${f} lệch ${bottom - z}`);
+  }
+  assert.deepEqual(edits.slice(0, 1).map((e) => e.frame), [0]);
+  assert.equal(summary.moved, 2);
+  assert.ok(summary.added >= 1 && summary.added <= 3, `thêm ${summary.added} keyframe`);
+  assert.equal(summary.unmeasured, 1);
+  assert.ok(edits.every((e) => e.box.center[0] === 0 && e.box.dims[2] === 1.6));
+});
+
+test('hạ đáy mọi frame: track nối từ job trước thì ghim frame đầu job; đã sát đất thì không ghi gì', () => {
+  const frames = [fr(10, zBox(-1), false), fr(11, zBox(-1), false), fr(12, zBox(-1), true)];
+  const pinned = Ops.planGroundSnap(frames, new Map([[10, -1], [11, -1.14], [12, -1.3]]), 0.05);
+  assert.deepEqual(pinned.edits.map((e) => e.frame), [10, 12]);
+  assert.equal(pinned.edits[0].box.center[2], zBox(-1).center[2]);
+  assert.deepEqual(Ops.planGroundSnap(frames, new Map([[10, -1.02], [11, -1], [12, -0.97]]), 0.05).edits, []);
+});
