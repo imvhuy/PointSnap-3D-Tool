@@ -50,7 +50,8 @@
     lastPanelAt: 0,
     lastUndo: null,
     specOpen: false,
-    trackOpen: false,
+    // Cửa sổ bảng đủ chỗ: phần sửa cả track mở sẵn.
+    trackOpen: true,
   };
   let panel = null;
 
@@ -656,6 +657,12 @@
     const ctx = A.context();
     if (name === 'rerender') { S.lastPanelAt = 0; return; }
     if (name === 'toggle-panel') { panel?.toggle(); S.lastPanelAt = 0; return; }
+    // Phím tắt bấm khi cửa sổ PointSnap đang được chọn: cửa sổ gửi mã phím, làm như bấm trong trang CVAT.
+    if (name === 'shortcut') {
+      const action = SHORTCUTS[data.code];
+      if (action && action !== 'toggle-panel') await onAction(action);
+      return;
+    }
     if (!ctx || S.busy) return;
     if (A.isSaving()) { notify({ kind: 'info', text: 'CVAT đang Save; thử lại sau khi Save xong.' }); return; }
     const objectState = activeObject();
@@ -792,7 +799,7 @@
     const base = { notice: S.notice, guidelineErrors: S.guidelineErrors, follow: S.lock, plan: S.plan };
     if (!ctx) return { ...base, status: 'waiting', message: 'Chờ mở job 3D (point cloud) trên CVAT…' };
     const done = doneSet(ctx.job.id), tracks = frameTracks();
-    const vm = { ...base, status: 'ready', frame: ctx.frame,
+    const vm = { ...base, status: 'ready', frame: ctx.frame, job: ctx.job.id, busy: S.busy,
       undo: S.lastUndo?.jobId === ctx.job.id && S.lastUndo.clientID === m?.objectState.clientID
         ? { title: S.lastUndo.title, count: S.lastUndo.record.length } : null,
       progress: tracks.length ? { done: tracks.filter((s) => done.has(trackId(s))).length, total: tracks.length } : null };
@@ -819,7 +826,8 @@
     if (vm.track && !vm.track.loading) markCurrentFrame(vm.track, rows, ctx.frame);
     vm.box = {
       label: m.label, classKey: m.classKey, clientId: m.objectState.clientID, isTrack, locked: !!m.objectState.lock,
-      rangeM: B.rangeXY(m.box, g.sensorOrigin), rows,
+      rangeM: B.rangeXY(m.box, g.sensorOrigin), rows, canSnap: !!measured && !m.objectState.lock,
+      done: isTrack && done.has(trackId(m.objectState)),
       level: rows.reduce((w, r) => (RANK[r.level] < RANK[w] ? r.level : w), 'ok'),
       problems: rows.filter((r) => r.level === 'warning' || r.level === 'error').length,
     };
@@ -942,7 +950,7 @@
     try {
       const ctx = S.enabled ? A.context() : null;
       if (ctx && ctx.job.id !== S.jobId) onJobChanged(ctx.job.id, ctx.job.projectId);
-      // Tab Hỗ trợ không mở: không đo, không vẽ gì lên canvas.
+      // Bảng không mở (cửa sổ PointSnap đóng / tab Hỗ trợ không chọn): không đo, không vẽ gì lên canvas.
       const shown = !panel || panel.isOpen();
       const cache = shown && ctx && frameData(ctx);
       const m = cache && measureActive(ctx, cache);
@@ -974,6 +982,15 @@
     requestAnimationFrame(tick);
   }
 
+  /**
+   * Extension: bảng ở cửa sổ riêng (panel-link.js ↔ panel-window.html), không nhúng vào CVAT. Plugin QC (không có
+   * extension, không mở được cửa sổ extension): tab "Hỗ trợ" trong thanh bên CVAT.
+   */
+  function createPanel() {
+    const embedded = document.documentElement.dataset.pointsnapPlugin || !root.PointSnapPanelLink;
+    return embedded ? Panel.create(onAction) : root.PointSnapPanelLink.create(onAction);
+  }
+
   function updatePanel(ctx, m) {
     const onJobPage = /\/jobs\/\d+/.test(location.pathname);
     if (!S.enabled || !onJobPage) {
@@ -984,7 +1001,7 @@
     const now = performance.now();
     if (now - S.lastPanelAt < PANEL_INTERVAL_MS) return;
     S.lastPanelAt = now;
-    panel = panel || Panel.create(onAction);
+    panel = panel || createPanel();
     panel.render(viewModel(ctx, m));
   }
 

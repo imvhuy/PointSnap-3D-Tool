@@ -168,6 +168,14 @@ async function main() {
   if (!health.enabled) setSite('', 'Bảng annotator đang tắt trên trang này', 'Bật lại bằng ô bên dưới.');
   else if (health.job3d) setSite('ok', 'PointSnap đang chạy trên job này', untested);
   else setSite('ok', 'PointSnap đang chạy', 'Mở một job 3D để dùng bảng.');
+  if (health.enabled) {
+    // Bảng không nhúng vào CVAT: mở ở cửa sổ riêng của tab này (service worker nhớ cửa sổ, mở lại thì đưa lên trước).
+    $('open-panel').onclick = async () => {
+      await chrome.runtime.sendMessage({ type: 'openPanel', tabId: tab.id });
+      window.close();
+    };
+    show('open-panel');
+  }
   renderChecks(health);
 }
 

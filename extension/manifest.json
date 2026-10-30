@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "PointSnap cho CVAT",
   "short_name": "PointSnap",
-  "version": "0.5.0",
-  "description": "Hỗ trợ annotator gán cuboid 3D trên CVAT: mặt đất tham chiếu, kiểm tra box, sửa cả track có xem trước. Dữ liệu không rời CVAT.",
+  "version": "0.6.0",
+  "description": "Hỗ trợ annotator gán cuboid 3D trên CVAT: trong cửa sổ riêng: mặt đất tham chiếu, kiểm tra box, sửa cả track. Dữ liệu không rời CVAT.",
   "minimum_chrome_version": "116",
   "icons": {
     "16": "icons/icon16.png",
@@ -58,6 +58,7 @@
         "src/annotator/cloud-colors.js",
         "src/annotator/panel.js",
         "src/annotator/spec-editor.js",
+        "src/annotator/panel-link.js",
         "src/annotator/annotator.js"
       ],
       "run_at": "document_idle",
@@ -70,7 +71,8 @@
       ],
       "js": [
         "hosts.js",
-        "src/annotator/settings-bridge.js"
+        "src/annotator/settings-bridge.js",
+        "src/annotator/panel-bridge.js"
       ],
       "run_at": "document_idle"
     }

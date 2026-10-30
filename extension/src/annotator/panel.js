@@ -1,15 +1,18 @@
 /*
  * Bảng PointSnap cho annotator (shadow DOM, không lẫn CSS với CVAT). Chỉ hiển thị view-model do controller đưa vào
  * và báo lại thao tác qua `onAction(name, data)`; không tự đọc CVAT.
- * Bố cục: thanh tiêu đề (chấm trạng thái + box đang chọn, luôn hiện kể cả khi thu gọn) → checklist từng khía cạnh,
- * mỗi dòng có nút sửa đúng vấn đề của nó → dải track một ô mỗi keyframe, bấm ô để tới frame → bản xem trước.
+ * Hai nơi hiện bảng dùng chung `mount`: cửa sổ riêng của extension (panel-window.js, view-model gửi qua panel-link.js)
+ * và tab "Hỗ trợ" trong thanh bên CVAT cho plugin QC không có extension (`create`).
+ * Bố cục: phần trên đứng yên (tiêu đề: chấm trạng thái + box đang chọn + nút chung; dòng job / frame; thông báo; hàng
+ * nút dùng nhiều nhất: Hạ đáy, Hạ đáy mọi frame, Xong) → phần dưới cuộn: checklist từng khía cạnh, mỗi dòng có nút sửa
+ * đúng vấn đề của nó → dải track một ô mỗi keyframe, bấm ô để tới frame → sửa cả track, thuộc tính → bản xem trước.
  * Nền sáng như thanh bên của CVAT; màu một nghĩa: xanh lá ổn, cam cần xem, đỏ lỗi.
  */
 (function (root) {
   'use strict';
 
   const STORAGE_KEY = 'pointsnap.annotator.panel';
-  const SHORTCUTS = 'Alt+Shift+P: mở / đóng tab Hỗ trợ · Alt+Shift+G: hạ đáy box · Alt+Shift+F: khoá box · Alt+Shift+D: đánh dấu track xong. Save / Undo bằng CVAT.';
+  const SHORTCUTS = 'Alt+Shift+P: mở / đóng bảng PointSnap · Alt+Shift+G: hạ đáy box · Alt+Shift+F: khoá box · Alt+Shift+D: đánh dấu track xong. Save / Undo bằng CVAT.';
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const ICON = { ok: '✓', warning: '!', error: '✕', na: '–', muted: '–' };
   const LEVEL_TEXT = { ok: 'Ổn', warning: 'Cần xem', error: 'Lỗi', na: 'Chưa đo được', muted: 'Đã bỏ qua' };
@@ -20,7 +23,7 @@
   /* Theo kiểu Ant Design của CVAT: nền trắng như thanh bên của CVAT, viền #d9d9d9, xanh #1677ff. */
   const CSS = `
     :host { all: initial; }
-    .panel { display: flex; flex-direction: column; background: #fff; color: rgba(0,0,0,.88);
+    .panel { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; background: #fff; color: rgba(0,0,0,.88);
       font: 12.5px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; overflow: hidden; overflow-wrap: anywhere; }
     .head { display: flex; align-items: center; gap: 6px; padding: 7px 8px 7px 10px; background: #fafafa; border-bottom: 1px solid #f0f0f0; user-select: none; }
     .logo { flex: none; width: 20px; height: 20px; color: #1f1f1f; }
@@ -32,7 +35,18 @@
     .count { font-weight: 600; font-size: 11px; line-height: 18px; padding: 0 6px; border-radius: 9px; background: #fff7e6; color: #d46b08; border: 1px solid #ffd591; }
     .count.error { background: #fff1f0; color: #cf1322; border-color: #ffa39e; }
     .muted { color: rgba(0,0,0,.45); }
-    .body { overflow-y: auto; overflow-x: hidden; padding: 8px 10px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    .body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 8px 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 8px; }
+    .ctx { display: flex; align-items: center; gap: 6px; padding: 3px 10px; font-size: 11.5px; color: rgba(0,0,0,.45); border-bottom: 1px solid #f0f0f0; background: #fafafa; }
+    .ctx .busy { margin-left: auto; color: #1677ff; }
+    .top { flex: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 8px 10px 0; }
+    .top:empty { display: none; }
+    .quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; padding-bottom: 8px; border-bottom: 1px solid #f0f0f0; }
+    .quick button { padding: 4px 8px; line-height: 20px; }
+    .quick button kbd { margin-left: 6px; }
+    .quick button.primary kbd { color: rgba(255,255,255,.85); background: transparent; border-color: rgba(255,255,255,.5); }
+    .sec { font-size: 11px; font-weight: 600; letter-spacing: .02em; color: rgba(0,0,0,.45); margin: 2px 0 -4px; text-transform: uppercase; }
+    .ticks { display: flex; justify-content: space-between; font-size: 10.5px; color: rgba(0,0,0,.45); margin-top: -5px; }
+    .empty { padding: 18px 4px; text-align: center; color: rgba(0,0,0,.45); display: grid; gap: 8px; justify-items: center; }
     button { font: inherit; border: 1px solid #d9d9d9; background: #fff; color: rgba(0,0,0,.88); border-radius: 6px; padding: 1px 8px; cursor: pointer; white-space: nowrap;
       box-shadow: 0 2px 0 rgba(0,0,0,.02); transition: color .2s, border-color .2s, background .2s; }
     button:hover:not(:disabled) { color: #4096ff; border-color: #4096ff; }
@@ -62,13 +76,13 @@
     .check .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .check.warning .text { color: #d46b08; } .check.error .text { color: #cf1322; }
     .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 6px; }
-    .strip { display: grid; gap: 1px; height: 16px; }
+    .strip { display: grid; gap: 1px; height: 22px; }
     .strip button { padding: 0; border: 0; border-radius: 2px; background: #d9d9d9; min-width: 0; box-shadow: none; }
     .strip button:hover:not(:disabled) { background: #91caff; }
     .strip button.warning { background: #faad14; } .strip button.error { background: #ff4d4f; } .strip button.here { outline: 2px solid #1677ff; outline-offset: -1px; }
     .attrs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
     .attr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: center; gap: 6px; }
-    .attr span { color: rgba(0,0,0,.65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .attr > span { color: rgba(0,0,0,.65); min-width: 0; overflow-wrap: anywhere; }
     .attr select { font: inherit; min-width: 0; border: 1px solid #d9d9d9; border-radius: 6px; padding: 1px 4px; background: #fff; color: rgba(0,0,0,.88); }
     .attr select:focus-visible { outline: 3px solid #91caff; outline-offset: 1px; }
     .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
@@ -99,19 +113,50 @@
   `;
   const TAB_ICON = LOGO.replace('class="logo" ', '');
 
-  function create(onAction) {
+  /**
+   * Dựng bảng trong `container` (shadow DOM riêng): trả về { host, render(vm) }. Vẽ lại chỉ khi HTML đổi và giữ vị trí
+   * cuộn; bấm nút / đổi ô chọn gọi `onAction(tên, data-*)`.
+   */
+  function mount(container, onAction) {
     const host = document.createElement('div');
     host.id = 'pointsnap-annotator';
     const shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML = `<style>${CSS}</style><div class="panel" role="complementary" aria-label="PointSnap annotator"></div>`;
     const panel = shadow.querySelector('.panel');
+    if (container) container.appendChild(host);
+    let lastHtml = '';
+    panel.addEventListener('click', (event) => {
+      const el = event.target.closest('[data-action]');
+      if (!el || el.disabled) return;
+      if (el.tagName === 'SELECT') return;
+      onAction(el.dataset.action, { ...el.dataset });
+    });
+    panel.addEventListener('change', (event) => {
+      const el = event.target.closest('select[data-action]');
+      if (el && !el.disabled) onAction(el.dataset.action, { ...el.dataset, value: el.value });
+    });
+    function render(vm) {
+      const html = head(vm) + `<div class="top">${top(vm)}</div><div class="body">${body(vm)}</div>`;
+      if (html === lastHtml) return;
+      const scroller = panel.querySelector('.body'), scroll = scroller ? scroller.scrollTop : 0;
+      panel.innerHTML = html;
+      lastHtml = html;
+      const next = panel.querySelector('.body');
+      if (next) next.scrollTop = scroll;
+    }
+    return { host, render };
+  }
+
+  /** Bảng trong tab "Hỗ trợ" của thanh bên CVAT (plugin QC, không có extension). */
+  function create(onAction) {
+    const view = mount(null, onAction), host = view.host;
     if (!document.getElementById('pointsnap-annotator-tab-css')) {
       const style = document.createElement('style');
       style.id = 'pointsnap-annotator-tab-css';
       style.textContent = TAB_CSS;
       document.head.appendChild(style);
     }
-    let open = readPosition().open === true, lastHtml = '', listHooked = null;
+    let open = readPosition().open === true, listHooked = null;
 
     function setOpen(value) {
       open = value;
@@ -150,30 +195,10 @@
     }
     ensureTab();
 
-    panel.addEventListener('click', (event) => {
-      const el = event.target.closest('[data-action]');
-      if (!el || el.disabled) return;
-      if (el.tagName === 'SELECT') return;
-      onAction(el.dataset.action, { ...el.dataset });
-    });
-    panel.addEventListener('change', (event) => {
-      const el = event.target.closest('select[data-action]');
-      if (el && !el.disabled) onAction(el.dataset.action, { ...el.dataset, value: el.value });
-    });
-    function render(vm) {
-      ensureTab();
-      const html = head(vm) + `<div class="body">${body(vm)}</div>`;
-      if (html === lastHtml) return;
-      const scroller = panel.querySelector('.body'), scroll = scroller ? scroller.scrollTop : 0;
-      panel.innerHTML = html;
-      lastHtml = html;
-      const next = panel.querySelector('.body');
-      if (next) next.scrollTop = scroll;
-    }
-
     return {
+      render: (vm) => { ensureTab(); view.render(vm); },
       // Mở bằng phím tắt: bấm hộ tab để các tab khác (Objects / Labels / QC) tự tắt như khi người dùng bấm.
-      render, isOpen: () => open, toggle: () => { if (open) setOpen(false); else document.querySelector('.psa-tab')?.click(); },
+      isOpen: () => open, toggle: () => { if (open) setOpen(false); else document.querySelector('.psa-tab')?.click(); },
       destroy: () => {
         host.remove();
         document.querySelector('.psa-tab')?.remove();
@@ -197,17 +222,21 @@
     const title = b ? `${esc(b.label)} #${esc(b.clientId)} <small>· ${b.rangeM.toFixed(0)} m</small>` : 'PointSnap';
     const status = b ? `<span class="dot ${b.level}" title="${LEVEL_TEXT[b.level]}"></span>` : '<span class="dot"></span>';
     const count = b && b.problems ? `<span class="count ${b.level === 'error' ? 'error' : ''}" title="Số mục cần xem">${b.problems}</span>` : '';
-    const progress = vm.progress ? `<span class="muted" title="Track đã xong / track trong frame">${vm.progress.done}/${vm.progress.total}</span>` : '';
     const tools = vm.status === 'ready'
       ? `<button class="${vm.follow ? 'on' : ''}" data-action="toggle-follow" aria-pressed="${vm.follow}" aria-label="Khoá box" title="Khoá box: đổi frame thì camera đi theo box đang chọn (Alt+Shift+F)">◎</button>`
         + '<button data-action="prev-undone" aria-label="Track chưa xong trước đó" title="Chọn track chưa xong trước đó trong frame">⏮</button>'
         + '<button data-action="next-undone" aria-label="Track chưa xong kế tiếp" title="Chọn track chưa xong kế tiếp trong frame">⏭</button>'
         + '<button data-action="open-spec" aria-label="Spec của project" title="Spec của project: ngưỡng theo class / thuộc tính">⚙</button>'
       : '';
-    return `<div class="head" title="${esc(SHORTCUTS)}">${status}<span class="title">${title}</span>${count}${progress}${tools}</div>`;
+    const where = vm.status === 'ready'
+      ? `<div class="ctx"><span>Job ${esc(vm.job)} · frame ${esc(vm.frame)}</span>${vm.progress ? `<span>· ${vm.progress.done}/${vm.progress.total} track xong</span>` : ''}`
+        + `${vm.busy ? '<span class="busy">Đang chạy…</span>' : ''}</div>`
+      : '';
+    return `<div class="head" title="${esc(SHORTCUTS)}">${status}<span class="title">${title}</span>${count}${tools}</div>${where}`;
   }
 
-  function body(vm) {
+  /** Phần đứng yên dưới tiêu đề: thông báo, Hoàn tác, lỗi bộ ngưỡng, hàng nút dùng nhiều nhất của box đang chọn. */
+  function top(vm) {
     const parts = [];
     if (vm.notice) parts.push(`<div class="notice ${esc(vm.notice.kind)}" role="status">${esc(vm.notice.text)}</div>`);
     if (vm.undo) parts.push(`<button data-action="undo-last" title="Phục hồi các keyframe vừa sửa; keyframe đã bị sửa tiếp thì giữ nguyên">↶ Hoàn tác: ${esc(vm.undo.title)} (${vm.undo.count})</button>`);
@@ -217,10 +246,27 @@
       const more = errors.length > 1 ? ` (+${errors.length - 1} lỗi khác)` : '';
       parts.push(`<div class="notice error" title="${esc(errors.join('\n'))}">Bộ ngưỡng lỗi, đang dùng mặc định: ${esc(errors[0])}${more}</div>`);
     }
-    if (vm.status !== 'ready') return [...parts, `<div class="muted">${esc(vm.message || 'Chờ mở job 3D…')}</div>`].join('');
-    if (!vm.box) return [...parts, '<div class="muted">Chọn một cuboid để kiểm tra.</div>'].join('');
+    const b = vm.status === 'ready' ? vm.box : null;
+    if (b) {
+      const off = (reason) => `disabled title="${reason}"`;
+      const locked = b.locked ? off('Box đang khóa') : '';
+      const snap = `<button class="primary" data-action="snap-ground" ${locked || (b.canSnap ? 'title="Đáy box chạm mặt đất đo được ở frame này"' : off('Chưa đo được mặt đất quanh box này'))}>Hạ đáy<kbd>⌥⇧G</kbd></button>`;
+      const all = b.isTrack ? `<button data-action="snap-track" ${locked || 'title="Như bấm Hạ đáy ở từng frame track xuất hiện (cả frame nội suy); ghi luôn, chưa Save"'}>Hạ đáy mọi frame</button>` : '';
+      const done = b.isTrack ? `<button class="${b.done ? 'on' : ''}" data-action="toggle-done" aria-pressed="${b.done}" title="Đánh dấu track đã làm xong">${b.done ? '✓ Đã xong' : 'Xong'}<kbd>⌥⇧D</kbd></button>` : '';
+      parts.push(`<div class="quick">${snap}${all}${done}</div>`);
+    }
+    return parts.join('');
+  }
+
+  function body(vm) {
+    const parts = [];
+    if (vm.status !== 'ready') return `<div class="empty">${esc(vm.message || 'Chờ mở job 3D…')}</div>`;
+    if (!vm.box) {
+      return '<div class="empty"><div>Chọn một cuboid trên CVAT để kiểm tra.</div>'
+        + '<button data-action="next-undone" title="Chọn track chưa xong kế tiếp trong frame">⏭ Track chưa xong kế tiếp</button></div>';
+    }
     if (vm.box.locked) parts.push('<div class="notice">🔒 Box đang khóa trong CVAT: chỉ xem, không sửa.</div>');
-    parts.push(checksSection(vm.box));
+    parts.push('<div class="sec">Kiểm tra box</div>', checksSection(vm.box));
     parts.push(`<div class="row"><span class="muted">${esc(vm.box.classKey !== vm.box.label ? vm.box.classKey : '')}</span>`
       + `<button class="link" data-action="toggle-spec" aria-pressed="${vm.specOpen}">${vm.specOpen ? 'Ẩn spec' : 'Spec của class'}</button></div>`);
     if (vm.spec) parts.push(specSection(vm.spec));
@@ -267,9 +313,9 @@
     // Frame đang đứng có lỗi ở checklist thì báo ngay cả khi frame này là frame nội suy (không có ô trên dải).
     const cur = t.current?.count ? ` · <span class="${t.current.level === 'error' ? 'bad' : 'warn'}">frame này ${t.current.count} lỗi</span>` : '';
     const status = t.flagged ? ` · <span class="warn">${t.flagged} keyframe cần xem</span>` : cur ? '' : ' · ổn';
-    const summary = `<div class="row"><span>Track · ${t.cells.length} keyframe${status}${cur}</span>`
-      + `<button class="${t.done ? 'on' : ''}" data-action="toggle-done" aria-pressed="${t.done}" title="Đánh dấu track đã làm xong (Alt+Shift+D)">${t.done ? '✓ Xong' : 'Xong?'}</button></div>`;
-    const strip = `<div class="strip" style="grid-template-columns: repeat(${t.cells.length}, minmax(0, 1fr))${t.cells.length > 120 ? '; gap: 0' : ''}">${cells}</div>`;
+    const summary = `<div class="sec">Track</div><div class="row"><span>${t.cells.length} keyframe${status}${cur}</span></div>`;
+    const ends = t.cells.length ? `<div class="ticks"><span>frame ${t.cells[0].frame}</span><span>frame ${t.cells[t.cells.length - 1].frame}</span></div>` : '';
+    const strip = `<div class="strip" style="grid-template-columns: repeat(${t.cells.length}, minmax(0, 1fr))${t.cells.length > 120 ? '; gap: 0' : ''}">${cells}</div>${ends}`;
     const toggle = `<button class="link" data-action="toggle-track" aria-expanded="${vm.trackOpen}">${vm.trackOpen ? '▾' : '▸'} Sửa cả track</button>`;
     if (!vm.trackOpen) return summary + strip + toggle;
     const off = (reason) => `disabled title="${reason}"`;
@@ -278,8 +324,7 @@
       + `<div class="grid2"><button data-action="plan-sync-size" data-source="current" ${rigidOnly('Cả track lấy kích thước box ở frame này')}>Cỡ = frame này</button>`
       + `<button data-action="plan-sync-size" data-source="median" ${rigidOnly('Cả track lấy trung vị kích thước các keyframe')}>Cỡ trung vị</button>`
       + `<button data-action="plan-smooth-yaw" ${rigidOnly('Sửa lật đầu, làm mượt hướng')}>Mượt yaw</button>`
-      + `<button data-action="plan-thin" ${t.locked ? off('Box đang khóa') : 'title="Bỏ keyframe mà CVAT tự nội suy lại được"'}>Tỉa keyframe</button>`
-      + `<button data-action="snap-track" ${t.locked ? off('Box đang khóa') : 'title="Một lần bấm, như bấm Hạ đáy ở từng frame track xuất hiện (cả frame nội suy): đo mặt đất ở chính frame đó, hạ / nâng đáy box chạm đất; ghi luôn, chưa Save"'}>Hạ đáy mọi frame</button></div>`
+      + `<button data-action="plan-thin" ${t.locked ? off('Box đang khóa') : 'title="Bỏ keyframe mà CVAT tự nội suy lại được"'}>Tỉa keyframe</button></div>`
       + attrSection(t);
   }
 
@@ -300,7 +345,7 @@
     const picked = t.attrs.filter((a) => a.draft).length;
     const button = `<button class="primary" data-action="set-attrs" ${t.locked ? off('Box đang khóa') : picked ? `title="Gán ${picked} thuộc tính cho mọi frame track xuất hiện, ghi luôn, chưa Save"` : off('Chọn giá trị cho ít nhất một thuộc tính')}>`
       + `Gán ${picked || ''} thuộc tính cho mọi frame</button>`;
-    return `<div class="attrs"><div class="muted">Thuộc tính cả track:</div>${rows}${button}</div>`;
+    return `<div class="attrs"><div class="sec">Thuộc tính cả track</div>${rows}${button}</div>`;
   }
 
   function planSection(plan) {
@@ -309,5 +354,5 @@
       + `<div class="row"><button class="primary" data-action="apply-plan" ${plan.canApply ? '' : 'disabled'}>Áp dụng (chưa Save)</button><button data-action="cancel-plan">Hủy</button></div></div>`;
   }
 
-  root.PointSnapAnnotatorPanel = { create };
+  root.PointSnapAnnotatorPanel = { create, mount };
 })(globalThis);
