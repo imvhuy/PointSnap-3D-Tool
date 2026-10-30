@@ -15,6 +15,8 @@
   const SHORTCUTS = 'Alt+Shift+P: mở / đóng bảng PointSnap · Alt+Shift+G: hạ đáy box · Alt+Shift+F: khoá box · Alt+Shift+D: đánh dấu track xong. Save / Undo bằng CVAT.';
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const ICON = { ok: '✓', warning: '!', error: '✕', na: '–', muted: '–' };
+  // Phím tắt ghi bằng chữ: annotator dùng Windows / Linux, ký hiệu ⌥⇧ của Mac khó đọc.
+  const key = (letter) => `Alt+Shift+${letter}`;
   const LEVEL_TEXT = { ok: 'Ổn', warning: 'Cần xem', error: 'Lỗi', na: 'Chưa đo được', muted: 'Đã bỏ qua' };
 
   // Logo PointSnap (qc/public/logo.svg), nét theo màu chữ.
@@ -41,11 +43,22 @@
     .top { flex: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 8px 10px 0; }
     .top:empty { display: none; }
     .quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; padding-bottom: 8px; border-bottom: 1px solid #f0f0f0; }
-    .quick button { padding: 4px 8px; line-height: 20px; }
-    .quick button kbd { margin-left: 6px; }
-    .quick button.primary kbd { color: rgba(255,255,255,.85); background: transparent; border-color: rgba(255,255,255,.5); }
-    .sec { font-size: 11px; font-weight: 600; letter-spacing: .02em; color: rgba(0,0,0,.45); margin: 2px 0 -4px; text-transform: uppercase; }
-    .ticks { display: flex; justify-content: space-between; font-size: 10.5px; color: rgba(0,0,0,.45); margin-top: -5px; }
+    .quick button { padding: 4px 6px; line-height: 18px; white-space: normal; display: grid; justify-items: center; }
+    .quick button small { font-size: 10.5px; line-height: 14px; color: rgba(0,0,0,.45); }
+    .quick button.primary small { color: rgba(255,255,255,.8); }
+    .quick button.attention:not(:disabled) { box-shadow: 0 0 0 2px #ffd591; }
+    .tools { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 10px; border-bottom: 1px solid #f0f0f0; }
+    .tools button { flex: 1 1 auto; font-size: 12px; padding: 1px 6px; }
+    .sec { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: .02em;
+      color: rgba(0,0,0,.45); margin: 4px 0 -3px; text-transform: uppercase; }
+    .sec .link { font-size: 12px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+    button.sec { width: 100%; border: 0; border-radius: 0; background: none; box-shadow: none; padding: 0; cursor: pointer; }
+    button.sec:hover:not(:disabled) { background: none; color: #1677ff; }
+    .ticks { display: grid; grid-template-columns: 1fr auto 1fr; font-size: 10.5px; color: rgba(0,0,0,.45); margin-top: -5px; }
+    .ticks .now { color: #1677ff; font-weight: 600; } .ticks span:last-child { text-align: right; }
+    .reasons { display: grid; gap: 2px; margin-top: -2px; }
+    .reasons button { justify-self: start; border: 0; background: none; box-shadow: none; padding: 0; white-space: normal; text-align: left; font-size: 12px; }
+    .reasons button.warning { color: #d46b08; } .reasons button.error { color: #cf1322; }
     .empty { padding: 18px 4px; text-align: center; color: rgba(0,0,0,.45); display: grid; gap: 8px; justify-items: center; }
     button { font: inherit; border: 1px solid #d9d9d9; background: #fff; color: rgba(0,0,0,.88); border-radius: 6px; padding: 1px 8px; cursor: pointer; white-space: nowrap;
       box-shadow: 0 2px 0 rgba(0,0,0,.02); transition: color .2s, border-color .2s, background .2s; }
@@ -58,7 +71,7 @@
     .head button { background: transparent; border-color: transparent; box-shadow: none; padding: 0 5px; font-size: 13px; line-height: 22px; color: rgba(0,0,0,.65); }
     .head button:hover:not(:disabled) { background: rgba(0,0,0,.06); border-color: transparent; color: rgba(0,0,0,.88); }
     .head button.on { background: #e6f4ff; color: #1677ff; }
-    kbd { font: 10px ui-monospace, Consolas, monospace; color: rgba(0,0,0,.45); background: #fafafa; border: 1px solid #d9d9d9; border-bottom-width: 2px; border-radius: 3px; padding: 0 3px; margin-left: 4px; }
+    kbd { font: 10px ui-monospace, Consolas, monospace; white-space: nowrap; color: rgba(0,0,0,.45); background: #fafafa; border: 1px solid #d9d9d9; border-bottom-width: 2px; border-radius: 3px; padding: 0 3px; margin-left: 4px; }
     .notice { padding: 5px 9px; border-radius: 6px; background: #e6f4ff; border: 1px solid #91caff; }
     .notice.error { background: #fff2f0; border-color: #ffccc7; } .notice.ok { background: #f6ffed; border-color: #b7eb8f; }
     .checks { display: grid; grid-template-columns: minmax(0, 1fr); border: 1px solid #f0f0f0; border-radius: 8px; overflow: hidden; }
@@ -221,18 +234,18 @@
     const b = vm.box;
     const title = b ? `${esc(b.label)} #${esc(b.clientId)} <small>· ${b.rangeM.toFixed(0)} m</small>` : 'PointSnap';
     const status = b ? `<span class="dot ${b.level}" title="${LEVEL_TEXT[b.level]}"></span>` : '<span class="dot"></span>';
-    const count = b && b.problems ? `<span class="count ${b.level === 'error' ? 'error' : ''}" title="Số mục cần xem">${b.problems}</span>` : '';
+    const count = b && b.problems ? `<span class="count ${b.level === 'error' ? 'error' : ''}">${b.problems} ${b.level === 'error' ? 'lỗi' : 'cần xem'}</span>` : '';
     const tools = vm.status === 'ready'
-      ? `<button class="${vm.follow ? 'on' : ''}" data-action="toggle-follow" aria-pressed="${vm.follow}" aria-label="Khoá box" title="Khoá box: đổi frame thì camera đi theo box đang chọn (Alt+Shift+F)">◎</button>`
-        + '<button data-action="prev-undone" aria-label="Track chưa xong trước đó" title="Chọn track chưa xong trước đó trong frame">⏮</button>'
-        + '<button data-action="next-undone" aria-label="Track chưa xong kế tiếp" title="Chọn track chưa xong kế tiếp trong frame">⏭</button>'
-        + '<button data-action="open-spec" aria-label="Spec của project" title="Spec của project: ngưỡng theo class / thuộc tính">⚙</button>'
+      ? `<div class="tools"><button class="${vm.follow ? 'on' : ''}" data-action="toggle-follow" aria-pressed="${vm.follow}" title="Đổi frame thì camera đi theo box đang chọn (${key('F')})">◎ Khoá box</button>`
+        + '<button data-action="prev-undone" title="Chọn track chưa xong trước đó trong frame">⏮ Track trước</button>'
+        + '<button data-action="next-undone" title="Chọn track chưa xong kế tiếp trong frame">Track sau ⏭</button>'
+        + '<button data-action="open-spec" title="Spec của project: ngưỡng theo class / thuộc tính (mở trong trang CVAT)">⚙ Spec</button></div>'
       : '';
     const where = vm.status === 'ready'
       ? `<div class="ctx"><span>Job ${esc(vm.job)} · frame ${esc(vm.frame)}</span>${vm.progress ? `<span>· ${vm.progress.done}/${vm.progress.total} track xong</span>` : ''}`
         + `${vm.busy ? '<span class="busy">Đang chạy…</span>' : ''}</div>`
       : '';
-    return `<div class="head" title="${esc(SHORTCUTS)}">${status}<span class="title">${title}</span>${count}${tools}</div>${where}`;
+    return `<div class="head" title="${esc(SHORTCUTS)}">${status}<span class="title">${title}</span>${count}</div>${where}${tools}`;
   }
 
   /** Phần đứng yên dưới tiêu đề: thông báo, Hoàn tác, lỗi bộ ngưỡng, hàng nút dùng nhiều nhất của box đang chọn. */
@@ -250,9 +263,11 @@
     if (b) {
       const off = (reason) => `disabled title="${reason}"`;
       const locked = b.locked ? off('Box đang khóa') : '';
-      const snap = `<button class="primary" data-action="snap-ground" ${locked || (b.canSnap ? 'title="Đáy box chạm mặt đất đo được ở frame này"' : off('Chưa đo được mặt đất quanh box này'))}>Hạ đáy<kbd>⌥⇧G</kbd></button>`;
-      const all = b.isTrack ? `<button data-action="snap-track" ${locked || 'title="Như bấm Hạ đáy ở từng frame track xuất hiện (cả frame nội suy); ghi luôn, chưa Save"'}>Hạ đáy mọi frame</button>` : '';
-      const done = b.isTrack ? `<button class="${b.done ? 'on' : ''}" data-action="toggle-done" aria-pressed="${b.done}" title="Đánh dấu track đã làm xong">${b.done ? '✓ Đã xong' : 'Xong'}<kbd>⌥⇧D</kbd></button>` : '';
+      const ground = b.rows.find((r) => r.key === 'ground');
+      const attention = ground && (ground.level === 'warning' || ground.level === 'error') ? ' attention' : '';
+      const snap = `<button class="primary${attention}" data-action="snap-ground" ${locked || (b.canSnap ? 'title="Đáy box chạm mặt đất đo được ở frame này"' : off('Chưa đo được mặt đất quanh box này'))}>Hạ đáy<small>${key('G')}</small></button>`;
+      const all = b.isTrack ? `<button data-action="snap-track" ${locked || 'title="Như bấm Hạ đáy ở từng frame track xuất hiện (cả frame nội suy); ghi luôn, chưa Save"'}>Hạ đáy mọi frame<small>cả track</small></button>` : '';
+      const done = b.isTrack ? `<button class="${b.done ? 'on' : ''}" data-action="toggle-done" aria-pressed="${b.done}" title="Đánh dấu track đã làm xong">${b.done ? '✓ Đã xong' : 'Xong'}<small>${key('D')}</small></button>` : '';
       parts.push(`<div class="quick">${snap}${all}${done}</div>`);
     }
     return parts.join('');
@@ -266,9 +281,9 @@
         + '<button data-action="next-undone" title="Chọn track chưa xong kế tiếp trong frame">⏭ Track chưa xong kế tiếp</button></div>';
     }
     if (vm.box.locked) parts.push('<div class="notice">🔒 Box đang khóa trong CVAT: chỉ xem, không sửa.</div>');
-    parts.push('<div class="sec">Kiểm tra box</div>', checksSection(vm.box));
-    parts.push(`<div class="row"><span class="muted">${esc(vm.box.classKey !== vm.box.label ? vm.box.classKey : '')}</span>`
-      + `<button class="link" data-action="toggle-spec" aria-pressed="${vm.specOpen}">${vm.specOpen ? 'Ẩn spec' : 'Spec của class'}</button></div>`);
+    const cls = vm.box.classKey !== vm.box.label ? ` · ${esc(vm.box.classKey)}` : '';
+    parts.push(`<div class="sec"><span>Kiểm tra box${cls}</span><button class="link" data-action="toggle-spec" aria-pressed="${vm.specOpen}">${vm.specOpen ? 'Ẩn spec' : 'Spec của class'}</button></div>`,
+      checksSection(vm.box));
     if (vm.spec) parts.push(specSection(vm.spec));
     if (vm.box.isTrack) parts.push(trackSection(vm));
     if (vm.plan) parts.push(planSection(vm.plan));
@@ -278,8 +293,8 @@
   /** Checklist: mỗi khía cạnh một dòng, nút sửa nằm ngay trên dòng của vấn đề. */
   function checksSection(b) {
     const rows = b.rows.map((r) => {
-      const fix = r.fix
-        ? `<button data-action="${esc(r.fix.action)}"${r.fix.source ? ` data-source="${esc(r.fix.source)}"` : ''}>${esc(r.fix.label)}${r.fix.key ? `<kbd>${esc(r.fix.key)}</kbd>` : ''}</button>`
+      const fix = r.fix && r.fix.action !== 'snap-ground'
+        ? `<button data-action="${esc(r.fix.action)}"${r.fix.source ? ` data-source="${esc(r.fix.source)}"` : ''}${r.fix.key ? ` title="${key(esc(r.fix.key))}"` : ''}>${esc(r.fix.label)}</button>`
         : '';
       // Báo nhầm: bỏ qua dòng này cho box / track này; đã bỏ qua thì có nút hiện lại.
       const toggle = r.canDismiss
@@ -313,10 +328,16 @@
     // Frame đang đứng có lỗi ở checklist thì báo ngay cả khi frame này là frame nội suy (không có ô trên dải).
     const cur = t.current?.count ? ` · <span class="${t.current.level === 'error' ? 'bad' : 'warn'}">frame này ${t.current.count} lỗi</span>` : '';
     const status = t.flagged ? ` · <span class="warn">${t.flagged} keyframe cần xem</span>` : cur ? '' : ' · ổn';
-    const summary = `<div class="sec">Track</div><div class="row"><span>${t.cells.length} keyframe${status}${cur}</span></div>`;
-    const ends = t.cells.length ? `<div class="ticks"><span>frame ${t.cells[0].frame}</span><span>frame ${t.cells[t.cells.length - 1].frame}</span></div>` : '';
-    const strip = `<div class="strip" style="grid-template-columns: repeat(${t.cells.length}, minmax(0, 1fr))${t.cells.length > 120 ? '; gap: 0' : ''}">${cells}</div>${ends}`;
-    const toggle = `<button class="link" data-action="toggle-track" aria-expanded="${vm.trackOpen}">${vm.trackOpen ? '▾' : '▸'} Sửa cả track</button>`;
+    const summary = `<div class="sec"><span>Track</span></div><div class="row"><span>${t.cells.length} keyframe${status}${cur}</span></div>`;
+    const ends = t.cells.length ? `<div class="ticks"><span>${t.cells[0].frame}</span><span class="now">▲ đang xem frame ${esc(vm.frame)}</span>`
+      + `<span>${t.cells[t.cells.length - 1].frame}</span></div>` : '';
+    const flagged = t.cells.filter((c) => c.level !== 'ok' && c.reasons.length);
+    const reasons = flagged.length
+      ? `<div class="reasons">${flagged.slice(0, 4).map((c) => `<button class="${c.level}" data-action="goto-frame" data-frame="${c.frame}" title="Tới frame ${c.frame}">`
+        + `Frame ${c.frame}: ${esc(c.reasons.join(', '))}</button>`).join('')}${flagged.length > 4 ? `<span class="muted">… và ${flagged.length - 4} keyframe khác</span>` : ''}</div>`
+      : '';
+    const strip = `<div class="strip" style="grid-template-columns: repeat(${t.cells.length}, minmax(0, 1fr))${t.cells.length > 120 ? '; gap: 0' : ''}">${cells}</div>${ends}${reasons}`;
+    const toggle = `<button class="sec" data-action="toggle-track" aria-expanded="${vm.trackOpen}"><span>Sửa cả track</span><span>${vm.trackOpen ? '▾' : '▸'}</span></button>`;
     if (!vm.trackOpen) return summary + strip + toggle;
     const off = (reason) => `disabled title="${reason}"`;
     const rigidOnly = (title) => (t.locked ? off('Box đang khóa') : t.rigid ? `title="${title}"` : off('Người / động vật đổi tư thế: không áp dụng'));
