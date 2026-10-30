@@ -38,13 +38,14 @@ khác thì xin phép chủ hệ thống trước.
 
 ## Bảng trong job
 
-- **Mở / đóng**: bấm biểu tượng PointSnap trên thanh trình duyệt → **Mở bảng PointSnap**, hoặc
-  <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> trong trang CVAT (trong cửa sổ bảng: đóng). Bảng ở **cửa sổ riêng** của
-  extension, không nhúng vào trang CVAT: kéo đặt cạnh CVAT hoặc sang màn hình khác; lần sau mở lại đúng chỗ, đúng cỡ.
-  Một cửa sổ cho một tab CVAT; trang tải lại / đổi job thì cửa sổ tự nối lại, đóng tab thì cửa sổ đóng theo. Cửa sổ
-  đóng thì PointSnap không đo, không vẽ gì lên canvas. Phím tắt <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> / F / D bấm
-  được cả khi đang ở cửa sổ bảng. Bản nhúng thẳng vào CVAT (dịch vụ QC, không có extension) vẫn hiện bảng ở tab
-  **Hỗ trợ** của thanh bên phải; tab **PointSnap** của bản nhúng dành cho QC và phiếu sửa lỗi.
+- **Mở**: bấm biểu tượng PointSnap trên thanh trình duyệt, hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>. Bảng nằm
+  ở **side panel của extension** (mép phải trình duyệt), không nhúng vào trang CVAT: thao tác trên CVAT rồi bấm sang
+  bảng, bảng vẫn mở; kéo mép để đổi độ rộng. Side panel tự đổi theo tab đang xem và tự nối lại khi trang tải lại / mở
+  job khác. Phần trên canvas (mặt đất, tô điểm của vật, khoá box) luôn chạy, kể cả khi đóng side panel; phím tắt
+  <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> / F / D bấm được cả trong trang lẫn trong side panel. Đổi phím mở ở
+  `chrome://extensions/shortcuts`. Trang chưa phải job 3D, hoặc PointSnap chưa bật: side panel hiện phần cài đặt (bật
+  cho địa chỉ, tình trạng, bộ ngưỡng). Bản nhúng thẳng vào CVAT (dịch vụ QC, không có extension) vẫn hiện bảng ở
+  tab **Hỗ trợ** của thanh bên phải; tab **PointSnap** của bản nhúng dành cho QC và phiếu sửa lỗi.
 - **Thanh tiêu đề**: chấm trạng thái (xanh ổn / cam cần xem / đỏ lỗi), box đang chọn,
   khoảng cách, số mục cần xem, tiến độ `xong/tổng`, ◎ khoá box, ⏮ / ⏭ track chưa xong trước / kế tiếp, ⚙ spec.
 - **Checklist**, mỗi khía cạnh một dòng ✓ / ! / ✕ kèm một cụm từ ngắn (rê chuột xem đầy đủ) và **nút sửa nằm ngay trên
@@ -134,17 +135,16 @@ src/annotator/
   cvat-adapter.js   cầu nối duy nhất tới nội bộ CVAT
   overlay.js        vẽ SVG trên 4 view
   cloud-colors.js   tô màu chính các điểm của point cloud CVAT (A4), trả màu gốc khi bỏ chọn
-  panel.js          giao diện bảng: checklist, dải track, xem trước (shadow DOM); dùng ở cửa sổ bảng và tab Hỗ trợ
-  panel-link.js     gửi view-model của bảng sang cửa sổ bảng, nhận thao tác bấm về (MAIN world)
-  panel-bridge.js   nối trang với cửa sổ bảng qua cổng chrome.runtime (ISOLATED world)
+  panel.js          giao diện bảng: checklist, dải track, xem trước (shadow DOM); dùng ở side panel và tab Hỗ trợ
+  panel-link.js     gửi view-model của bảng sang side panel, nhận thao tác bấm về (MAIN world)
+  panel-bridge.js   nối trang với side panel qua cổng chrome.runtime (ISOLATED world)
   spec-editor.js    trình sửa spec của project (shadow DOM)
   annotator.js      bộ điều khiển
   settings-bridge.js  chuyển cấu hình của địa chỉ CVAT đang mở sang trang (ISOLATED world)
 src/cvat-dom.js     chuyển frame bằng ô chọn frame của CVAT (dải track)
-background.js       service worker: đăng ký content script cho các CVAT khác đã bật; mở / đóng cửa sổ bảng
-panel-window.*      cửa sổ bảng PointSnap (popup riêng, một cửa sổ cho một tab CVAT)
+background.js       service worker: đăng ký content script cho các CVAT khác đã bật
 hosts.js            các CVAT đã bật + cấu hình theo từng địa chỉ (popup, Tùy chọn, service worker, bridge dùng chung)
-popup.js            nhận ra CVAT, bật một nút, báo tình trạng
+sidepanel.js        side panel: bảng PointSnap của tab đang xem; chưa chạy thì nhận ra CVAT, bật một nút, báo tình trạng
 options.js          danh sách CVAT, nhập / xuất bộ ngưỡng
 tests/*.test.js     node --test tests/*.test.js
 bench/              đo luật và tư thế xe theo khoảng cách trên dữ liệu công khai (Node, không nạp vào extension;

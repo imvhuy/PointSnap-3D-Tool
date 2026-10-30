@@ -8,7 +8,7 @@ Tools for labeling and QC-ing 3D LiDAR cuboids in CVAT. Data never leaves CVAT. 
 dependencies anywhere** (Node ≥ 20 stdlib only; keep it that way):
 
 - `extension/` — Chrome/Edge MV3 extension that adds the PointSnap annotator panel to CVAT 3D job pages, shown in
-  its own popup window (`panel-window.html`), not embedded in the CVAT page.
+  the extension's side panel (`sidepanel.html`, opened by the toolbar icon / Alt+Shift+P), not embedded in the CVAT page.
 - `qc/` — Node HTTP service (`qc/server.js`, port 8766) that scans whole CVAT jobs, drives the QC ↔ annotator ticket
   loop, and serves a web UI plus an in-CVAT plugin.
 
@@ -46,11 +46,12 @@ Changing a threshold or rule in these files changes both tools — run both test
 **Extension load order** (`manifest.json`): annotator modules run in the page's `MAIN` world in dependency order
 (pure modules → `cvat-adapter.js` → `overlay`/`cloud-colors`/`panel`/`spec-editor` → `annotator.js` controller).
 `cvat-adapter.js` is the **only** file that touches CVAT internals. `settings-bridge.js` runs in the ISOLATED world and
-passes per-CVAT-host config (from `hosts.js` / `chrome.storage`) into the page. The panel lives in an extension popup
-window: `panel-link.js` (MAIN) posts the view-model to `panel-bridge.js` (ISOLATED), which forwards it over a
-`chrome.tabs.connect` port to `panel-window.js`; clicks come back the same way. `background.js` keeps one window per tab.
-In the QC plugin (no extension) the same `panel.js` renders into a "Hỗ trợ" tab of CVAT's sidebar instead. Panels use
-shadow DOM. Edits go into
+passes per-CVAT-host config (from `hosts.js` / `chrome.storage`) into the page. The panel lives in the side panel:
+`panel-link.js` (MAIN) posts the view-model to `panel-bridge.js` (ISOLATED), which forwards it over a
+`chrome.tabs.connect` port to `sidepanel.js` (it follows the active tab and reconnects on reload). Canvas overlays run
+whether or not the side panel is open. The toolbar icon / Alt+Shift+P (`_execute_action`) opens it via
+`sidePanel.setPanelBehavior`. In the QC plugin (no extension)
+the same `panel.js` renders into a "Hỗ trợ" tab of CVAT's sidebar instead. Panels use shadow DOM. Edits go into
 CVAT's in-memory annotations like a user drag; the user still presses CVAT's Save. Undo uses
 `job.annotations.saveStates` when CVAT has it, otherwise PointSnap pauses CVAT history and offers its own ↶ button
 (CVAT 2.75.1 keeps only 32 undo steps). Non-localhost CVAT hosts get content scripts registered at runtime by

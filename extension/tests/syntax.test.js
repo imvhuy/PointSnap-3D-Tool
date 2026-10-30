@@ -9,7 +9,7 @@ const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const manifest = require('../manifest.json');
 
-const scripts = [...new Set(manifest.content_scripts.flatMap((c) => c.js)), manifest.background.service_worker, 'options.js', 'popup.js', 'panel-window.js'];
+const scripts = [...new Set(manifest.content_scripts.flatMap((c) => c.js)), manifest.background.service_worker, 'options.js', 'sidepanel.js'];
 
 for (const file of scripts) {
   test(`cú pháp: ${file}`, () => {

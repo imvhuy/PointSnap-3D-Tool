@@ -1,12 +1,13 @@
 /*
- * MAIN world: bảng PointSnap ở cửa sổ riêng của extension (panel-window.html), không nhúng vào trang CVAT. Cùng giao
- * diện với PointSnapAnnotatorPanel.create (render / isOpen / toggle / destroy) nên controller không cần phân biệt:
- * view-model gửi qua panel-bridge.js (ISOLATED world) tới cửa sổ, thao tác bấm trong cửa sổ gửi ngược về `onAction`.
+ * MAIN world: bảng PointSnap nằm trong side panel của extension (sidepanel.html), không nhúng vào trang CVAT. Cùng giao diện
+ * với PointSnapAnnotatorPanel.create (render / isOpen / toggle / destroy) nên controller không cần phân biệt:
+ * view-model gửi qua panel-bridge.js (ISOLATED world) tới side panel, thao tác bấm trong side panel gửi ngược về `onAction`.
+ * Side panel có thể đang đóng, nên phần trên canvas (mặt đất, tô điểm, khoá box) luôn chạy, không chờ bảng mở.
  */
 (function (root) {
   'use strict';
 
-  const VM = 'POINTSNAP_PANEL_VM', ACTION = 'POINTSNAP_PANEL_ACTION', STATE = 'POINTSNAP_PANEL_STATE', TOGGLE = 'POINTSNAP_PANEL_TOGGLE';
+  const VM = 'POINTSNAP_PANEL_VM', ACTION = 'POINTSNAP_PANEL_ACTION', STATE = 'POINTSNAP_PANEL_STATE';
 
   function create(onAction) {
     let open = false, last = '';
@@ -16,7 +17,7 @@
       const { type, detail } = event.data || {};
       if (type === STATE) {
         open = !!detail?.open;
-        // Cửa sổ vừa mở / mở lại: gửi lại view-model dù không đổi.
+        // Side panel vừa mở: gửi lại view-model dù không đổi.
         last = '';
         onAction('rerender');
       } else if (type === ACTION && typeof detail?.name === 'string') {
@@ -24,7 +25,7 @@
       }
     };
     window.addEventListener('message', listener);
-    // Trang vừa tải lại / mở job khác trong khi cửa sổ vẫn mở: hỏi bridge cửa sổ có đang nối không.
+    // Trang vừa tải lại / mở job khác trong khi side panel đang mở: hỏi bridge side panel có đang nối không.
     post(`${STATE}_REQUEST`);
 
     return {
@@ -35,9 +36,9 @@
         last = json;
         post(VM, vm);
       },
-      // Cửa sổ chưa nối thì không đo / không vẽ gì lên canvas (như tab Hỗ trợ đóng).
-      isOpen: () => open,
-      toggle: () => post(TOGGLE),
+      // Luôn đo và vẽ trên canvas; side panel chỉ là nơi xem / bấm. Alt+Shift+P là lệnh của trình duyệt mở side panel.
+      isOpen: () => true,
+      toggle: () => {},
       destroy() {
         window.removeEventListener('message', listener);
         if (open) post(VM, { status: 'waiting', message: 'Mở một job 3D trên CVAT…' });

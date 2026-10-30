@@ -1,16 +1,15 @@
 /*
- * ISOLATED world: cầu nối giữa controller ở MAIN world (panel-link.js) và cửa sổ bảng PointSnap của extension
- * (panel-window.js nối vào tab bằng chrome.tabs.connect, cổng "pointsnap-panel").
- * - View-model từ trang → cửa sổ; nhớ bản cuối để cửa sổ vừa nối hiện ngay.
- * - Thao tác bấm trong cửa sổ → trang; báo trang cửa sổ đang mở hay đóng (đóng thì trang thôi đo).
- * - Alt+Shift+P trong trang → service worker mở / đóng cửa sổ của tab này.
+ * ISOLATED world: cầu nối giữa controller ở MAIN world (panel-link.js) và bảng PointSnap trong side panel của extension
+ * (sidepanel.js nối vào tab bằng chrome.tabs.connect, cổng "pointsnap-panel").
+ * - View-model từ trang → side panel; nhớ bản cuối để side panel vừa mở hiện ngay.
+ * - Thao tác bấm trong side panel → trang; báo trang side panel đang mở hay đóng (đóng thì thôi gửi view-model).
  */
 (function () {
   'use strict';
 
   // CVAT đã có plugin PointSnap (qc/public/plugin.js): bảng nằm trong tab "Hỗ trợ" của CVAT, bridge này đứng ngoài.
   if (document.documentElement.dataset.pointsnapPlugin) return;
-  const VM = 'POINTSNAP_PANEL_VM', ACTION = 'POINTSNAP_PANEL_ACTION', STATE = 'POINTSNAP_PANEL_STATE', TOGGLE = 'POINTSNAP_PANEL_TOGGLE';
+  const VM = 'POINTSNAP_PANEL_VM', ACTION = 'POINTSNAP_PANEL_ACTION', STATE = 'POINTSNAP_PANEL_STATE';
   let port = null, lastVm = null;
   const post = (type, detail) => window.postMessage({ type, detail }, location.origin);
 
@@ -22,15 +21,12 @@
       port?.postMessage({ type: 'vm', vm: detail });
     } else if (type === `${STATE}_REQUEST`) {
       post(STATE, { open: !!port });
-    } else if (type === TOGGLE) {
-      // Extension vừa tải lại mà tab chưa tải lại: script này mất kết nối, sendMessage ném lỗi.
-      try { chrome.runtime.sendMessage({ type: 'togglePanel' }).catch(() => {}); } catch (_) { /* bỏ qua */ }
     }
   });
 
   chrome.runtime.onConnect.addListener((p) => {
     if (p.name !== 'pointsnap-panel' || p.sender?.id !== chrome.runtime.id) return;
-    // Một cửa sổ cho một tab: cửa sổ mới nối thì cắt cửa sổ cũ.
+    // Một bảng một lúc: bảng mới nối thì cắt cổng cũ.
     if (port) port.disconnect();
     port = p;
     if (lastVm) p.postMessage({ type: 'vm', vm: lastVm });

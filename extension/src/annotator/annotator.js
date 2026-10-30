@@ -657,7 +657,7 @@
     const ctx = A.context();
     if (name === 'rerender') { S.lastPanelAt = 0; return; }
     if (name === 'toggle-panel') { panel?.toggle(); S.lastPanelAt = 0; return; }
-    // Phím tắt bấm khi cửa sổ PointSnap đang được chọn: cửa sổ gửi mã phím, làm như bấm trong trang CVAT.
+    // Phím tắt bấm khi đang ở side panel PointSnap: side panel gửi mã phím, làm như bấm trong trang CVAT.
     if (name === 'shortcut') {
       const action = SHORTCUTS[data.code];
       if (action && action !== 'toggle-panel') await onAction(action);
@@ -950,7 +950,7 @@
     try {
       const ctx = S.enabled ? A.context() : null;
       if (ctx && ctx.job.id !== S.jobId) onJobChanged(ctx.job.id, ctx.job.projectId);
-      // Bảng không mở (cửa sổ PointSnap đóng / tab Hỗ trợ không chọn): không đo, không vẽ gì lên canvas.
+      // Plugin QC: tab Hỗ trợ không chọn thì không đo, không vẽ gì lên canvas. Extension: luôn đo (side panel chỉ để xem / bấm).
       const shown = !panel || panel.isOpen();
       const cache = shown && ctx && frameData(ctx);
       const m = cache && measureActive(ctx, cache);
@@ -983,8 +983,8 @@
   }
 
   /**
-   * Extension: bảng ở cửa sổ riêng (panel-link.js ↔ panel-window.html), không nhúng vào CVAT. Plugin QC (không có
-   * extension, không mở được cửa sổ extension): tab "Hỗ trợ" trong thanh bên CVAT.
+   * Extension: bảng ở side panel của extension (panel-link.js ↔ sidepanel.html), không nhúng vào CVAT. Plugin QC (không
+   * có extension): tab "Hỗ trợ" trong thanh bên CVAT.
    */
   function createPanel() {
     const embedded = document.documentElement.dataset.pointsnapPlugin || !root.PointSnapPanelLink;
@@ -1006,8 +1006,8 @@
   }
 
   /**
-   * Đọc bởi popup (chrome.scripting, MAIN world) để báo extension đã chạy đúng trên CVAT này chưa. Gắn trước khi nối
-   * CVAT: lỗi lúc khởi động thì popup vẫn đọc được và hiện lỗi đó, thay vì chỉ thấy "chưa chạy".
+   * Đọc bởi side panel (chrome.scripting, MAIN world) để báo extension đã chạy đúng trên CVAT này chưa. Gắn trước khi nối
+   * CVAT: lỗi lúc khởi động thì side panel vẫn đọc được và hiện lỗi đó, thay vì chỉ thấy "chưa chạy".
    */
   const health = () => ({ ...A.health(), enabled: S.enabled, guidelineErrors: S.guidelineErrors.length, startError: S.startError || null });
   root.PointSnapAnnotator = { state: S, health };

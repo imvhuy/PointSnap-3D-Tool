@@ -1,8 +1,8 @@
 /*
  * Bảng PointSnap cho annotator (shadow DOM, không lẫn CSS với CVAT). Chỉ hiển thị view-model do controller đưa vào
  * và báo lại thao tác qua `onAction(name, data)`; không tự đọc CVAT.
- * Hai nơi hiện bảng dùng chung `mount`: cửa sổ riêng của extension (panel-window.js, view-model gửi qua panel-link.js)
- * và tab "Hỗ trợ" trong thanh bên CVAT cho plugin QC không có extension (`create`).
+ * Hai nơi hiện bảng dùng chung `mount`: side panel của extension (sidepanel.js, view-model gửi qua panel-link.js) và tab
+ * "Hỗ trợ" trong thanh bên CVAT cho plugin QC không có extension (`create`).
  * Bố cục: phần trên đứng yên (tiêu đề: chấm trạng thái + box đang chọn + nút chung; dòng job / frame; thông báo; hàng
  * nút dùng nhiều nhất: Hạ đáy, Hạ đáy mọi frame, Xong) → phần dưới cuộn: checklist từng khía cạnh, mỗi dòng có nút sửa
  * đúng vấn đề của nó → dải track một ô mỗi keyframe, bấm ô để tới frame → sửa cả track, thuộc tính → bản xem trước.
@@ -12,7 +12,7 @@
   'use strict';
 
   const STORAGE_KEY = 'pointsnap.annotator.panel';
-  const SHORTCUTS = 'Alt+Shift+P: mở / đóng bảng PointSnap · Alt+Shift+G: hạ đáy box · Alt+Shift+F: khoá box · Alt+Shift+D: đánh dấu track xong. Save / Undo bằng CVAT.';
+  const SHORTCUTS = 'Alt+Shift+P: mở bảng PointSnap · Alt+Shift+G: hạ đáy box · Alt+Shift+F: khoá box · Alt+Shift+D: đánh dấu track xong. Save / Undo bằng CVAT.';
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const ICON = { ok: '✓', warning: '!', error: '✕', na: '–', muted: '–' };
   // Phím tắt ghi bằng chữ: annotator dùng Windows / Linux, ký hiệu ⌥⇧ của Mac khó đọc.

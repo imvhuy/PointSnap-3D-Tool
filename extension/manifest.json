@@ -3,7 +3,7 @@
   "name": "PointSnap cho CVAT",
   "short_name": "PointSnap",
   "version": "0.6.0",
-  "description": "Hỗ trợ annotator gán cuboid 3D trên CVAT: trong cửa sổ riêng: mặt đất tham chiếu, kiểm tra box, sửa cả track. Dữ liệu không rời CVAT.",
+  "description": "Hỗ trợ annotator gán cuboid 3D trên CVAT, bảng ở side panel cạnh CVAT: mặt đất tham chiếu, kiểm tra box, sửa cả track. Dữ liệu không rời CVAT.",
   "minimum_chrome_version": "116",
   "icons": {
     "16": "icons/icon16.png",
@@ -13,7 +13,6 @@
   },
   "action": {
     "default_title": "PointSnap cho CVAT",
-    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png"
@@ -22,7 +21,8 @@
   "permissions": [
     "storage",
     "scripting",
-    "activeTab"
+    "activeTab",
+    "sidePanel"
   ],
   "optional_host_permissions": [
     "http://*/*",
@@ -76,5 +76,16 @@
       ],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+P"
+      },
+      "description": "Mở bảng PointSnap (side panel)"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
 }

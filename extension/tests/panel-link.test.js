@@ -1,7 +1,7 @@
 'use strict';
 
-/* Đường đi của bảng PointSnap ở cửa sổ riêng: controller (panel-link.js, MAIN world) ↔ panel-bridge.js (ISOLATED world)
- * ↔ cổng chrome.runtime của cửa sổ bảng. Hai world dùng chung một `window.postMessage` như trong trình duyệt. */
+/* Đường đi của bảng PointSnap trong side panel của extension: controller (panel-link.js, MAIN world) ↔ panel-bridge.js
+ * (ISOLATED world) ↔ cổng chrome.runtime của side panel. Hai world dùng chung một `window.postMessage` như trong trình duyệt. */
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -33,7 +33,7 @@ function chromeApi() {
   };
 }
 
-/** Hai đầu của một cổng: `remote` là phía cửa sổ bảng. */
+/** Hai đầu của một cổng: `remote` là phía side panel. */
 function portPair() {
   const make = () => ({ msg: [], disc: [], peer: null, received: [] });
   const a = make(), b = make();
@@ -62,17 +62,16 @@ function setup() {
   return { link, chrome, actions };
 }
 
-test('bảng ở cửa sổ riêng: chưa có cửa sổ thì không gửi gì; cửa sổ nối thì nhận view-model và gửi thao tác về', async () => {
+test('bảng ở side panel: canvas luôn chạy; side panel mở thì nhận view-model và gửi thao tác về', async () => {
   const { link, chrome, actions } = setup();
   await tick();
-  assert.equal(link.isOpen(), false);
+  assert.equal(link.isOpen(), true, 'side panel đóng thì mặt đất / tô điểm trên canvas vẫn chạy');
   link.render({ status: 'ready', frame: 1 });
 
   const port = portPair();
   chrome.connect(port.local);
   await tick();
-  assert.equal(link.isOpen(), true);
-  assert.ok(actions.some(([n]) => n === 'rerender'), 'cửa sổ vừa nối thì controller vẽ lại ngay');
+  assert.ok(actions.some(([n]) => n === 'rerender'), 'side panel vừa mở thì controller gửi view-model ngay');
   link.render({ status: 'ready', frame: 2 });
   link.render({ status: 'ready', frame: 2 });
   await tick();
@@ -84,10 +83,13 @@ test('bảng ở cửa sổ riêng: chưa có cửa sổ thì không gửi gì; 
 
   port.remote.disconnect();
   await tick();
-  assert.equal(link.isOpen(), false, 'đóng cửa sổ thì controller thôi đo / vẽ');
+  link.render({ status: 'ready', frame: 3 });
+  await tick();
+  assert.deepEqual(port.received.map((m) => m.vm.frame), [2], 'side panel đóng thì thôi gửi view-model');
+  assert.equal(link.isOpen(), true);
 });
 
-test('bảng ở cửa sổ riêng: cửa sổ nối lại nhận ngay view-model cuối; Alt+Shift+P nhờ service worker mở / đóng', async () => {
+test('bảng ở side panel: mở lại side panel thì thấy ngay view-model cuối', async () => {
   const { link, chrome } = setup();
   const first = portPair();
   chrome.connect(first.local);
@@ -101,8 +103,4 @@ test('bảng ở cửa sổ riêng: cửa sổ nối lại nhận ngay view-mode
   chrome.connect(again.local);
   await tick();
   assert.equal(again.received[0]?.vm?.frame, 7);
-
-  link.toggle();
-  await tick();
-  assert.deepEqual(JSON.parse(JSON.stringify(chrome.sent)), [{ type: 'togglePanel' }]);
 });
