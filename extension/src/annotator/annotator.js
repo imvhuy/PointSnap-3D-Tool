@@ -17,6 +17,7 @@
   const DISMISS_KEY = 'pointsnap.annotator.dismissed.';
   const PANEL_INTERVAL_MS = 120;
   const TRACK_RELOAD_DELAY_MS = 400;
+  const JOB_LOAD_SLOW_MS = 15000;
   const MAX_DRAWN_POINTS = 600;
   const DEG = 180 / Math.PI;
 
@@ -52,6 +53,7 @@
     specOpen: false,
     // Bảng đủ chỗ: phần sửa cả track mở sẵn.
     trackOpen: true,
+    waitingSince: 0,
   };
   let panel = null;
 
@@ -791,7 +793,14 @@
     const g = S.guideline;
     if (S.notice && performance.now() > S.notice.until) S.notice = null;
     const base = { notice: S.notice, guidelineErrors: S.guidelineErrors, follow: S.lock, plan: S.plan };
-    if (!ctx) return { ...base, status: 'waiting', message: 'Chờ mở job 3D (point cloud) trên CVAT…' };
+    if (!ctx) {
+      // Đang ở trang job mà chưa có point cloud: CVAT đang tải job (logo chờ). Quá lâu thì nhiều khả năng không phải job 3D.
+      S.waitingSince = S.waitingSince || performance.now();
+      const slow = performance.now() - S.waitingSince > JOB_LOAD_SLOW_MS;
+      return { ...base, status: 'waiting', loading: !slow,
+        message: slow ? 'Chưa thấy point cloud: PointSnap chỉ chạy trên job 3D (point cloud). Job 3D đang tải chậm thì chờ thêm.' : 'Đang tải job…' };
+    }
+    S.waitingSince = 0;
     const done = doneSet(ctx.job.id), tracks = frameTracks();
     const vm = { ...base, status: 'ready', frame: ctx.frame, job: ctx.job.id, busy: S.busy,
       undo: S.lastUndo?.jobId === ctx.job.id && S.lastUndo.clientID === m?.objectState.clientID
