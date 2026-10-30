@@ -51,6 +51,16 @@ test('zip: đọc file stored và deflate theo thứ tự', () => {
   assert.throws(() => readZip(Buffer.from('không phải zip')));
 });
 
+test('zip của extension: đọc mục lục giống bản QC, trả dữ liệu thô và kiểu nén', () => {
+  const Zip = require('../../extension/src/annotator/zip.js');
+  const zip = makeZip([{ name: 'a/', data: Buffer.alloc(0) }, { name: '000000.pcd', data: Buffer.from('a') }, { name: '000001.pcd', data: Buffer.from('bb'.repeat(50)), deflate: true }]);
+  const files = Zip.entries(new Uint8Array(zip));
+  assert.deepEqual(files.map((f) => [f.name, f.method]), [['000000.pcd', 0], ['000001.pcd', 8]]);
+  assert.equal(Buffer.from(files[0].raw).toString(), 'a');
+  assert.equal(zlib.inflateRawSync(files[1].raw).toString(), 'bb'.repeat(50));
+  assert.throws(() => Zip.entries(new Uint8Array(Buffer.from('không phải zip'))));
+});
+
 test('pcd: binary, ascii và binary_compressed; bỏ điểm NaN', () => {
   assert.deepEqual([...parsePcd(binaryPcd([[1, 2, 3], [NaN, 0, 0], [4, 5, 6]]))], [1, 2, 3, 4, 5, 6]);
   const ascii = Buffer.from('FIELDS x y z\nSIZE 4 4 4\nTYPE F F F\nCOUNT 1 1 1\nWIDTH 2\nHEIGHT 1\nPOINTS 2\nDATA ascii\n1 2 3\n4 5 nan\n');

@@ -1,7 +1,9 @@
 /*
  * Kế hoạch sửa cả track (hàm thuần): nhận danh sách keyframe, trả về danh sách thay đổi để xem trước rồi mới ghi.
- * Keyframe: { frame, box, outside, occluded, attrsKey } sắp theo frame; `attrsKey` là chuỗi đại diện thuộc tính.
- * Thay đổi: { frame, box } (đổi hình học) hoặc { frame, keyframe: false } (bỏ keyframe để CVAT tự nội suy).
+ * Keyframe: { frame, box, outside, occluded, attrsKey, attributes } sắp theo frame; `attrsKey` là chuỗi đại diện thuộc
+ * tính, `attributes` là { id thuộc tính: giá trị }.
+ * Thay đổi: { frame, box } (đổi hình học), { frame, keyframe: false } (bỏ keyframe để CVAT tự nội suy) hoặc
+ * { frame, attributes } (gán thuộc tính).
  */
 (function (root) {
   'use strict';
@@ -158,7 +160,104 @@
     return { ...box, center: [box.center[0], box.center[1], box.center[2] + dz] };
   }
 
-  const api = { interpolate, planSizeSync, medianDims, planYawSmoothing, planThinning, snapToGround };
+  /**
+   * Gán nhiều thuộc tính cho mọi frame track xuất hiện. `frames`: mọi frame nhìn thấy trong job, sắp theo frame
+   * ({ frame, keyframe, attributes, ... }); `values`: { id thuộc tính: giá trị }; `immutable`: Set id thuộc tính không đổi
+   * theo frame (CVAT giữ một giá trị cho cả track).
+   * Thuộc tính đổi theo frame: frame nội suy lấy giá trị của keyframe trước nó, nên chỉ ghi vào keyframe đang khác giá
+   * trị, cộng frame đầu job khi frame đó không phải keyframe (keyframe chi phối nó nằm ở job trước, không sửa được).
+   * Thuộc tính không đổi: ghi một lần, kèm thay đổi đầu tiên.
+   */
+  function planAttributes(frames, values, immutable = new Set()) {
+    const ids = Object.keys(values);
+    const differs = (f, id) => String(f.attributes?.[id] ?? '') !== String(values[id]);
+    const perFrame = ids.filter((id) => !immutable.has(id)), perTrack = ids.filter((id) => immutable.has(id));
+    const edits = [];
+    frames.forEach((f, i) => {
+      if (!f.keyframe && i > 0) return;
+      const diff = perFrame.filter((id) => differs(f, id));
+      if (diff.length) edits.push({ frame: f.frame, attributes: Object.fromEntries(diff.map((id) => [id, values[id]])) });
+    });
+    const trackDiff = frames.length ? perTrack.filter((id) => differs(frames[0], id)) : [];
+    if (trackDiff.length) {
+      if (!edits.length) edits.push({ frame: (frames.find((f) => f.keyframe) || frames[0]).frame, attributes: {} });
+      for (const id of trackDiff) edits[0].attributes[id] = values[id];
+    }
+    const wrong = frames.filter((f) => ids.some((id) => differs(f, id))).length;
+    return { edits, summary: { changed: edits.length, wrongFrames: wrong, total: frames.length } };
+  }
+
+  /**
+   * Hạ đáy cả track ở mọi frame xuất hiện. `frames`: mọi frame nhìn thấy trong job ({ frame, keyframe, box }, sắp theo
+   * frame, box như CVAT đang hiện kể cả frame nội suy); `groundZ`: Map frame → z mặt đất đo dưới box ở frame đó (đáy box
+   * cần chạm) hoặc null khi không đo được. Sau khi sửa, mọi frame đo được lệch ≤ `minShiftM`.
+   * Keyframe lệch quá `minShiftM` thì dời đáy chạm đất. Giữa hai keyframe CVAT nội suy tuyến tính nên đáy cũng tuyến tính;
+   * frame nội suy nào còn lệch quá mức thì thêm keyframe ở frame lệch nhất rồi xét lại hai nửa (Douglas–Peucker), để
+   * thêm ít keyframe nhất. Sau keyframe cuối của một đoạn, box giữ nguyên như keyframe đó.
+   */
+  function planGroundSnap(frames, groundZ, minShiftM) {
+    const edits = [];
+    let unmeasured = 0, added = 0, moved = 0, maxShiftM = 0;
+    const target = (f) => (Number.isFinite(groundZ.get(f.frame)) ? groundZ.get(f.frame) : null);
+    // Đoạn liền mạch: frame liên tiếp nhìn thấy (giữa hai đoạn là outside).
+    const runs = [];
+    frames.forEach((f, i) => {
+      if (target(f) === null) unmeasured += 1;
+      if (!i || f.frame !== frames[i - 1].frame + 1) runs.push([]);
+      runs[runs.length - 1].push(f);
+    });
+    for (const run of runs) {
+      // Mốc: keyframe giữ đáy mới; frame đầu đoạn không phải keyframe (track nối từ job trước) cũng thành mốc.
+      const bottom = run.map((f) => B.bottomZ(f.box));
+      const next = run.map((f, i) => {
+        const z = target(f);
+        return z !== null && Math.abs(z - bottom[i]) > minShiftM ? z : bottom[i];
+      });
+      const anchor = run.map((f, i) => f.keyframe || i === 0);
+      const predicted = (i) => {
+        let a = i, b = i;
+        while (!anchor[a]) a -= 1;
+        while (b < run.length && !anchor[b]) b += 1;
+        if (a === i || b >= run.length) return next[a];
+        return next[a] + (next[b] - next[a]) * (run[i].frame - run[a].frame) / (run[b].frame - run[a].frame);
+      };
+      const split = (from, to) => {
+        let worst = -1, worstErr = minShiftM;
+        for (let i = from + 1; i < to; i += 1) {
+          const z = target(run[i]);
+          if (z === null) continue;
+          const err = Math.abs(z - predicted(i));
+          if (err > worstErr) { worstErr = err; worst = i; }
+        }
+        if (worst < 0) return;
+        anchor[worst] = true;
+        next[worst] = target(run[worst]);
+        added += 1;
+        split(from, worst);
+        split(worst, to);
+      };
+      const anchors = () => run.map((_, i) => i).filter((i) => anchor[i]);
+      const fixed = anchors();
+      fixed.forEach((a, k) => split(a, k + 1 < fixed.length ? fixed[k + 1] : run.length));
+      const changes = (i) => !run[i].keyframe || Math.abs(next[i] - bottom[i]) > 1e-6;
+      // Frame đầu đoạn nội suy từ keyframe ở job trước: mốc kế tiếp đổi thì frame đó cũng xê dịch, nên ghim lại thành
+      // keyframe (giữ nguyên box nếu nó đã sát đất).
+      const after = anchors().find((i) => i > 0);
+      const pinStart = !run[0].keyframe && after !== undefined && changes(after);
+      for (const i of anchors()) {
+        const shift = next[i] - bottom[i];
+        if (Math.abs(shift) <= 1e-6 && !(i === 0 && pinStart)) continue;
+        edits.push({ frame: run[i].frame, box: snapToGround(run[i].box, next[i]) });
+        if (run[i].keyframe) moved += 1;
+        else if (i === 0) added += 1;
+        maxShiftM = Math.max(maxShiftM, Math.abs(shift));
+      }
+    }
+    edits.sort((a, b) => a.frame - b.frame);
+    return { edits, summary: { moved, added, unmeasured, total: frames.length, maxShiftM } };
+  }
+
+  const api = { interpolate, planSizeSync, medianDims, planYawSmoothing, planThinning, snapToGround, planAttributes, planGroundSnap };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PointSnapTrackOps = api;
 })(globalThis);

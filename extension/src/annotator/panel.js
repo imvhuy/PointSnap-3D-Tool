@@ -65,7 +65,12 @@
     .strip { display: grid; gap: 1px; height: 16px; }
     .strip button { padding: 0; border: 0; border-radius: 2px; background: #d9d9d9; min-width: 0; box-shadow: none; }
     .strip button:hover:not(:disabled) { background: #91caff; }
-    .strip button.warning { background: #faad14; } .strip button.here { outline: 2px solid #1677ff; outline-offset: -1px; }
+    .strip button.warning { background: #faad14; } .strip button.error { background: #ff4d4f; } .strip button.here { outline: 2px solid #1677ff; outline-offset: -1px; }
+    .attrs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .attr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: center; gap: 6px; }
+    .attr span { color: rgba(0,0,0,.65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .attr select { font: inherit; min-width: 0; border: 1px solid #d9d9d9; border-radius: 6px; padding: 1px 4px; background: #fff; color: rgba(0,0,0,.88); }
+    .attr select:focus-visible { outline: 3px solid #91caff; outline-offset: 1px; }
     .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
     .plan, .spec { background: #fafafa; border: 1px solid #f0f0f0; border-radius: 8px; padding: 8px 9px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
     .plan { background: #f0f7ff; border-color: #bae0ff; }
@@ -148,7 +153,12 @@
     panel.addEventListener('click', (event) => {
       const el = event.target.closest('[data-action]');
       if (!el || el.disabled) return;
+      if (el.tagName === 'SELECT') return;
       onAction(el.dataset.action, { ...el.dataset });
+    });
+    panel.addEventListener('change', (event) => {
+      const el = event.target.closest('select[data-action]');
+      if (el && !el.disabled) onAction(el.dataset.action, { ...el.dataset, value: el.value });
     });
     function render(vm) {
       ensureTab();
@@ -247,14 +257,17 @@
     return `<div class="spec"><div class="row"><b>Spec · ${esc(spec.key)}</b><button class="link" data-action="open-spec">Sửa</button></div>${dims}${required}${overlap}<ul>${spec.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>`;
   }
 
-  /** Dải track: một ô mỗi keyframe (vàng: lệch), ô đang đứng có viền; bấm ô để tới frame. */
+  /** Dải track: một ô mỗi keyframe (vàng: cảnh báo, đỏ: lỗi), ô đang đứng có viền; bấm ô để tới frame. */
   function trackSection(vm) {
     const t = vm.track;
     if (!t || t.loading) return '<div class="muted">Track · đang đọc keyframe…</div>';
     const here = t.cells.reduce((best, c, i) => (c.frame <= vm.frame ? i : best), -1);
     const cells = t.cells.map((c, i) => `<button class="${c.level}${i === here ? ' here' : ''}" data-action="goto-frame" data-frame="${c.frame}" `
       + `title="Frame ${c.frame}${c.reasons.length ? `: ${esc(c.reasons.join(', '))}` : ''}" aria-label="Frame ${c.frame}"></button>`).join('');
-    const summary = `<div class="row"><span>Track · ${t.cells.length} keyframe${t.flagged ? ` · <span class="warn">${t.flagged} cần xem</span>` : ' · ổn'}</span>`
+    // Frame đang đứng có lỗi ở checklist thì báo ngay cả khi frame này là frame nội suy (không có ô trên dải).
+    const cur = t.current?.count ? ` · <span class="${t.current.level === 'error' ? 'bad' : 'warn'}">frame này ${t.current.count} lỗi</span>` : '';
+    const status = t.flagged ? ` · <span class="warn">${t.flagged} keyframe cần xem</span>` : cur ? '' : ' · ổn';
+    const summary = `<div class="row"><span>Track · ${t.cells.length} keyframe${status}${cur}</span>`
       + `<button class="${t.done ? 'on' : ''}" data-action="toggle-done" aria-pressed="${t.done}" title="Đánh dấu track đã làm xong (Alt+Shift+D)">${t.done ? '✓ Xong' : 'Xong?'}</button></div>`;
     const strip = `<div class="strip" style="grid-template-columns: repeat(${t.cells.length}, minmax(0, 1fr))${t.cells.length > 120 ? '; gap: 0' : ''}">${cells}</div>`;
     const toggle = `<button class="link" data-action="toggle-track" aria-expanded="${vm.trackOpen}">${vm.trackOpen ? '▾' : '▸'} Sửa cả track</button>`;
@@ -265,7 +278,29 @@
       + `<div class="grid2"><button data-action="plan-sync-size" data-source="current" ${rigidOnly('Cả track lấy kích thước box ở frame này')}>Cỡ = frame này</button>`
       + `<button data-action="plan-sync-size" data-source="median" ${rigidOnly('Cả track lấy trung vị kích thước các keyframe')}>Cỡ trung vị</button>`
       + `<button data-action="plan-smooth-yaw" ${rigidOnly('Sửa lật đầu, làm mượt hướng')}>Mượt yaw</button>`
-      + `<button data-action="plan-thin" ${t.locked ? off('Box đang khóa') : 'title="Bỏ keyframe mà CVAT tự nội suy lại được"'}>Tỉa keyframe</button></div>`;
+      + `<button data-action="plan-thin" ${t.locked ? off('Box đang khóa') : 'title="Bỏ keyframe mà CVAT tự nội suy lại được"'}>Tỉa keyframe</button>`
+      + `<button data-action="snap-track" ${t.locked ? off('Box đang khóa') : 'title="Một lần bấm: đo mặt đất ở mọi frame track xuất hiện, hạ / nâng đáy box chạm đất (thêm keyframe ở frame nội suy còn lệch), ghi luôn, chưa Save"'}>Hạ đáy mọi frame</button></div>`
+      + attrSection(t);
+  }
+
+  /**
+   * Thuộc tính cả track: chọn giá trị cho một hoặc nhiều thuộc tính (chưa ghi), rồi một nút gán tất cả cho mọi frame
+   * track xuất hiện. Dòng "giữ nguyên" bỏ qua thuộc tính đó.
+   */
+  function attrSection(t) {
+    if (!t.attrs?.length) return '';
+    const off = (reason) => `disabled title="${reason}"`;
+    const rows = t.attrs.map((a) => {
+      const options = `<option value=""${a.draft ? '' : ' selected'}>— giữ nguyên —</option>`
+        + a.values.map((v) => `<option value="${esc(v)}"${v === a.draft ? ' selected' : ''}>${esc(v)}${v === a.current ? ' (frame này)' : ''}</option>`).join('');
+      const now = `${esc(a.current || '—')}${a.mixed ? ' <span class="warn" title="Các keyframe đang mang nhiều giá trị khác nhau">· nhiều giá trị</span>' : ''}`;
+      return `<label class="attr"><span title="${esc(a.name)}">${esc(a.name)}: <b>${now}</b></span><select data-action="draft-attr" data-attr="${esc(a.id)}" ${t.locked ? 'disabled' : ''}`
+        + ` title="Giá trị sẽ gán cho mọi frame của track">${options}</select></label>`;
+    }).join('');
+    const picked = t.attrs.filter((a) => a.draft).length;
+    const button = `<button class="primary" data-action="set-attrs" ${t.locked ? off('Box đang khóa') : picked ? `title="Gán ${picked} thuộc tính cho mọi frame track xuất hiện, ghi luôn, chưa Save"` : off('Chọn giá trị cho ít nhất một thuộc tính')}>`
+      + `Gán ${picked || ''} thuộc tính cho mọi frame</button>`;
+    return `<div class="attrs"><div class="muted">Thuộc tính cả track:</div>${rows}${button}</div>`;
   }
 
   function planSection(plan) {

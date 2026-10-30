@@ -91,9 +91,11 @@
       frame,
       state,
       box: B.fromCvatPoints(state.points),
+      keyframe: state.keyframe !== false,
       outside: !!state.outside,
       occluded: !!state.occluded,
       attrsKey: JSON.stringify(state.attributes || {}),
+      attributes: { ...(state.attributes || {}) },
     };
   }
 
@@ -117,6 +119,77 @@
     return out.filter((k) => k.box);
   }
 
+  /**
+   * Mọi frame trong job mà track chứa `state` xuất hiện (không outside), cả frame nội suy, với box / thuộc tính đúng như
+   * CVAT hiện ở frame đó (bộ nhớ cvat-core, cả thay đổi chưa Save). `keyframe` cho biết frame nào là keyframe.
+   */
+  async function trackFrames(job, state) {
+    if (state.objectType !== 'track' || !state.keyframes) return [];
+    const out = [];
+    for (let frame = Math.max(state.keyframes.first ?? job.startFrame, job.startFrame); frame <= job.stopFrame; frame += 1) {
+      const current = (await job.annotations.get(frame, true, [])).find((s) => s.clientID === state.clientID);
+      if (!current) continue;
+      if (!current.outside) out.push(describe(current, frame));
+      // Sau keyframe outside cuối cùng track không xuất hiện lại.
+      if (current.outside && !Number.isInteger(current.keyframes?.next)) break;
+    }
+    return out.filter((k) => k.box);
+  }
+
+  /** Thuộc tính chọn được từ danh sách (select / radio / checkbox) của label: [{ id, name, values, mutable }]. */
+  function attributeSpecs(state) {
+    return (state.label?.attributes || [])
+      .filter((a) => ['select', 'radio', 'checkbox'].includes(a.inputType))
+      .map((a) => ({ id: String(a.id), name: a.name, mutable: a.mutable !== false,
+        values: a.inputType === 'checkbox' ? ['true', 'false'] : (a.values || []).map(String) }));
+  }
+
+  /** Box (không outside) của mọi cuboid ở `frame`, theo bộ nhớ cvat-core (cả thay đổi chưa Save). */
+  async function frameBoxes(job, frame) {
+    const states = await job.annotations.get(frame, false, []);
+    return states.filter((s) => s.shapeType === 'cuboid' && !s.outside).map((s) => B.fromCvatPoints(s.points)).filter(Boolean);
+  }
+
+  // Point cloud của frame khác frame đang mở: CVAT chỉ dựng cloud của frame đang xem, nên đọc gói frame qua REST của
+  // chính CVAT (phiên đăng nhập của người dùng, như QC đọc bằng token). Giữ một gói gần nhất: keyframe liền nhau
+  // thường cùng gói.
+  const chunkCache = { key: null, files: null, meta: null };
+
+  async function cvatGet(path) {
+    const res = await fetch(path, { credentials: 'same-origin', headers: { Accept: path.includes('type=chunk') ? '*/*' : 'application/vnd.cvat+json' } });
+    if (!res.ok) throw new Error(`CVAT ${res.status} ở ${path.split('?')[0]}`);
+    return res;
+  }
+
+  async function inflateRaw(raw) {
+    const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+
+  /** Mảng x, y, z (Float32Array) của `frame`, cùng hệ tọa độ với box. Frame đang mở thì lấy luôn cloud đang vẽ. */
+  async function frameCloud(ctx, frame) {
+    // Đọc lại ngữ cảnh: người dùng có thể đã đổi frame trong lúc đo các frame trước.
+    const now = context();
+    const live = now && now.frame === frame ? pointCloud(now) : null;
+    if (live) return live;
+    const job = ctx.job;
+    if (chunkCache.meta?.jobId !== job.id) {
+      chunkCache.meta = { jobId: job.id, ...(await (await cvatGet(`/api/jobs/${job.id}/data/meta`)).json()) };
+      chunkCache.key = null;
+    }
+    const start = job.startFrame, size = chunkCache.meta.chunk_size || (job.stopFrame - start + 1);
+    const index = Math.floor((frame - start) / size), key = `${job.id}:${index}`;
+    if (chunkCache.key !== key) {
+      const bytes = new Uint8Array(await (await cvatGet(`/api/jobs/${job.id}/data?type=chunk&index=${index}&quality=original`)).arrayBuffer());
+      chunkCache.files = root.PointSnapZip.entries(bytes).filter((f) => /\.pcd$/i.test(f.name))
+        .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }));
+      chunkCache.key = key;
+    }
+    const file = chunkCache.files[(frame - start) % size];
+    if (!file) throw new Error(`gói frame không có point cloud của frame ${frame}`);
+    return root.PointSnapPcd.parse(file.method === 8 ? await inflateRaw(file.raw) : file.raw);
+  }
+
   /** Vẽ lại frame hiện tại theo bộ nhớ cvat-core, như `fetchAnnotationsAsync` của CVAT. */
   async function refresh() {
     const ctx = context();
@@ -128,8 +201,9 @@
     store.dispatch({ type: 'FETCH_ANNOTATIONS_SUCCESS', payload: { states, intervals: [], history } });
   }
 
-  const snapshot = (state) => ({ points: state.points.slice(), keyframe: state.keyframe !== false });
+  const snapshot = (state) => ({ points: state.points.slice(), keyframe: state.keyframe !== false, attributes: { ...(state.attributes || {}) } });
   const samePoints = (a, b) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
+  const sameAttributes = (a, b) => Object.keys({ ...a, ...b }).every((k) => String(a[k]) === String(b[k]));
 
   /**
    * Lưu một nhóm ObjectState. Cả nhóm ở một frame và CVAT có `saveStates`: một giao dịch, Ctrl+Z hoàn tác cả nhóm.
@@ -154,7 +228,8 @@
   }
 
   /**
-   * Ghi các thay đổi `edits` ({ frame, box } hoặc { frame, keyframe: false }) cho các keyframe trong `byFrame`.
+   * Ghi các thay đổi `edits` ({ frame, box }, { frame, keyframe: false } hoặc { frame, attributes: { id: giá trị } })
+   * cho các keyframe trong `byFrame`.
    * Trả về { saved, locked, undo: 'cvat' | 'pointsnap', record } — `record` dùng cho `undoEdits` khi undo = 'pointsnap'.
    */
   async function applyEdits(job, byFrame, edits) {
@@ -167,10 +242,18 @@
       const before = snapshot(state);
       if (edit.box) state.points = B.toCvatPoints(edit.box, state.points);
       if (edit.keyframe === false) state.keyframe = false;
+      // cvat-core gộp vào thuộc tính sẵn có (chỉ đổi id được gán).
+      if (edit.attributes) state.attributes = edit.attributes;
       states.push(state);
-      record.push({ frame: edit.frame, clientID: state.clientID, before, after: snapshot(state) });
+      record.push({ frame: edit.frame, clientID: state.clientID, before });
     }
     const undo = await saveGroup(job, states);
+    // Đọc lại sau khi lưu: ghi vào frame nội suy làm cvat-core tạo keyframe mới, bản ghi phải thấy đúng trạng thái đó để
+    // Hoàn tác nhận ra frame chưa bị sửa tiếp.
+    for (const entry of record) {
+      const saved = (await job.annotations.get(entry.frame, true, [])).find((s) => s.clientID === entry.clientID);
+      entry.after = saved ? snapshot(saved) : entry.before;
+    }
     await refresh();
     return { saved: states.length, locked, undo, record };
   }
@@ -186,10 +269,12 @@
       const state = (await job.annotations.get(entry.frame, true, [])).find((s) => s.clientID === entry.clientID);
       const current = state && snapshot(state);
       const untouched = current && current.keyframe === entry.after.keyframe
-        && (!current.keyframe || samePoints(current.points, entry.after.points));
+        && (!current.keyframe || samePoints(current.points, entry.after.points))
+        && sameAttributes(current.attributes, entry.after.attributes);
       if (!untouched || state.lock) { skipped += 1; continue; }
       if (entry.before.keyframe) state.points = entry.before.points;
       else state.keyframe = false;
+      if (!sameAttributes(entry.before.attributes, entry.after.attributes)) state.attributes = entry.before.attributes;
       states.push(state);
     }
     await saveGroup(job, states);
@@ -236,6 +321,6 @@
 
   root.PointSnapCvatAdapter = {
     connect, context, rawStates, currentFrame, frameStates, activeClientId, isSaving, attributesOf, liveBox, cloudObject, pointCloud,
-    trackKeyframes, applyEdits, undoEdits, refresh, select, shiftCamera, subscribe, health,
+    trackKeyframes, trackFrames, attributeSpecs, frameBoxes, frameCloud, applyEdits, undoEdits, refresh, select, shiftCamera, subscribe, health,
   };
 })(globalThis);

@@ -51,6 +51,8 @@
         "src/annotator/track-ops.js",
         "src/annotator/object-points.js",
         "src/annotator/measure.js",
+        "src/annotator/zip.js",
+        "src/annotator/pcd.js",
         "src/annotator/cvat-adapter.js",
         "src/annotator/overlay.js",
         "src/annotator/cloud-colors.js",
